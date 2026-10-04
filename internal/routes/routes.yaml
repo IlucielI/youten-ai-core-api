@@ -34,3 +34,8 @@ routes:
     path: /v1/auth/logout
     handler: Logout
 
+  # Password recovery endpoint
+  - method: POST
+    path: /v1/auth/forgot-password
+    handler: ForgotPassword
+

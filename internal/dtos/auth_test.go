@@ -215,3 +215,50 @@ func TestLogoutRequest_Validate(t *testing.T) {
 	}
 }
 
+func TestForgotPasswordRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.ForgotPasswordRequest
+		wantErr bool
+	}{
+		{
+			name: "valid email",
+			req: dtos.ForgotPasswordRequest{
+				Email: "user@example.com",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid email with uppercase and whitespace",
+			req: dtos.ForgotPasswordRequest{
+				Email: "  USER@EXAMPLE.COM  ",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing email",
+			req: dtos.ForgotPasswordRequest{
+				Email: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid email format",
+			req: dtos.ForgotPasswordRequest{
+				Email: "not-an-email",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ForgotPasswordRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+

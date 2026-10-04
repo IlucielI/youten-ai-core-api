@@ -121,3 +121,31 @@ func (c *Controllers) Logout(ctx *gin.Context) {
 	})
 }
 
+// ForgotPassword handles requesting a password reset email.
+// Always returns 200 OK with a generic message to prevent email enumeration.
+func (c *Controllers) ForgotPassword(ctx *gin.Context) {
+	var req dtos.ForgotPasswordRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.Validate(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	if err := c.svc.ForgotPassword(ctx.Request.Context(), &req); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.BaseResponse{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "If your email is registered, you will receive a password reset link shortly",
+		Timestamp: time.Now(),
+	})
+}
+
+

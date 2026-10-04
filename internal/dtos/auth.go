@@ -118,3 +118,32 @@ func (r *LogoutRequest) Validate() error {
 	)
 }
 
+// ForgotPasswordRequest defines the input payload for requesting a password reset email.
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// Validate performs structural and semantic validation on ForgotPasswordRequest.
+func (r *ForgotPasswordRequest) Validate() error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Email,
+			validation.Required.Error("email is required"),
+			validation.By(func(value interface{}) error {
+				s, ok := value.(string)
+				if !ok {
+					return nil
+				}
+				trimmed := strings.TrimSpace(s)
+				if trimmed == "" {
+					return validation.NewError("validation_required", "email is required")
+				}
+				if err := is.EmailFormat.Validate(trimmed); err != nil {
+					return validation.NewError("validation_is_email", "invalid email format")
+				}
+				return nil
+			}),
+		),
+	)
+}
+
+

@@ -188,7 +188,9 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 	}
 	if user == nil || user.Status != constants.UserStatusActive {
 		// Invalidate token for inactive user
-		_ = s.repo.RevokeAuthToken(ctx, authToken.ID)
+		if revokeErr := s.repo.RevokeAuthToken(ctx, authToken.ID); revokeErr != nil {
+			return nil, s.wrapError(ctx, revokeErr)
+		}
 		return nil, constants.ErrInvalidToken
 	}
 

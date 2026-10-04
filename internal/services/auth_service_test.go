@@ -620,6 +620,60 @@ func TestService_RefreshToken_InactiveUser(t *testing.T) {
 	}
 }
 
+func TestService_RefreshToken_InactiveUser_RevokeError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "suspended@example.com"
+	now := time.Now()
+
+	cfg := config.Config{
+		AppName:              "youten-test",
+		JWTSecret:            "test-jwt-secret-key-1234567890",
+		JWTAccessExpiration:  15 * time.Minute,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+
+	tokenPair, err := jwt.GenerateTokenPair(cfg, userID, email, "session-1")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+	tokenHash := hasher.HashToken(tokenPair.RefreshToken)
+	tokenID := uuid.New()
+
+	// 1. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens"`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
+
+	// 2. FindUserByID -> status suspended
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Suspended User", constants.UserStatusSuspended, now))
+
+	// 3. RevokeAuthToken -> DB error
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnError(errors.New("db error on revoke"))
+	mock.ExpectRollback()
+
+	req := &dtos.RefreshTokenRequest{
+		RefreshToken: tokenPair.RefreshToken,
+	}
+
+	resp, err := svc.RefreshToken(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on revoke failure, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
 func TestService_RefreshToken_NilChecks(t *testing.T) {
 	var nilSvc *services.Service
 	resp, err := nilSvc.RefreshToken(context.Background(), &dtos.RefreshTokenRequest{RefreshToken: "t"})

@@ -54,3 +54,34 @@ type UserResponse struct {
 	EmailVerified      bool      `json:"email_verified"`
 	CreatedAt          time.Time `json:"created_at"`
 }
+
+// LoginRequest defines the input payload for user authentication.
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// Validate performs structural and semantic validation on LoginRequest.
+func (r *LoginRequest) Validate() error {
+	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Email,
+			validation.Required.Error("email is required"),
+			is.EmailFormat.Error("invalid email format"),
+		),
+		validation.Field(&r.Password,
+			validation.Required.Error("password is required"),
+		),
+	)
+}
+
+// AuthResponse represents the response envelope containing tokens and authenticated user info.
+type AuthResponse struct {
+	AccessToken      string       `json:"access_token"`
+	RefreshToken     string       `json:"refresh_token"`
+	TokenType        string       `json:"token_type"`
+	ExpiresIn        int64        `json:"expires_in"`
+	RefreshExpiresIn int64        `json:"refresh_expires_in"`
+	User             UserResponse `json:"user"`
+}

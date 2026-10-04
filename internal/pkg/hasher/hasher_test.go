@@ -41,3 +41,21 @@ func TestVerifyPassword_Mismatch(t *testing.T) {
 		t.Fatal("expected VerifyPassword to return false for empty password")
 	}
 }
+
+func TestHashToken(t *testing.T) {
+	rawToken := "sample-jwt-or-opaque-token"
+	h1 := hasher.HashToken(rawToken)
+	h2 := hasher.HashToken(rawToken)
+
+	if h1 == "" {
+		t.Fatal("expected non-empty token hash")
+	}
+	if h1 != h2 {
+		t.Fatalf("expected deterministic hash, got %s and %s", h1, h2)
+	}
+
+	diffHash := hasher.HashToken("different-token")
+	if h1 == diffHash {
+		t.Fatal("expected different hashes for different inputs")
+	}
+}

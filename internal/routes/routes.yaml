@@ -19,3 +19,7 @@ routes:
   - method: POST
     path: /v1/auth/register
     handler: Register
+
+  - method: POST
+    path: /v1/auth/login
+    handler: Login

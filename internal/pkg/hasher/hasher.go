@@ -1,6 +1,9 @@
 package hasher
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -20,4 +23,10 @@ func HashPassword(password string) (string, error) {
 func VerifyPassword(hashedPassword, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 	return err == nil
+}
+
+// HashToken computes a SHA-256 hex digest of a token string for safe database storage.
+func HashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }

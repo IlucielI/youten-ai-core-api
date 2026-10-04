@@ -86,3 +86,53 @@ func TestRegisterRequest_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestLoginRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.LoginRequest
+		wantErr bool
+	}{
+		{
+			name: "valid login request",
+			req: dtos.LoginRequest{
+				Email:    "user@example.com",
+				Password: "anyPassword123",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing email",
+			req: dtos.LoginRequest{
+				Email:    "",
+				Password: "anyPassword123",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid email format",
+			req: dtos.LoginRequest{
+				Email:    "invalid-email",
+				Password: "anyPassword123",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing password",
+			req: dtos.LoginRequest{
+				Email:    "user@example.com",
+				Password: "",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("LoginRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

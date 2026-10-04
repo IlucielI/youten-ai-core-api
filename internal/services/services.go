@@ -15,9 +15,10 @@ type Service struct {
 	repo      *repositories.Repositories
 	publisher EventPublisher
 	mailer    EmailSender
-	stt       STTProvider
-	llm       LLMProvider
-	embedding EmbeddingProvider
+	stt            STTProvider
+	llm            LLMProvider
+	embedding      EmbeddingProvider
+	audioExtractor AudioExtractor
 }
 
 // New creates a new unified service container.
@@ -147,6 +148,25 @@ func (s *Service) Embedding() EmbeddingProvider {
 		return nil
 	}
 	return s.embedding
+}
+
+// SetAudioExtractor allows injecting or overriding AudioExtractor adapter.
+func (s *Service) SetAudioExtractor(ext AudioExtractor) {
+	s.audioExtractor = ext
+}
+
+// WithAudioExtractor fluently sets the AudioExtractor adapter.
+func (s *Service) WithAudioExtractor(ext AudioExtractor) *Service {
+	s.audioExtractor = ext
+	return s
+}
+
+// AudioExtractor returns the underlying AudioExtractor adapter.
+func (s *Service) AudioExtractor() AudioExtractor {
+	if s == nil {
+		return nil
+	}
+	return s.audioExtractor
 }
 
 // wrapError wraps unknown or system errors into structured AppError.

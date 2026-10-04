@@ -105,3 +105,56 @@ func (r *Repositories) ListRecordingsByUserID(ctx context.Context, userID uuid.U
 
 	return list, total, nil
 }
+
+// UpdateRecordingAudioURL sets the audio_url and duration_seconds of a recording.
+func (r *Repositories) UpdateRecordingAudioURL(ctx context.Context, id uuid.UUID, audioURL string, durationSeconds float64) error {
+	updates := map[string]interface{}{
+		"audio_url": audioURL,
+	}
+	if durationSeconds > 0 {
+		updates["duration_seconds"] = durationSeconds
+	}
+	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", id).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// UpdateRecordingAnalytics stores the computed speaker and participation analytics data.
+func (r *Repositories) UpdateRecordingAnalytics(ctx context.Context, id uuid.UUID, analytics models.JSONMap) error {
+	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", id).Update("analytics_data", analytics)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// UpdateRecordingDurationAndLanguage updates the detected language and duration from STT.
+func (r *Repositories) UpdateRecordingDurationAndLanguage(ctx context.Context, id uuid.UUID, durationSeconds float64, detectedLanguage string) error {
+	updates := map[string]interface{}{}
+	if durationSeconds > 0 {
+		updates["duration_seconds"] = durationSeconds
+	}
+	if detectedLanguage != "" {
+		updates["detected_language"] = detectedLanguage
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", id).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+

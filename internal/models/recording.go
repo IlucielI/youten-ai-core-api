@@ -6,6 +6,28 @@ import (
 	"github.com/google/uuid"
 )
 
+// Canonical recording lifecycle states
+const (
+	RecordingStatusQueued       = "QUEUED"
+	RecordingStatusValidating   = "VALIDATING"
+	RecordingStatusExtracting   = "EXTRACTING"
+	RecordingStatusTranscribing = "TRANSCRIBING"
+	RecordingStatusSummarizing  = "SUMMARIZING"
+	RecordingStatusIndexing     = "INDEXING"
+	RecordingStatusCompleted    = "COMPLETED"
+	RecordingStatusFailed       = "FAILED"
+)
+
+// Standard pipeline error codes
+const (
+	ErrCodeAudioCorrupt       = "ERR_AUDIO_CORRUPT"
+	ErrCodeExtractionFailed   = "ERR_EXTRACTION_FAILED"
+	ErrCodeTranscriptionFail = "ERR_TRANSCRIPTION_FAILED"
+	ErrCodeNoSpeechDetected   = "ERR_NO_SPEECH_DETECTED"
+	ErrCodeSummarizationFail  = "ERR_SUMMARIZATION_FAILED"
+	ErrCodeIndexingFail       = "ERR_INDEXING_FAILED"
+)
+
 // Recording represents a core media file, its processing lifecycle, guest ownership, and sharing configuration.
 type Recording struct {
 	BaseModel

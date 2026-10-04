@@ -1,6 +1,14 @@
 package constants
 
-// Define your worker / event topics here, for example:
-// const (
-// 	TopicUserRegistered = "user.registered"
-// )
+// Domain event topics for background worker orchestration
+const (
+	TopicRecordingUploaded   = "recording.uploaded"
+	TopicRecordingExtract    = "recording.extract"
+	TopicRecordingTranscribe = "recording.transcribe"
+	TopicRecordingSummarize  = "recording.summarize"
+	TopicRecordingIndex      = "recording.index"
+	TopicRecordingAnalytics  = "recording.analytics"
+	TopicRecordingChapterize = "recording.chapterize"
+	TopicRecordingCompleted  = "recording.completed"
+	TopicRecordingFailed     = "recording.failed"
+)

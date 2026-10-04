@@ -40,6 +40,21 @@ func (r *Repositories) RevokeAuthToken(ctx context.Context, id uuid.UUID) error 
 	return nil
 }
 
+// RotateAuthToken atomically revokes the old token and inserts the new token within a database transaction.
+func (r *Repositories) RotateAuthToken(ctx context.Context, revokeTokenID uuid.UUID, newToken *models.AuthToken) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		res := tx.Model(&models.AuthToken{}).Where("id = ? AND revoked_at IS NULL", revokeTokenID).Update("revoked_at", now)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Create(newToken).Error
+	})
+}
+
 // RevokeAllAuthTokensByUserID revokes all active tokens for a user, optionally filtered by token type.
 func (r *Repositories) RevokeAllAuthTokensByUserID(ctx context.Context, userID uuid.UUID, tokenType string) error {
 	now := time.Now()

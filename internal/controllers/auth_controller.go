@@ -66,3 +66,31 @@ func (c *Controllers) Login(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// RefreshToken handles session token rotation request.
+func (c *Controllers) RefreshToken(ctx *gin.Context) {
+	var req dtos.RefreshTokenRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.Validate(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	authResp, err := c.svc.RefreshToken(ctx.Request.Context(), &req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AuthResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Token refreshed successfully",
+		Data:      authResp,
+		Timestamp: time.Now(),
+	})
+}

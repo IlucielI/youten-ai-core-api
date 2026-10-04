@@ -23,3 +23,8 @@ routes:
   - method: POST
     path: /v1/auth/login
     handler: Login
+
+  # Token rotation endpoint (schema contract: lowercase method, path, handler)
+  - method: POST
+    path: /v1/auth/refresh
+    handler: RefreshToken

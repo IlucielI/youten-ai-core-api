@@ -25,7 +25,7 @@ type routeItem struct {
 	BasicAuth bool   `yaml:"basic_auth,omitempty"`
 }
 
-// UnmarshalYAML implements case-insensitive mapping for route keys (e.g. method/Method, path/Path).
+// UnmarshalYAML implements case-insensitive mapping for route keys.
 func (r *routeItem) UnmarshalYAML(value *yaml.Node) error {
 	var raw map[string]interface{}
 	if err := value.Decode(&raw); err != nil {

@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"code-base-golang/internal/adapters/audio"
 	"code-base-golang/internal/adapters/database"
 	"code-base-golang/internal/adapters/embedding"
 	"code-base-golang/internal/adapters/llm"
@@ -117,10 +118,16 @@ func main() {
 	// Initialize SMTP mailer adapter
 	smtpAdapter := smtp.New(cfg)
 
-	// Initialize AI provider adapters (OmniRoute / OpenAI-Compatible)
+	// Initialize AI & Media provider adapters
 	sttAdapter := stt.NewOmniRoute(cfg)
 	llmAdapter := llm.NewOmniRoute(cfg)
 	embeddingAdapter := embedding.NewOmniRoute(cfg)
+
+	var audioExtractor services.AudioExtractor = audio.NewFFmpeg()
+	if !audio.NewFFmpeg().IsAvailable() {
+		log.Println("[INFO] ffmpeg binary not found in PATH, using fallback audio extractor")
+		audioExtractor = audio.NewMock()
+	}
 
 	repo := repositories.New(db.DB(), rdb)
 	var publisher services.EventPublisher
@@ -131,7 +138,8 @@ func main() {
 		WithMailer(smtpAdapter).
 		WithSTT(sttAdapter).
 		WithLLM(llmAdapter).
-		WithEmbedding(embeddingAdapter)
+		WithEmbedding(embeddingAdapter).
+		WithAudioExtractor(audioExtractor)
 	ctrls := controllers.New(cfg, svc)
 	router := routes.NewRouter(cfg, ctrls)
 

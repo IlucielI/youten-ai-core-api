@@ -195,20 +195,28 @@ func (d *dummyEmbedding) CreateEmbeddings(ctx context.Context, texts []string) (
 	return nil, nil
 }
 
+type dummyAudioExtractor struct{}
+
+func (d *dummyAudioExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader, filename string) (*AudioExtractionResult, error) {
+	return nil, nil
+}
+
 func TestService_AIProviders(t *testing.T) {
 	var nilSvc *Service
-	if nilSvc.STT() != nil || nilSvc.LLM() != nil || nilSvc.Embedding() != nil {
+	if nilSvc.STT() != nil || nilSvc.LLM() != nil || nilSvc.Embedding() != nil || nilSvc.AudioExtractor() != nil {
 		t.Error("expected nil providers for nil service")
 	}
 
 	sttInst := &dummySTT{}
 	llmInst := &dummyLLM{}
 	embInst := &dummyEmbedding{}
+	audioInst := &dummyAudioExtractor{}
 
 	svc := New(config.Config{}, nil, nil).
 		WithSTT(sttInst).
 		WithLLM(llmInst).
-		WithEmbedding(embInst)
+		WithEmbedding(embInst).
+		WithAudioExtractor(audioInst)
 
 	if svc.STT() != sttInst {
 		t.Errorf("expected stt %v, got %v", sttInst, svc.STT())
@@ -219,13 +227,17 @@ func TestService_AIProviders(t *testing.T) {
 	if svc.Embedding() != embInst {
 		t.Errorf("expected embedding %v, got %v", embInst, svc.Embedding())
 	}
+	if svc.AudioExtractor() != audioInst {
+		t.Errorf("expected audio extractor %v, got %v", audioInst, svc.AudioExtractor())
+	}
 
 	// Test Set methods
 	svc.SetSTT(nil)
 	svc.SetLLM(nil)
 	svc.SetEmbedding(nil)
+	svc.SetAudioExtractor(nil)
 
-	if svc.STT() != nil || svc.LLM() != nil || svc.Embedding() != nil {
+	if svc.STT() != nil || svc.LLM() != nil || svc.Embedding() != nil || svc.AudioExtractor() != nil {
 		t.Error("expected nil providers after Set(nil)")
 	}
 }

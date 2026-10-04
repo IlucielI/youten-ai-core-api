@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/hasher"
+	"code-base-golang/internal/pkg/jwt"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/services"
 )
@@ -366,5 +367,144 @@ func TestControllers_Login_InvalidCredentials(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_RefreshToken_Success(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "alex@example.com"
+	now := time.Now()
+
+	cfg := config.Config{
+		AppName:              "youten-test",
+		JWTSecret:            "test-jwt-secret-key-1234567890",
+		JWTAccessExpiration:  15 * time.Minute,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+
+	tokenPair, err := jwt.GenerateTokenPair(cfg, userID, email, "session-old")
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	tokenHash := hasher.HashToken(tokenPair.RefreshToken)
+	tokenID := uuid.New()
+
+	// 1. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens"`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
+
+	// 2. RevokeAuthToken
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. FindUserByID
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Alex Mercer", constants.UserStatusActive, now))
+
+	// 4. CreateAuthToken
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	reqPayload := dtos.RefreshTokenRequest{
+		RefreshToken: tokenPair.RefreshToken,
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.RefreshToken(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.AuthResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp.Data == nil {
+		t.Fatal("expected non-nil auth response")
+	}
+	if resp.Data.AccessToken == "" || resp.Data.RefreshToken == "" {
+		t.Error("expected non-empty tokens")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_RefreshToken_InvalidJSON(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", bytes.NewBufferString("{invalid-json"))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.RefreshToken(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_RefreshToken_ValidationError(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	reqPayload := dtos.RefreshTokenRequest{
+		RefreshToken: "",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.RefreshToken(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_RefreshToken_InvalidToken(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	reqPayload := dtos.RefreshTokenRequest{
+		RefreshToken: "malformed.jwt.token",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.RefreshToken(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", w.Code)
 	}
 }

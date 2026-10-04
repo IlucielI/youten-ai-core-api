@@ -85,3 +85,19 @@ type AuthResponse struct {
 	RefreshExpiresIn int64        `json:"refresh_expires_in"`
 	User             UserResponse `json:"user"`
 }
+
+// RefreshTokenRequest defines the input payload for rotating session tokens.
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// Validate performs structural and semantic validation on RefreshTokenRequest.
+func (r *RefreshTokenRequest) Validate() error {
+	r.RefreshToken = strings.TrimSpace(r.RefreshToken)
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.RefreshToken,
+			validation.Required.Error("refresh_token is required"),
+		),
+	)
+}

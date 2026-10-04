@@ -136,3 +136,42 @@ func TestLoginRequest_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestRefreshTokenRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.RefreshTokenRequest
+		wantErr bool
+	}{
+		{
+			name: "valid refresh token request",
+			req: dtos.RefreshTokenRequest{
+				RefreshToken: "valid-jwt-token-string",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing refresh token",
+			req: dtos.RefreshTokenRequest{
+				RefreshToken: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "whitespace only refresh token",
+			req: dtos.RefreshTokenRequest{
+				RefreshToken: "   ",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RefreshTokenRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

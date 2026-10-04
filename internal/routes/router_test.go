@@ -178,4 +178,20 @@ func TestRouter_AuthEndpoints(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", w.Code)
 	}
+
+	// Verify POST /v1/auth/refresh route is registered and resolves to handler
+	wRefresh := httptest.NewRecorder()
+	reqRefresh, err := http.NewRequest(http.MethodPost, "/v1/auth/refresh", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("failed to create refresh request: %v", err)
+	}
+	reqRefresh.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(wRefresh, reqRefresh)
+	if wRefresh.Code == http.StatusNotFound {
+		t.Fatalf("expected /v1/auth/refresh to be registered, but got 404 Not Found")
+	}
+	if wRefresh.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wRefresh.Code)
+	}
 }

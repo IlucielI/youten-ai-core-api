@@ -42,7 +42,29 @@ This document defines the architectural invariants, conventions, and workflows f
 
 ---
 
-## 3. Core Coding Conventions
+## 3. Git Workflow & Commit Rules (MANDATORY)
+
+1. **NEVER PUSH DIRECTLY TO `main`**:
+   - Pushing directly to the `main` branch is **STRICTLY PROHIBITED**.
+   - All changes must go through a dedicated branch and Pull Request (PR).
+2. **Feature Branching**:
+   - Always create a dedicated branch off `main` before making any code or schema changes:
+     - `feat/<feature-name>` for new features
+     - `fix/<issue-name>` for bug fixes
+     - `chore/<task-name>` for configuration, docs, or maintenance
+     - `refactor/<target>` for code restructuring
+3. **Atomic Commits**:
+   - Commits must be small, focused, and scoped to a single logical change.
+   - **NEVER** combine multiple unrelated changes in a single commit.
+   - Follow Conventional Commits: `feat(...)`, `fix(...)`, `refactor(...)`, `build(...)`, `chore(...)`, `test(...)`.
+4. **Pull Request (PR) Mandate**:
+   - Push feature branch to origin: `git push -u origin <branch-name>`.
+   - Open a PR to `main` using `gh pr create --base main --head <branch-name> --title "..." --body "..."`.
+   - Verify `make test` and `make build` pass with zero regressions.
+
+---
+
+## 4. Core Coding Conventions
 
 1. **Standard Error Envelope**:
    - Use `pkg/apperror.AppError` for domain and HTTP errors.
@@ -58,7 +80,7 @@ This document defines the architectural invariants, conventions, and workflows f
 
 ---
 
-## 4. Development Workflows for Agents
+## 5. Development Workflows for Agents
 
 ### Adding a New Entity & CRUD Feature
 1. **Migration**: Run `make migrate-create name=create_<entity>_table` and write `.up.sql` & `.down.sql`.
@@ -77,7 +99,7 @@ This document defines the architectural invariants, conventions, and workflows f
 
 ---
 
-## 5. Development & Testing Commands
+## 6. Development & Testing Commands
 
 Always run tests to verify zero regressions before concluding tasks:
 

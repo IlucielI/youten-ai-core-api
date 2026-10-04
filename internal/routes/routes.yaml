@@ -24,6 +24,6 @@ routes:
     path: /v1/auth/login
     handler: Login
 
-  - method: POST
-    path: /v1/auth/refresh
-    handler: RefreshToken
+  - Method: POST
+    Path: /v1/auth/refresh
+    Handler: RefreshToken

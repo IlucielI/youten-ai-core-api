@@ -405,17 +405,13 @@ func TestControllers_RefreshToken_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
 			AddRow(userID, email, "Alex Mercer", constants.UserStatusActive, now))
 
-	// 3. CreateAuthToken
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
-	mock.ExpectCommit()
-
-	// 4. RevokeAuthToken
+	// 3. RotateAuthToken (Transaction: revoke old token + insert new token)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "auth_tokens"`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
 	mock.ExpectCommit()
 
 	reqPayload := dtos.RefreshTokenRequest{

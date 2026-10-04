@@ -199,7 +199,7 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 		return nil, s.wrapError(ctx, err)
 	}
 
-	// 5. Store new refresh token hash first
+	// 5. Atomically rotate tokens: revoke old refresh token and insert new refresh token in transaction
 	newTokenHash := hasher.HashToken(tokenPair.RefreshToken)
 	newAuthToken := &models.AuthToken{
 		UserID:    user.ID,
@@ -208,12 +208,7 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 		ExpiresAt: time.Now().Add(s.cfg.JWTRefreshExpiration),
 	}
 
-	if err := s.repo.CreateAuthToken(ctx, newAuthToken); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
-
-	// 6. Revoke old refresh token
-	if err := s.repo.RevokeAuthToken(ctx, authToken.ID); err != nil {
+	if err := s.repo.RotateAuthToken(ctx, authToken.ID, newAuthToken); err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
 

@@ -62,4 +62,3 @@ func (r *Repositories) PingRedis(ctx context.Context) error {
 	}
 	return r.rdb.Ping(ctx)
 }
-

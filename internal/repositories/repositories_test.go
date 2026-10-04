@@ -13,6 +13,35 @@ import (
 	"code-base-golang/internal/adapters/redis"
 )
 
+func TestRepositories_Accessors(t *testing.T) {
+	sqlDB, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+
+	if repo.DB() == nil {
+		t.Error("expected non-nil DB")
+	}
+
+	var nilRepo *Repositories
+	if nilRepo.DB() != nil {
+		t.Error("expected nil DB for nil repo")
+	}
+	if nilRepo.Redis() != nil {
+		t.Error("expected nil Redis for nil repo")
+	}
+}
+
 func TestRepositories_PingDB(t *testing.T) {
 	// 1. Nil repo
 	var nilRepo *Repositories

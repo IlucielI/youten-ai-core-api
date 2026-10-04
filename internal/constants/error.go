@@ -13,8 +13,14 @@ var (
 	// ErrUnauthorized is returned when an operation is attempted without valid authentication.
 	ErrUnauthorized = apperror.New(http.StatusUnauthorized, ResponseCodeUnauthorized, "unauthorized access")
 
+	// ErrInvalidCredentials is returned when login credentials do not match.
+	ErrInvalidCredentials = apperror.New(http.StatusUnauthorized, ResponseCodeUnauthorized, "invalid email or password")
+
 	// ErrForbidden is returned when the authenticated user does not have permission.
 	ErrForbidden = apperror.New(http.StatusForbidden, ResponseCodeForbidden, "forbidden access")
+
+	// ErrUserInactive is returned when an inactive or suspended user attempts an action.
+	ErrUserInactive = apperror.New(http.StatusForbidden, ResponseCodeForbidden, "user account is suspended or inactive")
 
 	// ErrNotFound is returned when a requested resource is not found.
 	ErrNotFound = apperror.New(http.StatusNotFound, ResponseCodeNotFound, "resource not found")

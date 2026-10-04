@@ -38,3 +38,31 @@ func (c *Controllers) Register(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// Login handles user authentication and JWT session token generation.
+func (c *Controllers) Login(ctx *gin.Context) {
+	var req dtos.LoginRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.Validate(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	authResp, err := c.svc.Login(ctx.Request.Context(), &req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AuthResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Login successful",
+		Data:      authResp,
+		Timestamp: time.Now(),
+	})
+}

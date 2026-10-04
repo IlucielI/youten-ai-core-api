@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"code-base-golang/internal/adapters/database"
+	"code-base-golang/internal/adapters/embedding"
+	"code-base-golang/internal/adapters/llm"
 	"code-base-golang/internal/adapters/rabbitmq"
 	"code-base-golang/internal/adapters/redis"
 	"code-base-golang/internal/adapters/s3"
 	"code-base-golang/internal/adapters/smtp"
+	"code-base-golang/internal/adapters/stt"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/pkg/migration"
@@ -114,12 +117,21 @@ func main() {
 	// Initialize SMTP mailer adapter
 	smtpAdapter := smtp.New(cfg)
 
+	// Initialize AI provider adapters (OmniRoute / OpenAI-Compatible)
+	sttAdapter := stt.NewOmniRoute(cfg)
+	llmAdapter := llm.NewOmniRoute(cfg)
+	embeddingAdapter := embedding.NewOmniRoute(cfg)
+
 	repo := repositories.New(db.DB(), rdb)
 	var publisher services.EventPublisher
 	if broker != nil {
 		publisher = broker
 	}
-	svc := services.New(cfg, repo, storage, publisher).WithMailer(smtpAdapter)
+	svc := services.New(cfg, repo, storage, publisher).
+		WithMailer(smtpAdapter).
+		WithSTT(sttAdapter).
+		WithLLM(llmAdapter).
+		WithEmbedding(embeddingAdapter)
 	ctrls := controllers.New(cfg, svc)
 	router := routes.NewRouter(cfg, ctrls)
 

@@ -146,4 +146,22 @@ func (r *ForgotPasswordRequest) Validate() error {
 	)
 }
 
+// ResetPasswordRequest defines the input payload for confirming a password reset with a valid token.
+type ResetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
+}
 
+// Validate performs structural and semantic validation on ResetPasswordRequest.
+func (r *ResetPasswordRequest) Validate() error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Token,
+			validation.Required.Error("token is required"),
+		),
+		validation.Field(&r.NewPassword,
+			validation.Required.Error("new_password is required"),
+			validation.Length(8, 72).Error("new_password must be between 8 and 72 characters"),
+			validation.Match(digitRegex).Error("new_password must contain at least one digit"),
+		),
+	)
+}

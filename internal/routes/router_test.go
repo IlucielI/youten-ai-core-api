@@ -226,6 +226,22 @@ func TestRouter_AuthEndpoints(t *testing.T) {
 	if wForgot.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wForgot.Code)
 	}
+
+	// Verify POST /v1/auth/reset-password route is registered and resolves to handler
+	wReset := httptest.NewRecorder()
+	reqReset, err := http.NewRequest(http.MethodPost, "/v1/auth/reset-password", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("failed to create reset-password request: %v", err)
+	}
+	reqReset.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(wReset, reqReset)
+	if wReset.Code == http.StatusNotFound {
+		t.Fatalf("expected /v1/auth/reset-password to be registered, but got 404 Not Found")
+	}
+	if wReset.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wReset.Code)
+	}
 }
 
 func TestRouter_RoutesRegistration(t *testing.T) {
@@ -242,6 +258,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		"/v1/auth/refresh":         "POST",
 		"/v1/auth/logout":          "POST",
 		"/v1/auth/forgot-password": "POST",
+		"/v1/auth/reset-password":  "POST",
 	}
 
 	registered := make(map[string]string)

@@ -261,4 +261,60 @@ func TestForgotPasswordRequest_Validate(t *testing.T) {
 	}
 }
 
+func TestResetPasswordRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.ResetPasswordRequest
+		wantErr bool
+	}{
+		{
+			name: "valid request",
+			req: dtos.ResetPasswordRequest{
+				Token:       "secure-32-byte-hex-token",
+				NewPassword: "newPassword123",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing token",
+			req: dtos.ResetPasswordRequest{
+				Token:       "",
+				NewPassword: "newPassword123",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing password",
+			req: dtos.ResetPasswordRequest{
+				Token:       "secure-32-byte-hex-token",
+				NewPassword: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "password too short",
+			req: dtos.ResetPasswordRequest{
+				Token:       "secure-32-byte-hex-token",
+				NewPassword: "short1",
+			},
+			wantErr: true,
+		},
+		{
+			name: "password missing digit",
+			req: dtos.ResetPasswordRequest{
+				Token:       "secure-32-byte-hex-token",
+				NewPassword: "noDigitsHerePassword",
+			},
+			wantErr: true,
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ResetPasswordRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

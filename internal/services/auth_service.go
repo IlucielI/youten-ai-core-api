@@ -357,4 +357,72 @@ func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRe
 	return nil
 }
 
+// ResetPassword confirms a password reset request using a valid, unexpired reset token.
+// Upon successful reset, the user's password is updated with bcrypt hash, the reset token
+// is marked as revoked, and all other active user sessions (refresh tokens) are revoked.
+func (s *Service) ResetPassword(ctx context.Context, req *dtos.ResetPasswordRequest) error {
+	if s == nil || s.repo == nil {
+		return constants.ErrInternalServerError
+	}
+	if req == nil {
+		return constants.ErrBadRequest.WithMessage("reset password payload is required")
+	}
 
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		return constants.ErrBadRequest.WithMessage("token is required")
+	}
+	if len(req.NewPassword) < 8 || len(req.NewPassword) > 72 {
+		return constants.ErrBadRequest.WithMessage("password must be between 8 and 72 characters")
+	}
+
+	// Hash raw token with SHA256 to query database
+	tokenHash := hasher.HashToken(token)
+
+	// Retrieve valid unrevoked, unexpired reset token
+	authToken, err := s.repo.FindAuthTokenByHashAndType(ctx, tokenHash, constants.AuthTokenTypeReset)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrInvalidToken.WithMessage("invalid or expired reset token")
+		}
+		return s.wrapError(ctx, err)
+	}
+	if authToken == nil {
+		return constants.ErrInvalidToken.WithMessage("invalid or expired reset token")
+	}
+
+	// Retrieve user by ID
+	user, err := s.repo.FindUserByID(ctx, authToken.UserID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound.WithMessage("user not found")
+		}
+		return s.wrapError(ctx, err)
+	}
+	if user == nil || user.Status != constants.UserStatusActive {
+		return constants.ErrUserInactive
+	}
+
+	// Hash new password using bcrypt
+	passwordHash, err := hasher.HashPassword(req.NewPassword)
+	if err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	// Update user's password in database
+	if err := s.repo.UpdateUserPassword(ctx, user.ID, passwordHash); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	// Mark the reset token as consumed
+	if err := s.repo.RevokeAuthToken(ctx, authToken.ID); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	// Invalidate all other active sessions (refresh tokens) for security
+	if err := s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, constants.AuthTokenTypeRefresh); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	return nil
+}

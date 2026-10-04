@@ -1185,4 +1185,274 @@ func TestService_ForgotPassword_NilReceiverAndPayload(t *testing.T) {
 	}
 }
 
+func TestService_ResetPassword_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
 
+	rawToken := "valid-reset-token-hex"
+	tokenHash := hasher.HashToken(rawToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. Mock finding reset token in auth_tokens
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeReset, tokenHash, now.Add(15*time.Minute), now, now))
+
+	// 2. Mock finding user in users table
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, "user@example.com", "Test User", constants.UserStatusActive, now))
+
+	// 3. Mock updating user password hash
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "password_hash"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. Mock revoking the reset token
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 5. Mock revoking all active refresh tokens for the user
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeRefresh).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	req := &dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+
+	err := svc.ResetPassword(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected nil error on valid reset password, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ResetPassword_TokenNotFoundOrExpired(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	rawToken := "expired-or-invalid-token"
+	tokenHash := hasher.HashToken(rawToken)
+
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	req := &dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+
+	err := svc.ResetPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on non-existent or expired reset token, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ResetPassword_UserNotFound(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	rawToken := "valid-token-for-missing-user"
+	tokenHash := hasher.HashToken(rawToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeReset, tokenHash, now.Add(15*time.Minute), now, now))
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	req := &dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+
+	err := svc.ResetPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error when user not found, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ResetPassword_InactiveUser(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	rawToken := "valid-token-for-suspended-user"
+	tokenHash := hasher.HashToken(rawToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeReset, tokenHash, now.Add(15*time.Minute), now, now))
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, "suspended@example.com", "Suspended User", constants.UserStatusSuspended, now))
+
+	req := &dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+
+	err := svc.ResetPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on inactive user, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ResetPassword_UpdatePasswordError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	rawToken := "token-update-pass-err"
+	tokenHash := hasher.HashToken(rawToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeReset, tokenHash, now.Add(15*time.Minute), now, now))
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, "user@example.com", "Test User", constants.UserStatusActive, now))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "password_hash"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID).
+		WillReturnError(errors.New("db deadlock on password update"))
+	mock.ExpectRollback()
+
+	req := &dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+
+	err := svc.ResetPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on password update DB error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ResetPassword_RevokeTokenError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	rawToken := "token-revoke-err"
+	tokenHash := hasher.HashToken(rawToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeReset, tokenHash, now.Add(15*time.Minute), now, now))
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, "user@example.com", "Test User", constants.UserStatusActive, now))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "password_hash"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnError(errors.New("db error revoking reset token"))
+	mock.ExpectRollback()
+
+	req := &dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+
+	err := svc.ResetPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on token revocation DB error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ResetPassword_NilReceiverAndPayload(t *testing.T) {
+	var nilSvc *services.Service
+	err := nilSvc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "tok", NewPassword: "newPassword123"})
+	if err == nil {
+		t.Fatal("expected error on nil service receiver, got nil")
+	}
+
+	svc, _, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	err = svc.ResetPassword(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error on nil reset password request, got nil")
+	}
+
+	err = svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "   ", NewPassword: "newPassword123"})
+	if err == nil {
+		t.Fatal("expected error on empty token, got nil")
+	}
+
+	err = svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "valid-tok", NewPassword: "short"})
+	if err == nil {
+		t.Fatal("expected error on short password, got nil")
+	}
+
+	err = svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "valid-tok", NewPassword: strings.Repeat("a", 73)})
+	if err == nil {
+		t.Fatal("expected error on password > 72 chars, got nil")
+	}
+}

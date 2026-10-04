@@ -15,6 +15,9 @@ type Service struct {
 	repo      *repositories.Repositories
 	publisher EventPublisher
 	mailer    EmailSender
+	stt       STTProvider
+	llm       LLMProvider
+	embedding EmbeddingProvider
 }
 
 // New creates a new unified service container.
@@ -87,6 +90,63 @@ func (s *Service) Mailer() EmailSender {
 		return nil
 	}
 	return s.mailer
+}
+
+// SetSTT allows injecting or overriding STT provider adapter.
+func (s *Service) SetSTT(stt STTProvider) {
+	s.stt = stt
+}
+
+// WithSTT fluently sets the STT provider adapter.
+func (s *Service) WithSTT(stt STTProvider) *Service {
+	s.stt = stt
+	return s
+}
+
+// STT returns the underlying STT provider adapter.
+func (s *Service) STT() STTProvider {
+	if s == nil {
+		return nil
+	}
+	return s.stt
+}
+
+// SetLLM allows injecting or overriding LLM provider adapter.
+func (s *Service) SetLLM(llm LLMProvider) {
+	s.llm = llm
+}
+
+// WithLLM fluently sets the LLM provider adapter.
+func (s *Service) WithLLM(llm LLMProvider) *Service {
+	s.llm = llm
+	return s
+}
+
+// LLM returns the underlying LLM provider adapter.
+func (s *Service) LLM() LLMProvider {
+	if s == nil {
+		return nil
+	}
+	return s.llm
+}
+
+// SetEmbedding allows injecting or overriding Embedding provider adapter.
+func (s *Service) SetEmbedding(emb EmbeddingProvider) {
+	s.embedding = emb
+}
+
+// WithEmbedding fluently sets the Embedding provider adapter.
+func (s *Service) WithEmbedding(emb EmbeddingProvider) *Service {
+	s.embedding = emb
+	return s
+}
+
+// Embedding returns the underlying Embedding provider adapter.
+func (s *Service) Embedding() EmbeddingProvider {
+	if s == nil {
+		return nil
+	}
+	return s.embedding
 }
 
 // wrapError wraps unknown or system errors into structured AppError.

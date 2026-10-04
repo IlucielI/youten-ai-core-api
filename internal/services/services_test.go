@@ -169,3 +169,64 @@ func TestService_EmailSender_Mock(t *testing.T) {
 	}
 }
 
+type dummySTT struct{}
+
+func (d *dummySTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts STTOptions) (*TranscriptionResult, error) {
+	return nil, nil
+}
+
+type dummyLLM struct{}
+
+func (d *dummyLLM) GenerateStructured(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*StructuredResponse, error) {
+	return nil, nil
+}
+
+func (d *dummyLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []ChatMessageInput, opts ChatOptions) (*ChatResponse, error) {
+	return nil, nil
+}
+
+func (d *dummyLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []ChatMessageInput, opts ChatOptions) (<-chan StreamChunk, error) {
+	return nil, nil
+}
+
+type dummyEmbedding struct{}
+
+func (d *dummyEmbedding) CreateEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+	return nil, nil
+}
+
+func TestService_AIProviders(t *testing.T) {
+	var nilSvc *Service
+	if nilSvc.STT() != nil || nilSvc.LLM() != nil || nilSvc.Embedding() != nil {
+		t.Error("expected nil providers for nil service")
+	}
+
+	sttInst := &dummySTT{}
+	llmInst := &dummyLLM{}
+	embInst := &dummyEmbedding{}
+
+	svc := New(config.Config{}, nil, nil).
+		WithSTT(sttInst).
+		WithLLM(llmInst).
+		WithEmbedding(embInst)
+
+	if svc.STT() != sttInst {
+		t.Errorf("expected stt %v, got %v", sttInst, svc.STT())
+	}
+	if svc.LLM() != llmInst {
+		t.Errorf("expected llm %v, got %v", llmInst, svc.LLM())
+	}
+	if svc.Embedding() != embInst {
+		t.Errorf("expected embedding %v, got %v", embInst, svc.Embedding())
+	}
+
+	// Test Set methods
+	svc.SetSTT(nil)
+	svc.SetLLM(nil)
+	svc.SetEmbedding(nil)
+
+	if svc.STT() != nil || svc.LLM() != nil || svc.Embedding() != nil {
+		t.Error("expected nil providers after Set(nil)")
+	}
+}
+

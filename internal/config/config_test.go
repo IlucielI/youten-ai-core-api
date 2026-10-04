@@ -73,6 +73,36 @@ func TestConfig_LoadDefaults(t *testing.T) {
 	if cfg.IdempotencyTTL != 24*time.Hour {
 		t.Errorf("expected IdempotencyTTL 24h, got %v", cfg.IdempotencyTTL)
 	}
+	if cfg.LLMAPIKey != "" {
+		t.Errorf("expected empty LLMAPIKey, got %q", cfg.LLMAPIKey)
+	}
+	if cfg.LLMProvider != "openai_compatible" {
+		t.Errorf("expected LLMProvider 'openai_compatible', got %q", cfg.LLMProvider)
+	}
+	if cfg.LLMBaseURL != "http://localhost:20128/v1" {
+		t.Errorf("expected LLMBaseURL 'http://localhost:20128/v1', got %q", cfg.LLMBaseURL)
+	}
+	if cfg.LLMModel != "gpt-4o-mini" {
+		t.Errorf("expected LLMModel 'gpt-4o-mini', got %q", cfg.LLMModel)
+	}
+	if cfg.STTModel != "whisper-1" {
+		t.Errorf("expected STTModel 'whisper-1', got %q", cfg.STTModel)
+	}
+	if cfg.EmbeddingModel != "cf/@cf/baai/bge-m3" {
+		t.Errorf("expected EmbeddingModel 'cf/@cf/baai/bge-m3', got %q", cfg.EmbeddingModel)
+	}
+	if cfg.EmbeddingDimension != 1024 {
+		t.Errorf("expected EmbeddingDimension 1024, got %d", cfg.EmbeddingDimension)
+	}
+	if cfg.RAGChunkTokens != 300 {
+		t.Errorf("expected RAGChunkTokens 300, got %d", cfg.RAGChunkTokens)
+	}
+	if cfg.RAGChunkOverlapTokens != 50 {
+		t.Errorf("expected RAGChunkOverlapTokens 50, got %d", cfg.RAGChunkOverlapTokens)
+	}
+	if cfg.RAGTopK != 5 {
+		t.Errorf("expected RAGTopK 5, got %d", cfg.RAGTopK)
+	}
 }
 
 func TestConfig_CustomEnv(t *testing.T) {
@@ -81,6 +111,16 @@ func TestConfig_CustomEnv(t *testing.T) {
 	t.Setenv("HTTP_PORT", "9000")
 	t.Setenv("APP_VERSION", "1.0.0")
 	t.Setenv("GIT_HASH", "commit123")
+	t.Setenv("LLM_API_KEY", "sk-secret123")
+	t.Setenv("LLM_PROVIDER", "custom_gateway")
+	t.Setenv("LLM_BASE_URL", "https://api.omniroute.ai/v1")
+	t.Setenv("LLM_MODEL", "gpt-4o")
+	t.Setenv("STT_MODEL", "whisper-large-v3")
+	t.Setenv("EMBEDDING_MODEL", "text-embedding-3-small")
+	t.Setenv("EMBEDDING_DIMENSION", "1536")
+	t.Setenv("RAG_CHUNK_TOKENS", "500")
+	t.Setenv("RAG_CHUNK_OVERLAP_TOKENS", "100")
+	t.Setenv("RAG_TOP_K", "10")
 
 	cfg := config.Load()
 
@@ -98,6 +138,36 @@ func TestConfig_CustomEnv(t *testing.T) {
 	}
 	if cfg.GitHash != "commit123" {
 		t.Errorf("expected GitHash 'commit123', got %q", cfg.GitHash)
+	}
+	if cfg.LLMAPIKey != "sk-secret123" {
+		t.Errorf("expected LLMAPIKey 'sk-secret123', got %q", cfg.LLMAPIKey)
+	}
+	if cfg.LLMProvider != "custom_gateway" {
+		t.Errorf("expected LLMProvider 'custom_gateway', got %q", cfg.LLMProvider)
+	}
+	if cfg.LLMBaseURL != "https://api.omniroute.ai/v1" {
+		t.Errorf("expected LLMBaseURL 'https://api.omniroute.ai/v1', got %q", cfg.LLMBaseURL)
+	}
+	if cfg.LLMModel != "gpt-4o" {
+		t.Errorf("expected LLMModel 'gpt-4o', got %q", cfg.LLMModel)
+	}
+	if cfg.STTModel != "whisper-large-v3" {
+		t.Errorf("expected STTModel 'whisper-large-v3', got %q", cfg.STTModel)
+	}
+	if cfg.EmbeddingModel != "text-embedding-3-small" {
+		t.Errorf("expected EmbeddingModel 'text-embedding-3-small', got %q", cfg.EmbeddingModel)
+	}
+	if cfg.EmbeddingDimension != 1536 {
+		t.Errorf("expected EmbeddingDimension 1536, got %d", cfg.EmbeddingDimension)
+	}
+	if cfg.RAGChunkTokens != 500 {
+		t.Errorf("expected RAGChunkTokens 500, got %d", cfg.RAGChunkTokens)
+	}
+	if cfg.RAGChunkOverlapTokens != 100 {
+		t.Errorf("expected RAGChunkOverlapTokens 100, got %d", cfg.RAGChunkOverlapTokens)
+	}
+	if cfg.RAGTopK != 10 {
+		t.Errorf("expected RAGTopK 10, got %d", cfg.RAGTopK)
 	}
 }
 

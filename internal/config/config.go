@@ -89,6 +89,18 @@ type Config struct {
 	SMTPFromName  string
 	SMTPUseTLS    bool
 	SMTPUseSSL    bool
+
+	// AI Services & OmniRoute Configuration
+	LLMAPIKey             string
+	LLMProvider           string
+	LLMBaseURL            string
+	LLMModel              string
+	STTModel              string
+	EmbeddingModel        string
+	EmbeddingDimension    int
+	RAGChunkTokens        int
+	RAGChunkOverlapTokens int
+	RAGTopK               int
 }
 
 func Load() Config {
@@ -172,6 +184,18 @@ func Load() Config {
 		SMTPFromName:  getEnv("SMTP_FROM_NAME", "Application Notification"),
 		SMTPUseTLS:    getEnvBool("SMTP_USE_TLS", false),
 		SMTPUseSSL:    getEnvBool("SMTP_USE_SSL", false),
+
+		// AI Services & OmniRoute settings
+		LLMAPIKey:             getEnv("LLM_API_KEY", ""),
+		LLMProvider:           getEnv("LLM_PROVIDER", "openai_compatible"),
+		LLMBaseURL:            getEnv("LLM_BASE_URL", "http://localhost:20128/v1"),
+		LLMModel:              getEnv("LLM_MODEL", "gpt-4o-mini"),
+		STTModel:              getEnv("STT_MODEL", "whisper-1"),
+		EmbeddingModel:         getEnv("EMBEDDING_MODEL", "cf/@cf/baai/bge-m3"),
+		EmbeddingDimension:     getEnvInt("EMBEDDING_DIMENSION", 1024),
+		RAGChunkTokens:         getEnvInt("RAG_CHUNK_TOKENS", 300),
+		RAGChunkOverlapTokens:  getEnvInt("RAG_CHUNK_OVERLAP_TOKENS", 50),
+		RAGTopK:                getEnvInt("RAG_TOP_K", 5),
 	}
 }
 

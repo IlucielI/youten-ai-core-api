@@ -332,10 +332,10 @@ func TestService_Login_SuspendedUser(t *testing.T) {
 
 	resp, err := svc.Login(context.Background(), req)
 	if err == nil {
-		t.Fatal("expected forbidden error, got nil")
+		t.Fatal("expected unauthorized error, got nil")
 	}
-	if !errors.Is(err, constants.ErrUserInactive) {
-		t.Errorf("expected ErrUserInactive, got %v", err)
+	if !errors.Is(err, constants.ErrInvalidCredentials) {
+		t.Errorf("expected ErrInvalidCredentials, got %v", err)
 	}
 	if resp != nil {
 		t.Errorf("expected nil response, got %v", resp)

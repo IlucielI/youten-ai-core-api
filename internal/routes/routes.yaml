@@ -2,24 +2,24 @@
 # Maps HTTP endpoints directly to Server methods
 routes:
   # Health check endpoint
-  - Method: GET
-    Path: /v1/health
-    Handler: HealthCheck
+  - method: GET
+    path: /v1/health
+    handler: HealthCheck
 
   # Documentation endpoints
-  - Method: GET
-    Path: /openapi.yaml
-    Handler: OpenAPISpec
+  - method: GET
+    path: /openapi.yaml
+    handler: OpenAPISpec
 
-  - Method: GET
-    Path: /docs
-    Handler: APIDocs
+  - method: GET
+    path: /docs
+    handler: APIDocs
 
   # Authentication endpoints
-  - Method: POST
-    Path: /v1/auth/register
-    Handler: Register
+  - method: POST
+    path: /v1/auth/register
+    handler: Register
 
-  - Method: POST
-    Path: /v1/auth/login
-    Handler: Login
+  - method: POST
+    path: /v1/auth/login
+    handler: Login

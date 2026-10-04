@@ -95,7 +95,7 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 	}
 
 	if user.Status != constants.UserStatusActive {
-		return nil, constants.ErrUserInactive
+		return nil, constants.ErrInvalidCredentials
 	}
 
 	if !hasher.VerifyPassword(user.PasswordHash, req.Password) {

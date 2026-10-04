@@ -4,21 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 )
 
-// ChunkerConfig contains tuning parameters for transcript semantic chunking.
-type ChunkerConfig struct {
-	MaxTokens     int
-	OverlapTokens int
-}
-
 // DefaultChunkerConfig returns standard RAG chunking parameters (300 tokens, 50 overlap).
-func DefaultChunkerConfig() ChunkerConfig {
-	return ChunkerConfig{
-		MaxTokens:     300,
-		OverlapTokens: 50,
-	}
+func DefaultChunkerConfig() dtos.ChunkerConfig {
+	return dtos.DefaultChunkerConfig()
 }
 
 // EstimateTokens provides a lightweight token estimation for text.
@@ -37,8 +29,8 @@ func EstimateTokens(text string) int {
 	return tokens
 }
 
-// ChunkTranscriptSegments partitions SegmentResult items into overlapping chunks with precise time boundaries.
-func ChunkTranscriptSegments(segments []SegmentResult, cfg ChunkerConfig) []TranscriptChunkData {
+// ChunkTranscriptSegments partitions dtos.SegmentResult items into overlapping chunks with precise time boundaries.
+func ChunkTranscriptSegments(segments []dtos.SegmentResult, cfg dtos.ChunkerConfig) []dtos.TranscriptChunkData {
 	if len(segments) == 0 {
 		return nil
 	}
@@ -55,14 +47,14 @@ func ChunkTranscriptSegments(segments []SegmentResult, cfg ChunkerConfig) []Tran
 		overlapTokens = maxTokens / 4
 	}
 
-	var chunks []TranscriptChunkData
+	var chunks []dtos.TranscriptChunkData
 	chunkIndex := 0
 
 	n := len(segments)
 	i := 0
 
 	for i < n {
-		var currentSegments []SegmentResult
+		var currentSegments []dtos.SegmentResult
 		currentTokens := 0
 		firstIdx := i
 
@@ -94,7 +86,7 @@ func ChunkTranscriptSegments(segments []SegmentResult, cfg ChunkerConfig) []Tran
 			sb.WriteString(formatSegmentText(s.SpeakerLabel, s.Text))
 		}
 
-		chunk := TranscriptChunkData{
+		chunk := dtos.TranscriptChunkData{
 			ChunkIndex: chunkIndex,
 			Content:    sb.String(),
 			StartTime:  currentSegments[0].Start,
@@ -148,18 +140,18 @@ func ChunkTranscriptSegments(segments []SegmentResult, cfg ChunkerConfig) []Tran
 }
 
 // ChunkModelSegments converts models.TranscriptSegment records into overlapping chunks.
-func ChunkModelSegments(segments []models.TranscriptSegment, cfg ChunkerConfig) []TranscriptChunkData {
+func ChunkModelSegments(segments []models.TranscriptSegment, cfg dtos.ChunkerConfig) []dtos.TranscriptChunkData {
 	if len(segments) == 0 {
 		return nil
 	}
 
-	results := make([]SegmentResult, len(segments))
+	results := make([]dtos.SegmentResult, len(segments))
 	for i, seg := range segments {
 		speaker := seg.SpeakerName
 		if speaker == "" {
 			speaker = seg.SpeakerLabel
 		}
-		results[i] = SegmentResult{
+		results[i] = dtos.SegmentResult{
 			ID:           seg.SequenceOrder,
 			Start:        seg.StartTime,
 			End:          seg.EndTime,

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
 )
 
@@ -30,7 +31,7 @@ func TestRAG_FormatTimestamp(t *testing.T) {
 }
 
 func TestRAG_BuildRAGPrompt(t *testing.T) {
-	chunks := []services.TranscriptChunkData{
+	chunks := []dtos.TranscriptChunkData{
 		{
 			ChunkIndex: 0,
 			Content:    "[Speaker 1]: We decided to launch the product in November.",

@@ -10,6 +10,7 @@ import (
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/dtos"
 )
 
 // mockStorage implements FileStorage for unit testing without S3 or MinIO.
@@ -171,21 +172,21 @@ func TestService_EmailSender_Mock(t *testing.T) {
 
 type dummySTT struct{}
 
-func (d *dummySTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts STTOptions) (*TranscriptionResult, error) {
+func (d *dummySTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
 	return nil, nil
 }
 
 type dummyLLM struct{}
 
-func (d *dummyLLM) GenerateStructured(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*StructuredResponse, error) {
+func (d *dummyLLM) GenerateStructured(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
 	return nil, nil
 }
 
-func (d *dummyLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []ChatMessageInput, opts ChatOptions) (*ChatResponse, error) {
+func (d *dummyLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
 	return nil, nil
 }
 
-func (d *dummyLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []ChatMessageInput, opts ChatOptions) (<-chan StreamChunk, error) {
+func (d *dummyLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
 	return nil, nil
 }
 
@@ -197,7 +198,7 @@ func (d *dummyEmbedding) CreateEmbeddings(ctx context.Context, texts []string) (
 
 type dummyAudioExtractor struct{}
 
-func (d *dummyAudioExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader, filename string) (*AudioExtractionResult, error) {
+func (d *dummyAudioExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader, filename string) (*dtos.AudioExtractionResult, error) {
 	return nil, nil
 }
 

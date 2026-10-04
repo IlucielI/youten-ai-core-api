@@ -1,0 +1,12 @@
+Transcript Context:
+{{- if .Chunks}}
+{{range .Chunks}}
+--- Context [{{.StartFormatted}} - {{.EndFormatted}}] (Chunk #{{.ChunkIndex}}) ---
+{{.Content}}
+{{end}}
+{{- else}}
+(No transcript context available)
+{{- end}}
+
+Question: {{.Query}}
+Answer:

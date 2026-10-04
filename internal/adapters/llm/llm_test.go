@@ -12,7 +12,7 @@ import (
 
 	"code-base-golang/internal/adapters/llm"
 	"code-base-golang/internal/config"
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 func TestOmniRouteLLM_GenerateStructured(t *testing.T) {
@@ -117,9 +117,9 @@ func TestOmniRouteLLM_GenerateChatResponse(t *testing.T) {
 
 	temp := 0.7
 	maxTok := 256
-	resp, err := adapter.GenerateChatResponse(context.Background(), "System", []services.ChatMessageInput{
+	resp, err := adapter.GenerateChatResponse(context.Background(), "System", []dtos.ChatMessageInput{
 		{Role: "user", Content: "Hello"},
-	}, services.ChatOptions{
+	}, dtos.ChatOptions{
 		Temperature: &temp,
 		MaxTokens:   &maxTok,
 	})
@@ -163,9 +163,9 @@ func TestOmniRouteLLM_StreamChatResponse(t *testing.T) {
 	cfg := config.Config{LLMBaseURL: server.URL}
 	adapter := llm.NewOmniRoute(cfg)
 
-	ch, err := adapter.StreamChatResponse(context.Background(), "System", []services.ChatMessageInput{
+	ch, err := adapter.StreamChatResponse(context.Background(), "System", []dtos.ChatMessageInput{
 		{Role: "user", Content: "Stream please"},
-	}, services.ChatOptions{})
+	}, dtos.ChatOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,13 +219,13 @@ func TestMockLLM(t *testing.T) {
 	}
 
 	// Default chat
-	cRes, err := mock.GenerateChatResponse(context.Background(), "", nil, services.ChatOptions{})
+	cRes, err := mock.GenerateChatResponse(context.Background(), "", nil, dtos.ChatOptions{})
 	if err != nil || !strings.Contains(cRes.Content, "sprint planning") {
 		t.Errorf("unexpected default chat response: %v, %v", cRes, err)
 	}
 
 	// Default stream
-	stream, err := mock.StreamChatResponse(context.Background(), "", nil, services.ChatOptions{})
+	stream, err := mock.StreamChatResponse(context.Background(), "", nil, dtos.ChatOptions{})
 	if err != nil {
 		t.Fatalf("unexpected stream error: %v", err)
 	}
@@ -238,10 +238,10 @@ func TestMockLLM(t *testing.T) {
 	}
 
 	// Custom hook
-	mock.GenerateChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []services.ChatMessageInput, opts services.ChatOptions) (*services.ChatResponse, error) {
+	mock.GenerateChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
 		return nil, fmt.Errorf("custom hook error")
 	}
-	_, err = mock.GenerateChatResponse(context.Background(), "", nil, services.ChatOptions{})
+	_, err = mock.GenerateChatResponse(context.Background(), "", nil, dtos.ChatOptions{})
 	if err == nil || err.Error() != "custom hook error" {
 		t.Errorf("expected custom hook error, got %v", err)
 	}
@@ -266,7 +266,7 @@ func TestOmniRouteLLM_StreamContextCancel(t *testing.T) {
 	cfg := config.Config{LLMBaseURL: server.URL}
 	adapter := llm.NewOmniRoute(cfg)
 
-	ch, err := adapter.StreamChatResponse(ctx, "", nil, services.ChatOptions{})
+	ch, err := adapter.StreamChatResponse(ctx, "", nil, dtos.ChatOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -19,6 +19,7 @@ import (
 	"code-base-golang/internal/adapters/stt"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
 	"code-base-golang/internal/repositories"
@@ -178,8 +179,8 @@ func TestPipelineService_ProcessTranscription_NoSpeech(t *testing.T) {
 
 	// Mock STT to return empty transcript
 	emptySTT := &stt.MockSTT{
-		TranscribeFunc: func(ctx context.Context, reader io.Reader, filename string, opts services.STTOptions) (*services.TranscriptionResult, error) {
-			return &services.TranscriptionResult{
+		TranscribeFunc: func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
+			return &dtos.TranscriptionResult{
 				Text:     "",
 				Segments: nil,
 			}, nil

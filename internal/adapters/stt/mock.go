@@ -30,7 +30,7 @@ func (m *MockSTT) Transcribe(ctx context.Context, reader io.Reader, filename str
 	}
 
 	return &dtos.TranscriptionResult{
-		Text:     "Welcome to today's project review meeting. We are on track for Q4.",
+		Text:     "Welcome to today's project review meeting. We are on track for Q4 deliverables.",
 		Language: lang,
 		Duration: 12.5,
 		Segments: []dtos.SegmentResult{

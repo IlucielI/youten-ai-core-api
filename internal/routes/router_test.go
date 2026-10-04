@@ -157,3 +157,25 @@ func TestRouter_DocsEndpoints(t *testing.T) {
 		})
 	}
 }
+
+func TestRouter_AuthEndpoints(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	// Verify POST /v1/auth/login route is registered and resolves to handler (returns 400 for empty body, not 404)
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest(http.MethodPost, "/v1/auth/login", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+	if w.Code == http.StatusNotFound {
+		t.Fatalf("expected /v1/auth/login to be registered, but got 404 Not Found")
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", w.Code)
+	}
+}

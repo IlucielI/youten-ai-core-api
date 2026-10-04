@@ -1,0 +1,88 @@
+package dtos_test
+
+import (
+	"testing"
+
+	"code-base-golang/internal/dtos"
+)
+
+func TestRegisterRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.RegisterRequest
+		wantErr bool
+	}{
+		{
+			name: "valid request",
+			req: dtos.RegisterRequest{
+				Email:    "test@example.com",
+				Password: "password123",
+				FullName: "John Doe",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing email",
+			req: dtos.RegisterRequest{
+				Email:    "",
+				Password: "password123",
+				FullName: "John Doe",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid email format",
+			req: dtos.RegisterRequest{
+				Email:    "invalid-email",
+				Password: "password123",
+				FullName: "John Doe",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing full name",
+			req: dtos.RegisterRequest{
+				Email:    "test@example.com",
+				Password: "password123",
+				FullName: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "full name too short",
+			req: dtos.RegisterRequest{
+				Email:    "test@example.com",
+				Password: "password123",
+				FullName: "J",
+			},
+			wantErr: true,
+		},
+		{
+			name: "password too short (< 8 chars)",
+			req: dtos.RegisterRequest{
+				Email:    "test@example.com",
+				Password: "pass1",
+				FullName: "John Doe",
+			},
+			wantErr: true,
+		},
+		{
+			name: "password missing digit",
+			req: dtos.RegisterRequest{
+				Email:    "test@example.com",
+				Password: "passwordonly",
+				FullName: "John Doe",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RegisterRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

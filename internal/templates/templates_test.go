@@ -68,7 +68,7 @@ func TestTemplates_SummaryPrompts(t *testing.T) {
 		t.Errorf("unexpected summary system prompt: %s", sys)
 	}
 
-	user, err := templates.RenderSummaryUserPrompt("Meeting transcript goes here.")
+	user, err := templates.RenderSummaryUserPrompt("Meeting transcript goes here.", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

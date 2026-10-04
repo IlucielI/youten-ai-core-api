@@ -262,7 +262,10 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 	transcriptBody := sb.String()
 
-	systemPrompt, _ := templates.DefaultSummarySystemPrompt()
+	systemPrompt, err := templates.DefaultSummarySystemPrompt()
+	if err != nil {
+		systemPrompt = "You are a professional executive meeting secretary and structured summarizer."
+	}
 	if template != nil && template.Prompt != "" {
 		systemPrompt = template.Prompt
 	}

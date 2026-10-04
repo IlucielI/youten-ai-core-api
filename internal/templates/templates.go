@@ -107,14 +107,10 @@ func DefaultSummarySystemPrompt() (string, error) {
 }
 
 // RenderSummaryUserPrompt renders the user prompt containing the transcript body to be summarized.
-// Optional targetLanguage specifies the requested output language (e.g. "Indonesian", "English", "id", "en").
-func RenderSummaryUserPrompt(transcriptBody string, targetLanguage ...string) (string, error) {
-	lang := ""
-	if len(targetLanguage) > 0 {
-		lang = strings.TrimSpace(targetLanguage[0])
-	}
+// targetLanguage specifies the requested output language (e.g. "Indonesian", "English", "id", "en"), or empty for speaker's primary language.
+func RenderSummaryUserPrompt(transcriptBody string, targetLanguage string) (string, error) {
 	data := SummaryUserData{
-		Language:       lang,
+		Language:       strings.TrimSpace(targetLanguage),
 		TranscriptBody: strings.TrimSpace(transcriptBody),
 	}
 	var buf bytes.Buffer

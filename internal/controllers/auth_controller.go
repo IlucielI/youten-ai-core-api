@@ -94,3 +94,30 @@ func (c *Controllers) RefreshToken(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// Logout handles session termination and refresh token revocation.
+func (c *Controllers) Logout(ctx *gin.Context) {
+	var req dtos.LogoutRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.Validate(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	if err := c.svc.Logout(ctx.Request.Context(), &req); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.BaseResponse{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Logout successful",
+		Timestamp: time.Now(),
+	})
+}
+

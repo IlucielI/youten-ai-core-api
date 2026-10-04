@@ -699,3 +699,185 @@ func TestService_RefreshToken_NilChecks(t *testing.T) {
 		t.Errorf("expected nil response, got %v", resp)
 	}
 }
+
+func TestService_Logout_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	refreshToken := "valid.refresh.token.for.logout"
+	tokenHash := hasher.HashToken(refreshToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
+
+	// 2. RevokeAuthToken
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	req := &dtos.LogoutRequest{
+		RefreshToken: refreshToken,
+	}
+
+	err := svc.Logout(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected nil error on logout, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_Logout_Idempotent_NotFound(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	refreshToken := "unknown.or.expired.refresh.token"
+	tokenHash := hasher.HashToken(refreshToken)
+
+	// Token not found in DB
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	req := &dtos.LogoutRequest{
+		RefreshToken: refreshToken,
+	}
+
+	err := svc.Logout(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected nil error on idempotent logout when token not found, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_Logout_Idempotent_AlreadyRevoked(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	refreshToken := "already.revoked.refresh.token"
+	tokenHash := hasher.HashToken(refreshToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
+
+	// 2. RevokeAuthToken returns 0 rows affected (concurrently revoked)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	req := &dtos.LogoutRequest{
+		RefreshToken: refreshToken,
+	}
+
+	err := svc.Logout(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected nil error on idempotent logout when already revoked, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_Logout_DatabaseError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	refreshToken := "error.refresh.token"
+	tokenHash := hasher.HashToken(refreshToken)
+
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnError(errors.New("db connection failure"))
+
+	req := &dtos.LogoutRequest{
+		RefreshToken: refreshToken,
+	}
+
+	err := svc.Logout(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on DB lookup failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_Logout_RevokeDatabaseError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	refreshToken := "revoke.error.refresh.token"
+	tokenHash := hasher.HashToken(refreshToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnError(errors.New("db update deadlock"))
+	mock.ExpectRollback()
+
+	req := &dtos.LogoutRequest{
+		RefreshToken: refreshToken,
+	}
+
+	err := svc.Logout(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on DB revoke failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_Logout_NilReceiverAndPayload(t *testing.T) {
+	var nilSvc *services.Service
+	err := nilSvc.Logout(context.Background(), &dtos.LogoutRequest{RefreshToken: "token"})
+	if err == nil {
+		t.Fatal("expected error on nil service receiver, got nil")
+	}
+
+	svc, _, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	err = svc.Logout(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error on nil logout request, got nil")
+	}
+
+	err = svc.Logout(context.Background(), &dtos.LogoutRequest{RefreshToken: "   "})
+	if err == nil {
+		t.Fatal("expected error on empty refresh token, got nil")
+	}
+}
+

@@ -195,3 +195,29 @@ func TestRouter_AuthEndpoints(t *testing.T) {
 		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wRefresh.Code)
 	}
 }
+
+func TestRouter_RoutesRegistration(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	expectedRoutes := map[string]string{
+		"/v1/health":        "GET",
+		"/openapi.yaml":     "GET",
+		"/docs":             "GET",
+		"/v1/auth/register": "POST",
+		"/v1/auth/login":    "POST",
+		"/v1/auth/refresh":  "POST",
+	}
+
+	registered := make(map[string]string)
+	for _, route := range router.Routes() {
+		registered[route.Path] = route.Method
+	}
+
+	for path, method := range expectedRoutes {
+		if gotMethod, exists := registered[path]; !exists || gotMethod != method {
+			t.Errorf("expected route %s %s to be registered in Gin, found method %s (exists=%v)", method, path, gotMethod, exists)
+		}
+	}
+}

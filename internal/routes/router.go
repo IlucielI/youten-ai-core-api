@@ -17,6 +17,8 @@ import (
 //go:embed routes.yaml
 var routesYAML []byte
 
+// routeItem defines a route mapping from routes.yaml.
+// The schema contract strictly uses lowercase keys: method, path, handler.
 type routeItem struct {
 	Method    string `yaml:"method"`
 	Path      string `yaml:"path"`

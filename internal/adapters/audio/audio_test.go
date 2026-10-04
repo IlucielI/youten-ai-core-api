@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"code-base-golang/internal/adapters/audio"
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 func TestMockAudioExtractor_Success(t *testing.T) {
@@ -53,7 +53,7 @@ func TestMockAudioExtractor_EmptyInput(t *testing.T) {
 
 func TestMockAudioExtractor_CustomError(t *testing.T) {
 	mock := audio.NewMock()
-	mock.ExtractFn = func(ctx context.Context, input io.Reader, filename string) (*services.AudioExtractionResult, error) {
+	mock.ExtractFn = func(ctx context.Context, input io.Reader, filename string) (*dtos.AudioExtractionResult, error) {
 		return nil, errors.New("custom audio decode error")
 	}
 

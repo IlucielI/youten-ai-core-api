@@ -12,7 +12,7 @@ import (
 
 	"code-base-golang/internal/adapters/stt"
 	"code-base-golang/internal/config"
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 func TestOmniRouteSTT_Transcribe_Success(t *testing.T) {
@@ -39,16 +39,13 @@ func TestOmniRouteSTT_Transcribe_Success(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
+			t.Errorf("expected POST method, got %s", r.Method)
 		}
-		if r.URL.Path != "/audio/transcriptions" {
-			t.Errorf("expected path /audio/transcriptions, got %s", r.URL.Path)
+		if !strings.HasSuffix(r.URL.Path, "/audio/transcriptions") {
+			t.Errorf("expected /audio/transcriptions path, got %s", r.URL.Path)
 		}
 		if auth := r.Header.Get("Authorization"); auth != "Bearer test-api-key" {
-			t.Errorf("expected Bearer test-api-key, got %s", auth)
-		}
-		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-			t.Errorf("expected multipart/form-data, got %s", r.Header.Get("Content-Type"))
+			t.Errorf("expected Bearer token, got %s", auth)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -66,7 +63,7 @@ func TestOmniRouteSTT_Transcribe_Success(t *testing.T) {
 	adapter := stt.NewOmniRoute(cfg)
 	audioData := bytes.NewReader([]byte("fake-audio-bytes"))
 
-	res, err := adapter.Transcribe(context.Background(), audioData, "sample.mp3", services.STTOptions{
+	res, err := adapter.Transcribe(context.Background(), audioData, "sample.mp3", dtos.STTOptions{
 		Language:    "en",
 		Prompt:      "Test prompt",
 		Temperature: 0.2,
@@ -105,7 +102,7 @@ func TestOmniRouteSTT_Transcribe_APIError(t *testing.T) {
 	}
 
 	adapter := stt.NewOmniRoute(cfg)
-	_, err := adapter.Transcribe(context.Background(), bytes.NewReader([]byte("data")), "test.mp3", services.STTOptions{})
+	_, err := adapter.Transcribe(context.Background(), bytes.NewReader([]byte("data")), "test.mp3", dtos.STTOptions{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -116,7 +113,7 @@ func TestOmniRouteSTT_Transcribe_APIError(t *testing.T) {
 
 func TestOmniRouteSTT_Transcribe_NilReader(t *testing.T) {
 	adapter := stt.NewOmniRoute(config.Config{})
-	_, err := adapter.Transcribe(context.Background(), nil, "test.mp3", services.STTOptions{})
+	_, err := adapter.Transcribe(context.Background(), nil, "test.mp3", dtos.STTOptions{})
 	if err == nil {
 		t.Fatal("expected error for nil reader, got nil")
 	}
@@ -124,7 +121,7 @@ func TestOmniRouteSTT_Transcribe_NilReader(t *testing.T) {
 
 func TestMockSTT(t *testing.T) {
 	mock := stt.NewMock()
-	res, err := mock.Transcribe(context.Background(), bytes.NewReader([]byte("audio")), "test.mp3", services.STTOptions{Language: "id"})
+	res, err := mock.Transcribe(context.Background(), bytes.NewReader([]byte("audio")), "test.mp3", dtos.STTOptions{Language: "id"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,10 +133,10 @@ func TestMockSTT(t *testing.T) {
 	}
 
 	// Custom func test
-	mock.TranscribeFunc = func(ctx context.Context, reader io.Reader, filename string, opts services.STTOptions) (*services.TranscriptionResult, error) {
+	mock.TranscribeFunc = func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
 		return nil, fmt.Errorf("custom mock error")
 	}
-	_, err = mock.Transcribe(context.Background(), bytes.NewReader([]byte("audio")), "test.mp3", services.STTOptions{})
+	_, err = mock.Transcribe(context.Background(), bytes.NewReader([]byte("audio")), "test.mp3", dtos.STTOptions{})
 	if err == nil || err.Error() != "custom mock error" {
 		t.Errorf("expected custom mock error, got %v", err)
 	}

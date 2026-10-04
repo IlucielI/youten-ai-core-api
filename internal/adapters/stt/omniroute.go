@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
 )
 
@@ -74,7 +75,7 @@ type openAIVerboseJSON struct {
 }
 
 // Transcribe streams audio to the transcription endpoint and decodes the verbose JSON response.
-func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts services.STTOptions) (*services.TranscriptionResult, error) {
+func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("audio reader cannot be nil")
 	}
@@ -160,11 +161,11 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		return nil, fmt.Errorf("failed to parse verbose json response: %w", err)
 	}
 
-	segments := make([]services.SegmentResult, len(parsed.Segments))
+	segments := make([]dtos.SegmentResult, len(parsed.Segments))
 	for i, s := range parsed.Segments {
-		words := make([]services.WordResult, len(s.Words))
+		words := make([]dtos.WordResult, len(s.Words))
 		for wIdx, w := range s.Words {
-			words[wIdx] = services.WordResult{
+			words[wIdx] = dtos.WordResult{
 				Word:        w.Word,
 				Start:       w.Start,
 				End:         w.End,
@@ -172,7 +173,7 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 			}
 		}
 
-		segments[i] = services.SegmentResult{
+		segments[i] = dtos.SegmentResult{
 			ID:               s.ID,
 			Seek:             s.Seek,
 			Start:            s.Start,
@@ -189,7 +190,7 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 
 	// Defensive fallback if audio returned single text without segmented array
 	if len(segments) == 0 && parsed.Text != "" {
-		segments = append(segments, services.SegmentResult{
+		segments = append(segments, dtos.SegmentResult{
 			ID:    0,
 			Start: 0,
 			End:   parsed.Duration,
@@ -197,10 +198,13 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		})
 	}
 
-	return &services.TranscriptionResult{
+	return &dtos.TranscriptionResult{
 		Text:     parsed.Text,
 		Language: parsed.Language,
 		Duration: parsed.Duration,
 		Segments: segments,
 	}, nil
 }
+
+// Ensure OmniRouteSTT satisfies services.STTProvider at compile time.
+var _ services.STTProvider = (*OmniRouteSTT)(nil)

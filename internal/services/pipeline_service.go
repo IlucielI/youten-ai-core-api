@@ -11,8 +11,10 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
+	"code-base-golang/internal/templates"
 )
 
 var (
@@ -148,7 +150,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		return errors.New(errMsg)
 	}
 
-	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", STTOptions{
+	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", dtos.STTOptions{
 		Language: recording.OutputLanguage,
 	})
 	if err != nil {
@@ -260,12 +262,23 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 	transcriptBody := sb.String()
 
-	systemPrompt := "You are a professional executive meeting secretary and structured summarizer."
+	systemPrompt, err := templates.DefaultSummarySystemPrompt()
+	if err != nil {
+		systemPrompt = "You are a professional executive meeting secretary and structured summarizer."
+	}
 	if template != nil && template.Prompt != "" {
 		systemPrompt = template.Prompt
 	}
 
-	userPrompt := fmt.Sprintf("Please summarize the following meeting transcript in Indonesian (or the speaker's language):\n\n%s", transcriptBody)
+	targetLang := recording.OutputLanguage
+	if targetLang == "" {
+		targetLang = p.Language
+	}
+
+	userPrompt, err := templates.RenderSummaryUserPrompt(transcriptBody, targetLang)
+	if err != nil {
+		userPrompt = fmt.Sprintf("Please summarize the following meeting transcript:\n\n%s", transcriptBody)
+	}
 
 	var schema map[string]interface{}
 	if template != nil && len(template.OutputSchema) > 0 {

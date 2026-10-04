@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
 )
 
@@ -40,7 +41,7 @@ func (f *FFmpegExtractor) IsAvailable() bool {
 }
 
 // ExtractMonoAudio converts video/audio stream into 16kHz 64kbps mono MP3 format.
-func (f *FFmpegExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader, filename string) (*services.AudioExtractionResult, error) {
+func (f *FFmpegExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader, filename string) (*dtos.AudioExtractionResult, error) {
 	if !f.IsAvailable() {
 		return nil, ErrFFmpegNotFound
 	}
@@ -99,10 +100,13 @@ func (f *FFmpegExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader,
 		return nil, fmt.Errorf("failed to read converted audio file: %w", err)
 	}
 
-	return &services.AudioExtractionResult{
+	return &dtos.AudioExtractionResult{
 		Reader:          io.NopCloser(bytes.NewReader(outputData)),
 		Format:          "mp3",
 		DurationSeconds: 0, // Duration will be extracted via STT or metadata
 		SizeBytes:       int64(len(outputData)),
 	}, nil
 }
+
+// Ensure FFmpegExtractor satisfies services.AudioExtractor at compile time.
+var _ services.AudioExtractor = (*FFmpegExtractor)(nil)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
 )
 
@@ -103,7 +104,7 @@ type openAIStreamChunk struct {
 }
 
 // GenerateStructured requests the LLM to populate a structured output guaranteed to match the given JSON schema.
-func (o *OmniRouteLLM) GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, schema map[string]interface{}) (*services.StructuredResponse, error) {
+func (o *OmniRouteLLM) GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
 	var messages []openAIChatMessage
 	if systemPrompt != "" {
 		messages = append(messages, openAIChatMessage{
@@ -149,9 +150,9 @@ func (o *OmniRouteLLM) GenerateStructured(ctx context.Context, systemPrompt stri
 		return nil, fmt.Errorf("llm returned no choices")
 	}
 
-	return &services.StructuredResponse{
+	return &dtos.StructuredResponse{
 		RawJSON: rawResp.Choices[0].Message.Content,
-		Usage: services.LLMUsage{
+		Usage: dtos.LLMUsage{
 			PromptTokens:     rawResp.Usage.PromptTokens,
 			CompletionTokens: rawResp.Usage.CompletionTokens,
 			TotalTokens:      rawResp.Usage.TotalTokens,
@@ -160,7 +161,7 @@ func (o *OmniRouteLLM) GenerateStructured(ctx context.Context, systemPrompt stri
 }
 
 // GenerateChatResponse conducts a standard non-streaming multi-turn chat interaction.
-func (o *OmniRouteLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []services.ChatMessageInput, opts services.ChatOptions) (*services.ChatResponse, error) {
+func (o *OmniRouteLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
 	var chatMessages []openAIChatMessage
 	if systemPrompt != "" {
 		chatMessages = append(chatMessages, openAIChatMessage{
@@ -193,11 +194,11 @@ func (o *OmniRouteLLM) GenerateChatResponse(ctx context.Context, systemPrompt st
 	}
 
 	choice := rawResp.Choices[0]
-	return &services.ChatResponse{
+	return &dtos.ChatResponse{
 		Content:      choice.Message.Content,
 		Role:         choice.Message.Role,
 		FinishReason: choice.FinishReason,
-		Usage: services.LLMUsage{
+		Usage: dtos.LLMUsage{
 			PromptTokens:     rawResp.Usage.PromptTokens,
 			CompletionTokens: rawResp.Usage.CompletionTokens,
 			TotalTokens:      rawResp.Usage.TotalTokens,
@@ -206,7 +207,7 @@ func (o *OmniRouteLLM) GenerateChatResponse(ctx context.Context, systemPrompt st
 }
 
 // StreamChatResponse streams completion chunks using Server-Sent Events (SSE).
-func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []services.ChatMessageInput, opts services.ChatOptions) (<-chan services.StreamChunk, error) {
+func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
 	var chatMessages []openAIChatMessage
 	if systemPrompt != "" {
 		chatMessages = append(chatMessages, openAIChatMessage{
@@ -258,7 +259,7 @@ func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt stri
 		return nil, fmt.Errorf("llm stream returned status %d: %s", resp.StatusCode, string(errBytes))
 	}
 
-	outChan := make(chan services.StreamChunk, 20)
+	outChan := make(chan dtos.StreamChunk, 20)
 
 	go func() {
 		defer resp.Body.Close()
@@ -269,7 +270,7 @@ func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt stri
 		for {
 			select {
 			case <-ctx.Done():
-				outChan <- services.StreamChunk{Err: ctx.Err()}
+				outChan <- dtos.StreamChunk{Err: ctx.Err()}
 				return
 			default:
 			}
@@ -277,7 +278,7 @@ func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt stri
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {
-					outChan <- services.StreamChunk{Err: fmt.Errorf("error reading stream line: %w", err)}
+					outChan <- dtos.StreamChunk{Err: fmt.Errorf("error reading stream line: %w", err)}
 				}
 				return
 			}
@@ -298,7 +299,7 @@ func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt stri
 
 			var chunk openAIStreamChunk
 			if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-				outChan <- services.StreamChunk{Err: fmt.Errorf("failed to parse stream chunk json: %w", err)}
+				outChan <- dtos.StreamChunk{Err: fmt.Errorf("failed to parse stream chunk json: %w", err)}
 				return
 			}
 
@@ -306,7 +307,7 @@ func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt stri
 				delta := chunk.Choices[0].Delta
 				finishReason := chunk.Choices[0].FinishReason
 				if delta.Content != "" || finishReason != "" {
-					outChan <- services.StreamChunk{
+					outChan <- dtos.StreamChunk{
 						Content:      delta.Content,
 						FinishReason: finishReason,
 					}
@@ -357,3 +358,6 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 
 	return &chatResp, nil
 }
+
+// Ensure OmniRouteLLM satisfies services.LLMProvider at compile time.
+var _ services.LLMProvider = (*OmniRouteLLM)(nil)

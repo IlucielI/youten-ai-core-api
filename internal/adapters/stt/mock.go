@@ -4,12 +4,13 @@ import (
 	"context"
 	"io"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
 )
 
 // MockSTT provides a mockable implementation of services.STTProvider for unit and offline tests.
 type MockSTT struct {
-	TranscribeFunc func(ctx context.Context, reader io.Reader, filename string, opts services.STTOptions) (*services.TranscriptionResult, error)
+	TranscribeFunc func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error)
 }
 
 // NewMock creates a new MockSTT with realistic default responses.
@@ -18,7 +19,7 @@ func NewMock() *MockSTT {
 }
 
 // Transcribe executes TranscribeFunc if provided, or returns realistic sample transcript data.
-func (m *MockSTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts services.STTOptions) (*services.TranscriptionResult, error) {
+func (m *MockSTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
 	if m.TranscribeFunc != nil {
 		return m.TranscribeFunc(ctx, reader, filename, opts)
 	}
@@ -28,18 +29,18 @@ func (m *MockSTT) Transcribe(ctx context.Context, reader io.Reader, filename str
 		lang = "english"
 	}
 
-	return &services.TranscriptionResult{
-		Text:     "Welcome to today's project review meeting. We are on track for Q4.",
+	return &dtos.TranscriptionResult{
+		Text:     "Welcome to today's project review meeting. We are on track for Q4 deliverables.",
 		Language: lang,
 		Duration: 12.5,
-		Segments: []services.SegmentResult{
+		Segments: []dtos.SegmentResult{
 			{
 				ID:           0,
 				Start:        0.0,
 				End:          5.5,
 				Text:         "Welcome to today's project review meeting.",
 				SpeakerLabel: "SPEAKER_00",
-				Words: []services.WordResult{
+				Words: []dtos.WordResult{
 					{Word: "Welcome", Start: 0.0, End: 0.8},
 					{Word: "to", Start: 0.8, End: 1.0},
 					{Word: "today's", Start: 1.0, End: 1.8},
@@ -50,19 +51,23 @@ func (m *MockSTT) Transcribe(ctx context.Context, reader io.Reader, filename str
 			},
 			{
 				ID:           1,
-				Start:        6.0,
+				Start:        5.5,
 				End:          12.5,
-				Text:         "We are on track for Q4.",
+				Text:         "We are on track for Q4 deliverables.",
 				SpeakerLabel: "SPEAKER_01",
-				Words: []services.WordResult{
-					{Word: "We", Start: 6.0, End: 6.5},
-					{Word: "are", Start: 6.5, End: 7.2},
-					{Word: "on", Start: 7.2, End: 7.8},
-					{Word: "track", Start: 7.8, End: 9.0},
-					{Word: "for", Start: 9.0, End: 9.5},
-					{Word: "Q4.", Start: 9.5, End: 12.5},
+				Words: []dtos.WordResult{
+					{Word: "We", Start: 5.5, End: 6.0},
+					{Word: "are", Start: 6.0, End: 6.5},
+					{Word: "on", Start: 6.5, End: 7.0},
+					{Word: "track", Start: 7.0, End: 8.0},
+					{Word: "for", Start: 8.0, End: 8.5},
+					{Word: "Q4", Start: 8.5, End: 9.5},
+					{Word: "deliverables.", Start: 9.5, End: 12.5},
 				},
 			},
 		},
 	}, nil
 }
+
+// Ensure MockSTT satisfies services.STTProvider at compile time.
+var _ services.STTProvider = (*MockSTT)(nil)

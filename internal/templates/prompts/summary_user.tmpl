@@ -1,0 +1,7 @@
+{{- if .Language}}
+Please summarize the following meeting transcript in {{.Language}}:
+{{- else}}
+Please summarize the following meeting transcript in the primary language used by the speakers:
+{{- end}}
+
+{{.TranscriptBody}}

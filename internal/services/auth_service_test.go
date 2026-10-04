@@ -346,6 +346,32 @@ func TestService_Login_SuspendedUser(t *testing.T) {
 	}
 }
 
+func TestService_Login_NilUserNoError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "niluser@example.com"
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	req := &dtos.LoginRequest{
+		Email:    email,
+		Password: "Password123",
+	}
+
+	resp, err := svc.Login(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for nil user, got nil")
+	}
+	if !errors.Is(err, constants.ErrInvalidCredentials) {
+		t.Errorf("expected ErrInvalidCredentials, got %v", err)
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
 func TestService_Login_NilService(t *testing.T) {
 	var svc *services.Service
 	resp, err := svc.Login(context.Background(), &dtos.LoginRequest{Email: "a@b.com", Password: "p"})

@@ -90,6 +90,10 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 		return nil, s.wrapError(ctx, err)
 	}
 
+	if user == nil {
+		return nil, constants.ErrInvalidCredentials
+	}
+
 	if user.Status != constants.UserStatusActive {
 		return nil, constants.ErrUserInactive
 	}

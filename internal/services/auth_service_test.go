@@ -28,6 +28,7 @@ func setupAuthServiceMock(t *testing.T) (*services.Service, sqlmock.Sqlmock, fun
 		Conn: sqlDB,
 	}), &gorm.Config{})
 	if err != nil {
+		sqlDB.Close()
 		t.Fatalf("failed to initialize gorm: %v", err)
 	}
 
@@ -86,6 +87,10 @@ func TestService_Register_Success(t *testing.T) {
 	if resp.DailyQuota != constants.DefaultUserDailyQuota {
 		t.Errorf("expected default quota %d, got %d", constants.DefaultUserDailyQuota, resp.DailyQuota)
 	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
 }
 
 func TestService_Register_DuplicateEmail(t *testing.T) {
@@ -116,6 +121,10 @@ func TestService_Register_DuplicateEmail(t *testing.T) {
 	if resp != nil {
 		t.Errorf("expected nil response, got %v", resp)
 	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
 }
 
 func TestService_Register_DBError(t *testing.T) {
@@ -140,6 +149,10 @@ func TestService_Register_DBError(t *testing.T) {
 	if resp != nil {
 		t.Errorf("expected nil response, got %v", resp)
 	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
 }
 
 func TestService_Register_NilService(t *testing.T) {
@@ -147,6 +160,19 @@ func TestService_Register_NilService(t *testing.T) {
 	resp, err := svc.Register(context.Background(), &dtos.RegisterRequest{})
 	if err == nil {
 		t.Fatal("expected error on nil service, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
+func TestService_Register_NilRequest(t *testing.T) {
+	svc, _, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	resp, err := svc.Register(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error on nil request, got nil")
 	}
 	if resp != nil {
 		t.Errorf("expected nil response, got %v", resp)

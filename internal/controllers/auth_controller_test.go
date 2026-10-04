@@ -33,6 +33,7 @@ func setupTestControllers(t *testing.T) (*Controllers, sqlmock.Sqlmock, func()) 
 		Conn: sqlDB,
 	}), &gorm.Config{})
 	if err != nil {
+		sqlDB.Close()
 		t.Fatalf("failed to initialize gorm: %v", err)
 	}
 
@@ -102,6 +103,10 @@ func TestControllers_Register_Success(t *testing.T) {
 	}
 	if resp.Data.DailyQuota != constants.DefaultUserDailyQuota {
 		t.Errorf("expected daily quota %d, got %d", constants.DefaultUserDailyQuota, resp.Data.DailyQuota)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 }
 
@@ -194,5 +199,9 @@ func TestControllers_Register_DuplicateEmail(t *testing.T) {
 	}
 	if resp.Code != "ERR_EMAIL_ALREADY_EXISTS" {
 		t.Errorf("expected code ERR_EMAIL_ALREADY_EXISTS, got %s", resp.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 }

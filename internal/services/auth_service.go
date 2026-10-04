@@ -18,6 +18,9 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 	if s == nil || s.repo == nil {
 		return nil, constants.ErrInternalServerError
 	}
+	if req == nil {
+		return nil, constants.ErrBadRequest.WithMessage("registration payload is required")
+	}
 
 	email := strings.TrimSpace(strings.ToLower(req.Email))
 

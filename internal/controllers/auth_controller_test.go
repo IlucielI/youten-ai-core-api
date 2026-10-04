@@ -3,6 +3,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -643,4 +644,169 @@ func TestControllers_Logout_Idempotent_NotFound(t *testing.T) {
 		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 }
+
+func TestControllers_ForgotPassword_Success(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	email := "forgot@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. FindUserByEmail
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Forgot User", constants.UserStatusActive, now))
+
+	// 2. RevokeAllAuthTokensByUserID
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeReset).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. CreateAuthToken
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	reqPayload := dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/forgot-password", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ForgotPassword(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeSuccess {
+		t.Errorf("expected code SUCCESS, got %s", resp.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_ForgotPassword_UserNotFound(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	email := "unknown@example.com"
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	reqPayload := dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/forgot-password", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ForgotPassword(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on non-existent email, got %d", w.Code)
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeSuccess {
+		t.Errorf("expected code SUCCESS, got %s", resp.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_ForgotPassword_InvalidJSON(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/forgot-password", bytes.NewBufferString("{invalid-json"))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ForgotPassword(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_ForgotPassword_ValidationError(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	reqPayload := dtos.ForgotPasswordRequest{
+		Email: "not-an-email",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/forgot-password", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ForgotPassword(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_ForgotPassword_ServiceError(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	email := "dberr@example.com"
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnError(errors.New("db query failure"))
+
+	reqPayload := dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/forgot-password", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ForgotPassword(ctx)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
 

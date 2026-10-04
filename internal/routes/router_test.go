@@ -210,6 +210,22 @@ func TestRouter_AuthEndpoints(t *testing.T) {
 	if wLogout.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wLogout.Code)
 	}
+
+	// Verify POST /v1/auth/forgot-password route is registered and resolves to handler
+	wForgot := httptest.NewRecorder()
+	reqForgot, err := http.NewRequest(http.MethodPost, "/v1/auth/forgot-password", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("failed to create forgot-password request: %v", err)
+	}
+	reqForgot.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(wForgot, reqForgot)
+	if wForgot.Code == http.StatusNotFound {
+		t.Fatalf("expected /v1/auth/forgot-password to be registered, but got 404 Not Found")
+	}
+	if wForgot.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wForgot.Code)
+	}
 }
 
 func TestRouter_RoutesRegistration(t *testing.T) {
@@ -218,13 +234,14 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router := routes.NewRouter(cfg, ctrls)
 
 	expectedRoutes := map[string]string{
-		"/v1/health":        "GET",
-		"/openapi.yaml":     "GET",
-		"/docs":             "GET",
-		"/v1/auth/register": "POST",
-		"/v1/auth/login":    "POST",
-		"/v1/auth/refresh":  "POST",
-		"/v1/auth/logout":   "POST",
+		"/v1/health":               "GET",
+		"/openapi.yaml":            "GET",
+		"/docs":                    "GET",
+		"/v1/auth/register":        "POST",
+		"/v1/auth/login":           "POST",
+		"/v1/auth/refresh":         "POST",
+		"/v1/auth/logout":          "POST",
+		"/v1/auth/forgot-password": "POST",
 	}
 
 	registered := make(map[string]string)
@@ -238,4 +255,5 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		}
 	}
 }
+
 

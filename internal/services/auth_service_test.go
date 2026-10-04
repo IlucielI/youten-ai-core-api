@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,9 +21,28 @@ import (
 	"code-base-golang/internal/services"
 )
 
+type mockMailer struct {
+	pingErr error
+	sendErr error
+	sent    []services.EmailMessage
+}
+
+func (m *mockMailer) Ping(ctx context.Context) error {
+	return m.pingErr
+}
+
+func (m *mockMailer) Send(ctx context.Context, msg services.EmailMessage) error {
+	if m.sendErr != nil {
+		return m.sendErr
+	}
+	m.sent = append(m.sent, msg)
+	return nil
+}
+
 func setupAuthServiceMock(t *testing.T) (*services.Service, sqlmock.Sqlmock, func()) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
+
 		t.Fatalf("failed to open sqlmock: %v", err)
 	}
 
@@ -880,4 +900,289 @@ func TestService_Logout_NilReceiverAndPayload(t *testing.T) {
 		t.Fatal("expected error on empty refresh token, got nil")
 	}
 }
+
+func TestService_ForgotPassword_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	mailer := &mockMailer{}
+	svc.SetMailer(mailer)
+
+	email := "forgot@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. FindUserByEmail
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Forgot User", constants.UserStatusActive, now))
+
+	// 2. RevokeAllAuthTokensByUserID
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeReset).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. CreateAuthToken
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	req := &dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+
+	err := svc.ForgotPassword(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error on forgot password: %v", err)
+	}
+
+	if len(mailer.sent) != 1 {
+		t.Fatalf("expected 1 email to be sent, got %d", len(mailer.sent))
+	}
+	sentMsg := mailer.sent[0]
+	if len(sentMsg.To) != 1 || sentMsg.To[0] != email {
+		t.Errorf("expected recipient %s, got %v", email, sentMsg.To)
+	}
+	if !strings.Contains(sentMsg.Subject, "Reset Your Password") {
+		t.Errorf("expected subject to contain 'Reset Your Password', got %s", sentMsg.Subject)
+	}
+	if !strings.Contains(sentMsg.TextBody, "Forgot User") {
+		t.Errorf("expected text body to contain user name 'Forgot User', got %s", sentMsg.TextBody)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ForgotPassword_UserNotFound(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	mailer := &mockMailer{}
+	svc.SetMailer(mailer)
+
+	email := "nonexistent@example.com"
+
+	// Mock email not found in DB -> safe silent success to prevent enumeration
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	req := &dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+
+	err := svc.ForgotPassword(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected nil error on non-existent email, got %v", err)
+	}
+
+	if len(mailer.sent) != 0 {
+		t.Errorf("expected 0 emails to be sent, got %d", len(mailer.sent))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ForgotPassword_InactiveUser(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	mailer := &mockMailer{}
+	svc.SetMailer(mailer)
+
+	email := "suspended@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	// Suspended user
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Suspended User", constants.UserStatusSuspended, now))
+
+	req := &dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+
+	err := svc.ForgotPassword(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected nil error on suspended user, got %v", err)
+	}
+
+	if len(mailer.sent) != 0 {
+		t.Errorf("expected 0 emails to be sent for inactive user, got %d", len(mailer.sent))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ForgotPassword_DatabaseError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "dberr@example.com"
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnError(errors.New("db query timeout"))
+
+	req := &dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+
+	err := svc.ForgotPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on DB failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ForgotPassword_RevokeTokensError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "revokeerr@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Revoke Err User", constants.UserStatusActive, now))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeReset).
+		WillReturnError(errors.New("db update error"))
+	mock.ExpectRollback()
+
+	req := &dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+
+	err := svc.ForgotPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on token revocation failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ForgotPassword_CreateTokenError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "createerr@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Create Err User", constants.UserStatusActive, now))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeReset).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnError(errors.New("db insert token deadlock"))
+	mock.ExpectRollback()
+
+	req := &dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+
+	err := svc.ForgotPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on token creation failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ForgotPassword_MailerError(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	mailer := &mockMailer{sendErr: errors.New("smtp connection refused")}
+	svc.SetMailer(mailer)
+
+	email := "mailerr@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Mail Err User", constants.UserStatusActive, now))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeReset).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	req := &dtos.ForgotPasswordRequest{
+		Email: email,
+	}
+
+	err := svc.ForgotPassword(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error on mailer send failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ForgotPassword_NilReceiverAndPayload(t *testing.T) {
+	var nilSvc *services.Service
+	err := nilSvc.ForgotPassword(context.Background(), &dtos.ForgotPasswordRequest{Email: "test@example.com"})
+	if err == nil {
+		t.Fatal("expected error on nil service receiver, got nil")
+	}
+
+	svc, _, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	err = svc.ForgotPassword(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error on nil forgot password request, got nil")
+	}
+
+	err = svc.ForgotPassword(context.Background(), &dtos.ForgotPasswordRequest{Email: "   "})
+	if err == nil {
+		t.Fatal("expected error on empty email, got nil")
+	}
+}
+
 

@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS highlights;
+DROP TABLE IF EXISTS chapters;
+DROP TABLE IF EXISTS summaries;

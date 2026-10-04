@@ -80,3 +80,14 @@ func (r *Repositories) SearchSimilarTranscriptChunks(ctx context.Context, record
 	}
 	return chunks, nil
 }
+
+// DeleteTranscriptSegmentsByRecordingID deletes all transcript segments for a recording.
+func (r *Repositories) DeleteTranscriptSegmentsByRecordingID(ctx context.Context, recordingID uuid.UUID) error {
+	return r.db.WithContext(ctx).Where("recording_id = ?", recordingID).Delete(&models.TranscriptSegment{}).Error
+}
+
+// DeleteTranscriptChunksByRecordingID deletes all transcript vector chunks for a recording.
+func (r *Repositories) DeleteTranscriptChunksByRecordingID(ctx context.Context, recordingID uuid.UUID) error {
+	return r.db.WithContext(ctx).Where("recording_id = ?", recordingID).Delete(&models.TranscriptChunk{}).Error
+}
+

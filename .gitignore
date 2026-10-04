@@ -30,3 +30,6 @@ coverage.html
 .tmp/
 tmp/
 *.log
+
+# Local Agentic Roadmap & Planning
+PLANNING.md

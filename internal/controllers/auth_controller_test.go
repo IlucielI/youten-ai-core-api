@@ -441,6 +441,12 @@ func TestControllers_RefreshToken_Success(t *testing.T) {
 	if resp.Data.AccessToken == "" || resp.Data.RefreshToken == "" {
 		t.Error("expected non-empty tokens")
 	}
+	if resp.Data.RefreshToken == reqPayload.RefreshToken {
+		t.Error("expected fresh rotated refresh token, got identical token")
+	}
+	if resp.Data.User.Email != email {
+		t.Errorf("expected user email %s, got %s", email, resp.Data.User.Email)
+	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)

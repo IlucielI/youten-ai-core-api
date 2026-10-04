@@ -672,6 +672,10 @@ func TestService_RefreshToken_InactiveUser_RevokeError(t *testing.T) {
 	if resp != nil {
 		t.Errorf("expected nil response, got %v", resp)
 	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
 }
 
 func TestService_RefreshToken_NilChecks(t *testing.T) {

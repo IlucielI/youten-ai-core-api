@@ -178,12 +178,7 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 		return nil, constants.ErrInvalidToken
 	}
 
-	// 3. Immediately revoke the used refresh token (Token Rotation guarantee)
-	if err := s.repo.RevokeAuthToken(ctx, authToken.ID); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
-
-	// 4. Retrieve associated user
+	// 3. Retrieve associated user and verify active status
 	user, err := s.repo.FindUserByID(ctx, authToken.UserID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -192,17 +187,19 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 		return nil, s.wrapError(ctx, err)
 	}
 	if user == nil || user.Status != constants.UserStatusActive {
+		// Invalidate token for inactive user
+		_ = s.repo.RevokeAuthToken(ctx, authToken.ID)
 		return nil, constants.ErrInvalidToken
 	}
 
-	// 5. Generate fresh token pair with a new session ID
+	// 4. Generate fresh token pair with a new session ID
 	sessionID := uuid.New().String()
 	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
 
-	// 6. Store new refresh token hash
+	// 5. Store new refresh token hash first
 	newTokenHash := hasher.HashToken(tokenPair.RefreshToken)
 	newAuthToken := &models.AuthToken{
 		UserID:    user.ID,
@@ -212,6 +209,11 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 	}
 
 	if err := s.repo.CreateAuthToken(ctx, newAuthToken); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// 6. Revoke old refresh token
+	if err := s.repo.RevokeAuthToken(ctx, authToken.ID); err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
 

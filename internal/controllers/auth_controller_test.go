@@ -399,23 +399,23 @@ func TestControllers_RefreshToken_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
 			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
 
-	// 2. RevokeAuthToken
-	mock.ExpectBegin()
-	mock.ExpectExec(`UPDATE "auth_tokens"`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
-
-	// 3. FindUserByID
+	// 2. FindUserByID
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
 			AddRow(userID, email, "Alex Mercer", constants.UserStatusActive, now))
 
-	// 4. CreateAuthToken
+	// 3. CreateAuthToken
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	// 4. RevokeAuthToken
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	reqPayload := dtos.RefreshTokenRequest{

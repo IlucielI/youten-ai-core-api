@@ -426,23 +426,23 @@ func TestService_RefreshToken_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
 			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
 
-	// 2. RevokeAuthToken
-	mock.ExpectBegin()
-	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
-
-	// 3. FindUserByID
+	// 2. FindUserByID
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
 		WithArgs(userID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
 			AddRow(userID, email, "Refresh User", constants.UserStatusActive, now))
 
-	// 4. CreateAuthToken (insert new refresh token)
+	// 3. CreateAuthToken (insert new refresh token)
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	// 4. RevokeAuthToken
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	req := &dtos.RefreshTokenRequest{
@@ -533,7 +533,10 @@ func TestService_RefreshToken_TokenNotFoundOrRevoked(t *testing.T) {
 		JWTRefreshExpiration: 7 * 24 * time.Hour,
 	}
 
-	tokenPair, _ := jwt.GenerateTokenPair(cfg, uuid.New(), "user@example.com", "session-1")
+	tokenPair, err := jwt.GenerateTokenPair(cfg, uuid.New(), "user@example.com", "session-1")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
 	tokenHash := hasher.HashToken(tokenPair.RefreshToken)
 
 	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
@@ -575,7 +578,10 @@ func TestService_RefreshToken_InactiveUser(t *testing.T) {
 		JWTRefreshExpiration: 7 * 24 * time.Hour,
 	}
 
-	tokenPair, _ := jwt.GenerateTokenPair(cfg, userID, email, "session-1")
+	tokenPair, err := jwt.GenerateTokenPair(cfg, userID, email, "session-1")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
 	tokenHash := hasher.HashToken(tokenPair.RefreshToken)
 	tokenID := uuid.New()
 
@@ -585,18 +591,18 @@ func TestService_RefreshToken_InactiveUser(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
 			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
 
-	// 2. RevokeAuthToken
+	// 2. FindUserByID -> status suspended
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, email, "Suspended User", constants.UserStatusSuspended, now))
+
+	// 3. RevokeAuthToken
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
-
-	// 3. FindUserByID -> status suspended
-	mock.ExpectQuery(`SELECT \* FROM "users"`).
-		WithArgs(userID, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
-			AddRow(userID, email, "Suspended User", constants.UserStatusSuspended, now))
 
 	req := &dtos.RefreshTokenRequest{
 		RefreshToken: tokenPair.RefreshToken,

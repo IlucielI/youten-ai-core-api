@@ -22,6 +22,9 @@ var (
 	// ErrConflict is returned when an action conflicts with current state.
 	ErrConflict = apperror.New(http.StatusConflict, ResponseCodeConflict, "resource conflict")
 
+	// ErrEmailAlreadyExists is returned when attempting to register with an email that is already registered.
+	ErrEmailAlreadyExists = apperror.New(http.StatusConflict, "ERR_EMAIL_ALREADY_EXISTS", "email is already registered")
+
 	// ErrInvalidToken is returned when a JWT token is expired, malformed, or has an invalid signature.
 	ErrInvalidToken = apperror.New(http.StatusUnauthorized, ResponseCodeUnauthorized, "invalid or expired token")
 

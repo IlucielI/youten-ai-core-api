@@ -14,3 +14,8 @@ routes:
   - method: GET
     path: /docs
     handler: APIDocs
+
+  # Authentication endpoints
+  - method: POST
+    path: /v1/auth/register
+    handler: Register

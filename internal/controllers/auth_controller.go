@@ -148,4 +148,28 @@ func (c *Controllers) ForgotPassword(ctx *gin.Context) {
 	})
 }
 
+// ResetPassword handles resetting the user password using a valid reset token.
+func (c *Controllers) ResetPassword(ctx *gin.Context) {
+	var req dtos.ResetPasswordRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
 
+	if err := validations.Validate(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	if err := c.svc.ResetPassword(ctx.Request.Context(), &req); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.BaseResponse{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Password reset successfully",
+		Timestamp: time.Now(),
+	})
+}

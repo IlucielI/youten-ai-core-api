@@ -39,3 +39,8 @@ routes:
     path: /v1/auth/forgot-password
     handler: ForgotPassword
 
+  # Password reset confirmation endpoint
+  - method: POST
+    path: /v1/auth/reset-password
+    handler: ResetPassword
+

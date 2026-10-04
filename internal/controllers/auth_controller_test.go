@@ -809,4 +809,158 @@ func TestControllers_ForgotPassword_ServiceError(t *testing.T) {
 	}
 }
 
+func TestControllers_ResetPassword_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
 
+	rawToken := "valid-reset-token-hex"
+	tokenHash := hasher.HashToken(rawToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. Find reset token
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeReset, tokenHash, now.Add(15*time.Minute), now, now))
+
+	// 2. Find user
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(userID, "alex@example.com", "Alex Doe", constants.UserStatusActive, now))
+
+	// 3. Update user password
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "password_hash"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. Revoke reset token
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 5. Revoke all active refresh tokens
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeRefresh).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	reqPayload := dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/reset-password", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ResetPassword(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Status != constants.ResponseStatusSuccess {
+		t.Errorf("expected status 'success', got %s", resp.Status)
+	}
+	if resp.Code != constants.ResponseCodeSuccess {
+		t.Errorf("expected code 'SUCCESS', got %s", resp.Code)
+	}
+	if resp.Message != "Password reset successfully" {
+		t.Errorf("expected message 'Password reset successfully', got %s", resp.Message)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_ResetPassword_InvalidJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/reset-password", bytes.NewBufferString("invalid json"))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ResetPassword(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_ResetPassword_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	reqPayload := dtos.ResetPasswordRequest{
+		Token:       "",
+		NewPassword: "short",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/reset-password", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ResetPassword(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 on validation error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ResetPassword_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	rawToken := "valid-token"
+	tokenHash := hasher.HashToken(rawToken)
+
+	// Token not found -> invalid or expired token (401)
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeReset, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	reqPayload := dtos.ResetPasswordRequest{
+		Token:       rawToken,
+		NewPassword: "newSecurePassword123",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/reset-password", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ResetPassword(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 on expired/invalid token, got %d", w.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}

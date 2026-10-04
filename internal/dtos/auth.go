@@ -101,3 +101,20 @@ func (r *RefreshTokenRequest) Validate() error {
 		),
 	)
 }
+
+// LogoutRequest defines the input payload for terminating a session via refresh token.
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// Validate performs structural and semantic validation on LogoutRequest.
+func (r *LogoutRequest) Validate() error {
+	r.RefreshToken = strings.TrimSpace(r.RefreshToken)
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.RefreshToken,
+			validation.Required.Error("refresh_token is required"),
+		),
+	)
+}
+

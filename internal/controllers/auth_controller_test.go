@@ -510,3 +510,137 @@ func TestControllers_RefreshToken_InvalidToken(t *testing.T) {
 		t.Fatalf("expected status 401, got %d", w.Code)
 	}
 }
+
+func TestControllers_Logout_Success(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	refreshToken := "valid.refresh.token.for.logout"
+	tokenHash := hasher.HashToken(refreshToken)
+	tokenID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
+
+	// 2. RevokeAuthToken
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	reqPayload := dtos.LogoutRequest{
+		RefreshToken: refreshToken,
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/logout", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Logout(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeSuccess {
+		t.Errorf("expected code SUCCESS, got %s", resp.Code)
+	}
+	if resp.Message != "Logout successful" {
+		t.Errorf("expected message 'Logout successful', got %s", resp.Message)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_Logout_InvalidJSON(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/logout", bytes.NewBufferString("{invalid-json"))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Logout(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_Logout_ValidationError(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	reqPayload := dtos.LogoutRequest{
+		RefreshToken: "",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/logout", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Logout(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_Logout_Idempotent_NotFound(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	refreshToken := "nonexistent.refresh.token"
+	tokenHash := hasher.HashToken(refreshToken)
+
+	// Mock token not found in DB -> idempotent return
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	reqPayload := dtos.LogoutRequest{
+		RefreshToken: refreshToken,
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/logout", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Logout(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on idempotent logout, got %d", w.Code)
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeSuccess {
+		t.Errorf("expected code SUCCESS, got %s", resp.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+

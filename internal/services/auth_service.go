@@ -237,3 +237,42 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 		},
 	}, nil
 }
+
+// Logout terminates a user session by revoking the provided refresh token.
+// Revocation is implemented idempotently: if the token is non-existent, expired, or already revoked,
+// the method returns nil so that callers can safely terminate sessions without error.
+func (s *Service) Logout(ctx context.Context, req *dtos.LogoutRequest) error {
+	if s == nil || s.repo == nil {
+		return constants.ErrInternalServerError
+	}
+	if req == nil {
+		return constants.ErrBadRequest.WithMessage("logout payload is required")
+	}
+
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	if refreshToken == "" {
+		return constants.ErrBadRequest.WithMessage("refresh_token is required")
+	}
+
+	tokenHash := hasher.HashToken(refreshToken)
+	authToken, err := s.repo.FindAuthTokenByHashAndType(ctx, tokenHash, constants.AuthTokenTypeRefresh)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return s.wrapError(ctx, err)
+	}
+	if authToken == nil {
+		return nil
+	}
+
+	if err := s.repo.RevokeAuthToken(ctx, authToken.ID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return s.wrapError(ctx, err)
+	}
+
+	return nil
+}
+

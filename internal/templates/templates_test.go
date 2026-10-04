@@ -75,4 +75,16 @@ func TestTemplates_SummaryPrompts(t *testing.T) {
 	if !strings.Contains(user, "Meeting transcript goes here.") {
 		t.Errorf("unexpected summary user prompt: %s", user)
 	}
+	if !strings.Contains(user, "primary language used by the speakers") {
+		t.Errorf("expected default language instruction, got: %s", user)
+	}
+
+	// Multi-language specified (e.g. Japanese or English)
+	userJa, err := templates.RenderSummaryUserPrompt("Meeting transcript goes here.", "Japanese")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(userJa, "in Japanese:") {
+		t.Errorf("expected 'in Japanese:', got: %s", userJa)
+	}
 }

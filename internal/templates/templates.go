@@ -31,6 +31,7 @@ type RAGUserData struct {
 
 // SummaryUserData holds input parameters for summary_user.tmpl.
 type SummaryUserData struct {
+	Language       string
 	TranscriptBody string
 }
 
@@ -106,8 +107,14 @@ func DefaultSummarySystemPrompt() (string, error) {
 }
 
 // RenderSummaryUserPrompt renders the user prompt containing the transcript body to be summarized.
-func RenderSummaryUserPrompt(transcriptBody string) (string, error) {
+// Optional targetLanguage specifies the requested output language (e.g. "Indonesian", "English", "id", "en").
+func RenderSummaryUserPrompt(transcriptBody string, targetLanguage ...string) (string, error) {
+	lang := ""
+	if len(targetLanguage) > 0 {
+		lang = strings.TrimSpace(targetLanguage[0])
+	}
 	data := SummaryUserData{
+		Language:       lang,
 		TranscriptBody: strings.TrimSpace(transcriptBody),
 	}
 	var buf bytes.Buffer

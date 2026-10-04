@@ -267,9 +267,14 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 		systemPrompt = template.Prompt
 	}
 
-	userPrompt, err := templates.RenderSummaryUserPrompt(transcriptBody)
+	targetLang := recording.OutputLanguage
+	if targetLang == "" {
+		targetLang = p.Language
+	}
+
+	userPrompt, err := templates.RenderSummaryUserPrompt(transcriptBody, targetLang)
 	if err != nil {
-		userPrompt = fmt.Sprintf("Please summarize the following meeting transcript in Indonesian (or the speaker's language):\n\n%s", transcriptBody)
+		userPrompt = fmt.Sprintf("Please summarize the following meeting transcript:\n\n%s", transcriptBody)
 	}
 
 	var schema map[string]interface{}

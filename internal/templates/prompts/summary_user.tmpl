@@ -1,3 +1,7 @@
-Please summarize the following meeting transcript in Indonesian (or the speaker's language):
+{{- if .Language}}
+Please summarize the following meeting transcript in {{.Language}}:
+{{- else}}
+Please summarize the following meeting transcript in the primary language used by the speakers:
+{{- end}}
 
 {{.TranscriptBody}}

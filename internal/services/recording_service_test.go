@@ -36,7 +36,9 @@ func (m *testRecordingStorage) Upload(ctx context.Context, bucketName, objectNam
 func (m *testRecordingStorage) Download(ctx context.Context, bucketName, objectName string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
-func (m *testRecordingStorage) Delete(ctx context.Context, bucketName, objectName string) error { return nil }
+func (m *testRecordingStorage) Delete(ctx context.Context, bucketName, objectName string) error {
+	return nil
+}
 func (m *testRecordingStorage) PresignGetObject(ctx context.Context, bucketName, objectName string, expiry time.Duration) (string, error) {
 	if m.presignErr != nil {
 		return "", m.presignErr
@@ -3425,13 +3427,3 @@ func TestService_DeleteInlineComment_Forbidden_SameNameDifferentUser(t *testing.
 		t.Fatalf("expected ErrForbidden for different user, got %v", err)
 	}
 }
-
-
-
-
-
-
-
-
-
-

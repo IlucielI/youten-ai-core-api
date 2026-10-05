@@ -20,7 +20,6 @@ import (
 	"code-base-golang/internal/services"
 )
 
-
 type mockEmbeddingService struct {
 	embeddings [][]float32
 	err        error

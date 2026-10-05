@@ -1321,3 +1321,40 @@ func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
 	})
 }
 
+// GetWorkspaceSpeakers handles retrieving aggregated speaker directory metrics across user meetings.
+func (c *Controllers) GetWorkspaceSpeakers(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	res, err := c.svc.GetWorkspaceSpeakers(ctx.Request.Context())
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	if res == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SpeakerDirectoryResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "workspace speakers retrieved successfully",
+		Data:      *res,
+		Timestamp: time.Now(),
+	})
+}
+
+

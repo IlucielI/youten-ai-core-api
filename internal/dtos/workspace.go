@@ -2,6 +2,7 @@ package dtos
 
 import (
 	"strings"
+	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
@@ -83,4 +84,19 @@ type WorkspaceAskResponse struct {
 	Answer  string                  `json:"answer"`
 	Sources []MeetingSourceCitation `json:"sources"`
 }
+
+// SpeakerSummary represents aggregated participation metrics for a speaker across a user's recordings.
+type SpeakerSummary struct {
+	Name          string    `json:"name"`
+	TotalMeetings int       `json:"total_meetings"`
+	TotalTalkTime float64   `json:"total_talk_time"`
+	LastActive    time.Time `json:"last_active"`
+}
+
+// SpeakerDirectoryResponse defines the envelope returned by the workspace speaker directory endpoint.
+type SpeakerDirectoryResponse struct {
+	Count    int              `json:"count"`
+	Speakers []SpeakerSummary `json:"speakers"`
+}
+
 

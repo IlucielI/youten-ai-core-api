@@ -4467,3 +4467,126 @@ func TestControllers_AskWorkspaceMemory_Success(t *testing.T) {
 		t.Errorf("expected source title 'Q3 Planning', got %s", resp.Data.Sources[0].RecordingTitle)
 	}
 }
+
+func TestControllers_GetWorkspaceSpeakers_NilController(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/speakers", nil)
+
+	var ctrls *Controllers
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic on nil controller: %v", r)
+		}
+	}()
+	ctrls.GetWorkspaceSpeakers(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetWorkspaceSpeakers_NilService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/speakers", nil)
+
+	ctrls := &Controllers{svc: nil}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic on nil service: %v", r)
+		}
+	}()
+	ctrls.GetWorkspaceSpeakers(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetWorkspaceSpeakers_Unauthorized(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/speakers", nil)
+
+	ctrls.GetWorkspaceSpeakers(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetWorkspaceSpeakers_ServiceError(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	expectedSQL := regexp.QuoteMeta(`SELECT ts.speaker_name AS name, COUNT(DISTINCT ts.recording_id) AS total_meetings, COALESCE(SUM(GREATEST(0, ts.end_time - ts.start_time)), 0) AS total_talk_time, MAX(r.created_at) AS last_active FROM transcript_segments ts JOIN recordings r ON ts.recording_id = r.id WHERE r.user_id = $1 AND r.deleted_at IS NULL AND TRIM(ts.speaker_name) != '' GROUP BY "ts"."speaker_name" ORDER BY total_meetings DESC, total_talk_time DESC, name ASC`)
+
+	mock.ExpectQuery(expectedSQL).
+		WithArgs(userID).
+		WillReturnError(errors.New("db aggregation failed"))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/v1/speakers", nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	ctrls.GetWorkspaceSpeakers(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetWorkspaceSpeakers_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	now := time.Now().Truncate(time.Second)
+	expectedSQL := regexp.QuoteMeta(`SELECT ts.speaker_name AS name, COUNT(DISTINCT ts.recording_id) AS total_meetings, COALESCE(SUM(GREATEST(0, ts.end_time - ts.start_time)), 0) AS total_talk_time, MAX(r.created_at) AS last_active FROM transcript_segments ts JOIN recordings r ON ts.recording_id = r.id WHERE r.user_id = $1 AND r.deleted_at IS NULL AND TRIM(ts.speaker_name) != '' GROUP BY "ts"."speaker_name" ORDER BY total_meetings DESC, total_talk_time DESC, name ASC`)
+
+	rows := sqlmock.NewRows([]string{"name", "total_meetings", "total_talk_time", "last_active"}).
+		AddRow("Alice", 4, 600.0, now).
+		AddRow("Bob", 2, 180.0, now.Add(-time.Hour))
+
+	mock.ExpectQuery(expectedSQL).
+		WithArgs(userID).
+		WillReturnRows(rows)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/v1/speakers", nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	ctrls.GetWorkspaceSpeakers(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.SpeakerDirectoryResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp.Data.Count != 2 {
+		t.Errorf("expected count 2, got %d", resp.Data.Count)
+	}
+	if len(resp.Data.Speakers) != 2 {
+		t.Fatalf("expected 2 speakers, got %d", len(resp.Data.Speakers))
+	}
+	if resp.Data.Speakers[0].Name != "Alice" || resp.Data.Speakers[0].TotalMeetings != 4 {
+		t.Errorf("unexpected Alice data: %+v", resp.Data.Speakers[0])
+	}
+	if resp.Data.Speakers[1].Name != "Bob" || resp.Data.Speakers[1].TotalMeetings != 2 {
+		t.Errorf("unexpected Bob data: %+v", resp.Data.Speakers[1])
+	}
+}
+

@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -162,5 +163,31 @@ func (r *Repositories) SearchWorkspaceTranscriptChunks(ctx context.Context, user
 	}
 	return results, nil
 }
+
+// WorkspaceSpeakerStat represents aggregated speaker participation data returned from database queries.
+type WorkspaceSpeakerStat struct {
+	Name          string    `gorm:"column:name"`
+	TotalMeetings int       `gorm:"column:total_meetings"`
+	TotalTalkTime float64   `gorm:"column:total_talk_time"`
+	LastActive    time.Time `gorm:"column:last_active"`
+}
+
+// AggregateWorkspaceSpeakers aggregates distinct speakers across all recordings owned by the user.
+func (r *Repositories) AggregateWorkspaceSpeakers(ctx context.Context, userID uuid.UUID) ([]WorkspaceSpeakerStat, error) {
+	var stats []WorkspaceSpeakerStat
+	err := r.db.WithContext(ctx).
+		Table("transcript_segments ts").
+		Select("ts.speaker_name AS name, COUNT(DISTINCT ts.recording_id) AS total_meetings, COALESCE(SUM(GREATEST(0, ts.end_time - ts.start_time)), 0) AS total_talk_time, MAX(r.created_at) AS last_active").
+		Joins("JOIN recordings r ON ts.recording_id = r.id").
+		Where("r.user_id = ? AND r.deleted_at IS NULL AND TRIM(ts.speaker_name) != ''", userID).
+		Group("ts.speaker_name").
+		Order("total_meetings DESC, total_talk_time DESC, name ASC").
+		Scan(&stats).Error
+	if err != nil {
+		return nil, err
+	}
+	return stats, nil
+}
+
 
 

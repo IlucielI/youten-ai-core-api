@@ -621,7 +621,30 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wAsk.Code != http.StatusUnauthorized {
 		t.Fatalf("expected POST /v1/recordings/ask to return 401 Unauthorized without auth header, got %d", wAsk.Code)
 	}
+
+	foundSpeakersRoute := false
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/v1/speakers" {
+			foundSpeakersRoute = true
+			break
+		}
+	}
+	if !foundSpeakersRoute {
+		t.Fatalf("expected GET /v1/speakers route to be registered")
+	}
+
+	// Verify GET /v1/speakers is protected by auth (returns 401 Unauthorized without header)
+	wSpkDir := httptest.NewRecorder()
+	reqSpkDir, reqSpkErr := http.NewRequest(http.MethodGet, "/v1/speakers", nil)
+	if reqSpkErr != nil {
+		t.Fatalf("failed to create request: %v", reqSpkErr)
+	}
+	router.ServeHTTP(wSpkDir, reqSpkDir)
+	if wSpkDir.Code != http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/speakers to return 401 Unauthorized without auth header, got %d", wSpkDir.Code)
+	}
 }
+
 
 
 

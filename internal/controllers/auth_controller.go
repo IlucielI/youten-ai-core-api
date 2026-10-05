@@ -5,9 +5,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/validations"
 )
 
@@ -173,3 +175,27 @@ func (c *Controllers) ResetPassword(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// GetMe retrieves the authenticated user's profile and dynamic daily quota.
+func (c *Controllers) GetMe(ctx *gin.Context) {
+	userID, ok := ctxmeta.GetAuthUserID(ctx.Request.Context())
+	if !ok || userID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized)
+		return
+	}
+
+	profile, err := c.svc.GetProfile(ctx.Request.Context(), userID)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.UserProfileResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "User profile retrieved successfully",
+		Data:      profile,
+		Timestamp: time.Now(),
+	})
+}
+

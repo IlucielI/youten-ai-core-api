@@ -448,3 +448,50 @@ func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.A
 	}, nil
 }
 
+// GetProfile retrieves the profile and dynamic daily quota calculation for an authenticated user.
+func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserProfileResponse, error) {
+	if s == nil || s.repo == nil {
+		return nil, constants.ErrInternalServerError
+	}
+	if userID == uuid.Nil {
+		return nil, constants.ErrUnauthorized
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrUserNotFound
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	dailyQuota := constants.DefaultUserDailyQuota
+	if user.DailyQuotaOverride != nil {
+		dailyQuota = *user.DailyQuotaOverride
+	}
+
+	countToday, err := s.repo.CountUserRecordingsToday(ctx, user.ID)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	quotaUsedToday := int(countToday)
+	quotaRemaining := dailyQuota - quotaUsedToday
+	if quotaRemaining < 0 {
+		quotaRemaining = 0
+	}
+
+	return &dtos.UserProfileResponse{
+		ID:             user.ID,
+		Email:          user.Email,
+		FullName:       user.FullName,
+		Status:         user.Status,
+		DailyQuota:     dailyQuota,
+		QuotaUsedToday: quotaUsedToday,
+		QuotaRemaining: quotaRemaining,
+		EmailVerified:  user.EmailVerified,
+		CreatedAt:      user.CreatedAt,
+	}, nil
+}
+
+

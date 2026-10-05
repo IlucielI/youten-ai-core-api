@@ -55,6 +55,19 @@ type UserResponse struct {
 	CreatedAt          time.Time `json:"created_at"`
 }
 
+// UserProfileResponse represents the detailed authenticated user profile with live daily quota calculations.
+type UserProfileResponse struct {
+	ID             uuid.UUID `json:"id"`
+	Email          string    `json:"email"`
+	FullName       string    `json:"full_name"`
+	Status         string    `json:"status"`
+	DailyQuota     int       `json:"daily_quota"`
+	QuotaUsedToday int       `json:"quota_used_today"`
+	QuotaRemaining int       `json:"quota_remaining"`
+	EmailVerified  bool      `json:"email_verified"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 // LoginRequest defines the input payload for user authentication.
 type LoginRequest struct {
 	Email    string `json:"email"`

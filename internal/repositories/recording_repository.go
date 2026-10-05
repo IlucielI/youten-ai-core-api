@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -157,4 +158,16 @@ func (r *Repositories) UpdateRecordingDurationAndLanguage(ctx context.Context, i
 	}
 	return nil
 }
+
+// CountUserRecordingsToday counts how many recordings the user has created since the beginning of the current UTC day.
+func (r *Repositories) CountUserRecordingsToday(ctx context.Context, userID uuid.UUID) (int64, error) {
+	now := time.Now().UTC()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	var count int64
+	err := r.db.WithContext(ctx).Model(&models.Recording{}).
+		Where("user_id = ? AND created_at >= ?", userID, startOfDay).
+		Count(&count).Error
+	return count, err
+}
+
 

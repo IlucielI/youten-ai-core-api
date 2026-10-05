@@ -44,3 +44,10 @@ routes:
     path: /v1/auth/reset-password
     handler: ResetPassword
 
+  # Current user profile endpoint
+  - method: GET
+    path: /v1/auth/me
+    handler: GetMe
+    auth: true
+
+

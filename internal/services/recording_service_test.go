@@ -590,3 +590,241 @@ func TestService_ImportRecordingFromURL_Success_Guest(t *testing.T) {
 		t.Error("expected publication to background queue")
 	}
 }
+
+func TestService_GetRecordingDetail_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.GetRecordingDetail(context.Background(), recID, "")
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_GetRecordingDetail_Forbidden_UnauthenticatedNoToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+			AddRow(recID, "secret-token", true))
+
+	_, err := svc.GetRecordingDetail(context.Background(), recID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_GetRecordingDetail_Forbidden_UnauthenticatedWrongToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+			AddRow(recID, "secret-token", true))
+
+	_, err := svc.GetRecordingDetail(context.Background(), recID, "invalid-token")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_GetRecordingDetail_Forbidden_AuthenticatedDifferentUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	callerID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: callerID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token", "is_guest"}).
+			AddRow(recID, ownerID, "owner-token", false))
+
+	_, err := svc.GetRecordingDetail(ctx, recID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_GetRecordingDetail_Success_AuthenticatedOwner(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	audioPath := "recordings/" + recID.String() + "/speech.mp3"
+	now := time.Now()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: ownerID})
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "user_id", "title", "original_filename", "audio_url", "source_type",
+			"status", "selected_template", "output_language", "is_guest", "created_at", "updated_at",
+		}).AddRow(
+			recID, ownerID, "Architecture Review", "speech.mp3", audioPath, "UPLOAD",
+			"COMPLETED", "MOM", "en", false, now, now,
+		))
+
+	// 2. ListTranscriptSegmentsByRecordingID
+	segID := uuid.New()
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "recording_id", "speaker_label", "speaker_name", "start_time", "end_time", "text", "sequence_order",
+		}).AddRow(segID, recID, "Speaker 0", "Alice", 0.0, 4.5, "Welcome everyone", 0))
+
+	// 3. FindActiveSummaryByRecordingID
+	sumID := uuid.New()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "recording_id", "template_category", "version", "is_active", "markdown_content", "created_at", "updated_at",
+		}).AddRow(sumID, recID, "MOM", 1, true, "## Key Decisions", now, now))
+
+	// 4. ListChaptersByRecordingID
+	chapID := uuid.New()
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC LIMIT \$2`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "recording_id", "title", "start_time", "end_time", "summary", "sequence_order", "created_at",
+		}).AddRow(chapID, recID, "Introduction", 0.0, 60.0, "Session kickoff", 0, now))
+
+	// 5. ListHighlightsByRecordingID
+	hlID := uuid.New()
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "recording_id", "start_time", "end_time", "source", "created_at",
+		}).AddRow(hlID, recID, 10.0, 15.0, "manual", now))
+
+	resp, err := svc.GetRecordingDetail(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.ID)
+	}
+	if resp.Title != "Architecture Review" {
+		t.Errorf("expected title Architecture Review, got %s", resp.Title)
+	}
+	if resp.PlaybackURL == nil || *resp.PlaybackURL != "https://mock.storage/get" {
+		t.Errorf("expected presigned playback URL, got %v", resp.PlaybackURL)
+	}
+	if len(resp.Segments) != 1 || resp.Segments[0].Text != "Welcome everyone" {
+		t.Errorf("unexpected segments: %+v", resp.Segments)
+	}
+	if resp.ActiveSummary == nil || resp.ActiveSummary.MarkdownContent != "## Key Decisions" {
+		t.Errorf("unexpected active summary: %+v", resp.ActiveSummary)
+	}
+	if len(resp.Chapters) != 1 || resp.Chapters[0].Title != "Introduction" {
+		t.Errorf("unexpected chapters: %+v", resp.Chapters)
+	}
+	if len(resp.Highlights) != 1 || resp.Highlights[0].Source != "manual" {
+		t.Errorf("unexpected highlights: %+v", resp.Highlights)
+	}
+}
+
+func TestService_GetRecordingDetail_Success_GuestWithOwnershipToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-valid-token-789"
+	now := time.Now()
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "title", "original_filename", "audio_url", "source_type",
+			"status", "selected_template", "output_language", "is_guest", "ownership_token", "created_at", "updated_at",
+		}).AddRow(
+			recID, "Guest Meeting", "guest.mp3", "https://external.cdn/guest.mp3", "LINK",
+			"COMPLETED", "GENERAL", "id", true, guestToken, now, now,
+		))
+
+	// 2. Empty child queries
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC LIMIT \$2`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	resp, err := svc.GetRecordingDetail(context.Background(), recID, guestToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.ID)
+	}
+	if !resp.IsGuest {
+		t.Error("expected IsGuest true")
+	}
+	if resp.PlaybackURL == nil || *resp.PlaybackURL != "https://external.cdn/guest.mp3" {
+		t.Errorf("expected external playback URL retained, got %v", resp.PlaybackURL)
+	}
+}
+
+func TestService_GetRecordingDetail_Success_ShareToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	shareToken := "public-share-token-xyz"
+	now := time.Now()
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "title", "original_filename", "audio_url", "source_type",
+			"status", "selected_template", "output_language", "is_guest", "is_share_enabled", "share_token", "ownership_token", "created_at", "updated_at",
+		}).AddRow(
+			recID, "Shared Presentation", "pres.mp4", "", "UPLOAD",
+			"COMPLETED", "GENERAL", "en", false, true, shareToken, "owner-only-token", now, now,
+		))
+
+	// 2. Empty child queries
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC LIMIT \$2`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	resp, err := svc.GetRecordingDetail(context.Background(), recID, shareToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.ID)
+	}
+}
+

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
@@ -165,6 +166,50 @@ func (c *Controllers) ImportURL(ctx *gin.Context) {
 		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "recording imported successfully",
+		Data:      *resp,
+		Timestamp: time.Now(),
+	})
+}
+
+// GetRecordingDetail handles retrieving recording metadata, segments, active summary, chapters,
+// and presigned playback audio URL.
+func (c *Controllers) GetRecordingDetail(ctx *gin.Context) {
+	if c == nil || c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	recID, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	// Extract ownership token from header or query param
+	token := ctx.GetHeader("X-Ownership-Token")
+	if token == "" {
+		token = ctx.Query("token")
+	}
+	if token == "" {
+		token = ctx.Query("ownership_token")
+	}
+
+	resp, err := c.svc.GetRecordingDetail(ctx.Request.Context(), recID, token)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	if resp == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.RecordingDetailResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "recording detail retrieved successfully",
 		Data:      *resp,
 		Timestamp: time.Now(),
 	})

@@ -525,3 +525,197 @@ func TestControllers_ImportURL_Success(t *testing.T) {
 	}
 }
 
+func TestControllers_GetRecordingDetail_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/test", nil)
+
+	ctrls := &Controllers{}
+	ctrls.GetRecordingDetail(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetRecordingDetail_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/not-a-uuid", nil)
+	c.Params = gin.Params{{Key: "id", Value: "not-a-uuid"}}
+
+	ctrls.GetRecordingDetail(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_GetRecordingDetail_NotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String(), nil)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.GetRecordingDetail(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_GetRecordingDetail_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String(), nil)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+			AddRow(recID, "secret-token", true))
+
+	ctrls.GetRecordingDetail(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_GetRecordingDetail_Success_QueryToken(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	token := "valid-token-123"
+	now := time.Now()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"?token="+token, nil)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "title", "original_filename", "audio_url", "source_type",
+			"status", "selected_template", "output_language", "is_guest", "ownership_token", "created_at", "updated_at",
+		}).AddRow(
+			recID, "Meeting Recording", "meeting.mp3", "recordings/"+recID.String()+"/meeting.mp3", "UPLOAD",
+			"COMPLETED", "MOM", "id", true, token, now, now,
+		))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC LIMIT \$2`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	ctrls.GetRecordingDetail(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.RecordingDetailResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if resp.Data.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.Data.ID)
+	}
+	if resp.Data.Title != "Meeting Recording" {
+		t.Errorf("expected title Meeting Recording, got %s", resp.Data.Title)
+	}
+}
+
+func TestControllers_GetRecordingDetail_Success_HeaderToken(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	token := "header-token-456"
+	now := time.Now()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String(), nil)
+	req.Header.Set("X-Ownership-Token", token)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "title", "original_filename", "audio_url", "source_type",
+			"status", "selected_template", "output_language", "is_guest", "ownership_token", "created_at", "updated_at",
+		}).AddRow(
+			recID, "Header Auth Meeting", "voice.wav", "", "UPLOAD",
+			"PENDING", "GENERAL", "en", true, token, now, now,
+		))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC LIMIT \$2`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	ctrls.GetRecordingDetail(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.RecordingDetailResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if resp.Data.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.Data.ID)
+	}
+}
+
+

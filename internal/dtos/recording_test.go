@@ -130,3 +130,72 @@ func TestRecordingDTO_ImportURLRequest_Validate(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_RecordingDetailResponse_Structure(t *testing.T) {
+	playbackURL := "https://s3.example.com/presigned-url"
+	activeSummary := &dtos.SummaryDTO{
+		ID:               "sum-1",
+		TemplateCategory: "MOM",
+		Version:          1,
+		IsActive:         true,
+		MarkdownContent:  "## Summary Content",
+	}
+
+	detail := dtos.RecordingDetailResponse{
+		ID:               "rec-123",
+		Title:            "Executive Sync",
+		OriginalFilename: "sync.mp3",
+		FileSizeBytes:    1024,
+		DurationSeconds:  120.5,
+		PlaybackURL:      &playbackURL,
+		Status:           "COMPLETED",
+		SelectedTemplate: "MOM",
+		OutputLanguage:   "en",
+		IsGuest:          false,
+		Segments: []dtos.TranscriptSegmentDTO{
+			{
+				ID:           "seg-1",
+				SpeakerLabel: "Speaker 0",
+				SpeakerName:  "Alice",
+				StartTime:    0.0,
+				EndTime:      5.5,
+				Text:         "Good morning everyone",
+			},
+		},
+		ActiveSummary: activeSummary,
+		Chapters: []dtos.ChapterDTO{
+			{
+				ID:        "chap-1",
+				Title:     "Opening remarks",
+				StartTime: 0.0,
+				EndTime:   60.0,
+				Summary:   "Introductions and welcome",
+			},
+		},
+		Highlights: []dtos.HighlightDTO{
+			{
+				ID:        "hl-1",
+				StartTime: 10.0,
+				EndTime:   15.0,
+				Source:    "manual",
+			},
+		},
+	}
+
+	if detail.ID != "rec-123" {
+		t.Errorf("expected ID rec-123, got %s", detail.ID)
+	}
+	if len(detail.Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(detail.Segments))
+	}
+	if detail.ActiveSummary == nil || detail.ActiveSummary.TemplateCategory != "MOM" {
+		t.Error("expected active summary with MOM template")
+	}
+	if len(detail.Chapters) != 1 {
+		t.Errorf("expected 1 chapter, got %d", len(detail.Chapters))
+	}
+	if len(detail.Highlights) != 1 {
+		t.Errorf("expected 1 highlight, got %d", len(detail.Highlights))
+	}
+}
+
+

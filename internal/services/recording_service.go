@@ -151,7 +151,7 @@ func (s *Service) UploadRecording(
 	}
 	template := strings.TrimSpace(req.Template)
 	if template == "" {
-		template = "GENERAL"
+		template = constants.TemplateKeyGeneral
 	}
 	language := strings.TrimSpace(req.Language)
 	if language == "" {
@@ -884,7 +884,7 @@ func (s *Service) ImportRecordingFromURL(
 	}
 	template := strings.TrimSpace(req.Template)
 	if template == "" {
-		template = "GENERAL"
+		template = constants.TemplateKeyGeneral
 	}
 	language := strings.TrimSpace(req.Language)
 	if language == "" {
@@ -1240,12 +1240,12 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		templateKey = rec.SelectedTemplate
 	}
 	if templateKey == "" {
-		templateKey = "GENERAL"
+		templateKey = constants.TemplateKeyGeneral
 	}
 
 	template, err := s.repo.FindTemplateByCategoryKey(ctx, templateKey)
 	if err != nil || template == nil {
-		template, _ = s.repo.FindTemplateByCategoryKey(ctx, "GENERAL")
+		template, _ = s.repo.FindTemplateByCategoryKey(ctx, constants.TemplateKeyGeneral)
 	}
 
 	systemPrompt, err := templates.DefaultSummarySystemPrompt()
@@ -1674,10 +1674,3 @@ func (s *Service) DeleteInlineComment(ctx context.Context, recordingID uuid.UUID
 
 	return nil
 }
-
-
-
-
-
-
-

@@ -156,7 +156,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		wordsJSON, _ := json.Marshal(seg.Words)
 		speaker := seg.SpeakerLabel
 		if speaker == "" {
-			speaker = "Speaker 0"
+			speaker = constants.DefaultSpeakerLabel
 		}
 		modelSegments = append(modelSegments, models.TranscriptSegment{
 			RecordingID:   recording.ID,
@@ -174,8 +174,8 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	if len(modelSegments) == 0 && strings.TrimSpace(sttResult.Text) != "" {
 		modelSegments = append(modelSegments, models.TranscriptSegment{
 			RecordingID:   recording.ID,
-			SpeakerLabel:  "Speaker 0",
-			SpeakerName:   "Speaker 0",
+			SpeakerLabel:  constants.DefaultSpeakerLabel,
+			SpeakerName:   constants.DefaultSpeakerLabel,
 			StartTime:     0,
 			EndTime:       sttResult.Duration,
 			Text:          sttResult.Text,
@@ -223,11 +223,11 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	// Retrieve template
 	templateKey := recording.SelectedTemplate
 	if templateKey == "" {
-		templateKey = "GENERAL"
+		templateKey = constants.TemplateKeyGeneral
 	}
 	template, err := s.repo.FindTemplateByCategoryKey(ctx, templateKey)
 	if err != nil || template == nil {
-		template, _ = s.repo.FindTemplateByCategoryKey(ctx, "GENERAL")
+		template, _ = s.repo.FindTemplateByCategoryKey(ctx, constants.TemplateKeyGeneral)
 	}
 
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recording.ID)

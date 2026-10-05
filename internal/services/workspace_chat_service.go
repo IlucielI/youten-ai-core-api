@@ -89,7 +89,7 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 		messages = append(messages, req.History...)
 	}
 	messages = append(messages, dtos.ChatMessageInput{
-		Role:    "user",
+		Role:    constants.ChatRoleUser,
 		Content: userPrompt,
 	})
 

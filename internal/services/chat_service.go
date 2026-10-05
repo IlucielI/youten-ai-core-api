@@ -62,7 +62,7 @@ func (s *Service) InitiateRecordingChatStream(
 	userMsg := &models.ChatMessage{
 		ID:                uuid.New(),
 		RecordingID:       rec.ID,
-		SenderRole:        "user",
+		SenderRole:        constants.ChatRoleUser,
 		Content:           trimmedMsg,
 		Citations:         json.RawMessage("[]"),
 		RetrievedChunkIDs: json.RawMessage("[]"),
@@ -102,7 +102,7 @@ func (s *Service) InitiateRecordingChatStream(
 		messages = append(messages, req.ConversationHistory...)
 	}
 	messages = append(messages, dtos.ChatMessageInput{
-		Role:    "user",
+		Role:    constants.ChatRoleUser,
 		Content: userPrompt,
 	})
 
@@ -134,7 +134,7 @@ func (s *Service) InitiateRecordingChatStream(
 		asstMsg := &models.ChatMessage{
 			ID:                uuid.New(),
 			RecordingID:       rec.ID,
-			SenderRole:        "assistant",
+			SenderRole:        constants.ChatRoleAssistant,
 			Content:           fullContent,
 			Citations:         json.RawMessage(citationsJSON),
 			RetrievedChunkIDs: json.RawMessage(chunkIDsJSON),

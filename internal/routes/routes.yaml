@@ -108,3 +108,11 @@ routes:
     path: /v1/recordings/:id
     handler: DeleteRecording
     auth: true
+
+  # Claim guest recording endpoint
+  -
+    method: POST
+    path: /v1/recordings/:id/claim
+    handler: ClaimRecording
+    auth: true
+

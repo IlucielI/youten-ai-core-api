@@ -269,5 +269,29 @@ func TestRecordingDTO_RecordingListResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_ClaimRecordingRequest_Validation(t *testing.T) {
+	validReq := dtos.ClaimRecordingRequest{
+		OwnershipToken: "secret-token-123",
+	}
+	if err := validReq.Validate(); err != nil {
+		t.Errorf("expected valid claim request, got %v", err)
+	}
+
+	missingToken := dtos.ClaimRecordingRequest{
+		OwnershipToken: "",
+	}
+	if err := missingToken.Validate(); err == nil {
+		t.Error("expected error for missing ownership_token, got nil")
+	}
+
+	tooLongToken := dtos.ClaimRecordingRequest{
+		OwnershipToken: string(make([]byte, 256)),
+	}
+	if err := tooLongToken.Validate(); err == nil {
+		t.Error("expected error for ownership_token exceeding 255 chars, got nil")
+	}
+}
+
+
 
 

@@ -271,3 +271,16 @@ func (q *RecordingFilterQuery) SetDefaults() {
 	}
 }
 
+// ClaimRecordingRequest encapsulates the payload required to bind a guest recording to an authenticated user account.
+type ClaimRecordingRequest struct {
+	OwnershipToken string `json:"ownership_token"`
+}
+
+// Validate validates ClaimRecordingRequest fields using ozzo-validation.
+func (r *ClaimRecordingRequest) Validate() error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.OwnershipToken, validation.Required, validation.Length(1, 255)),
+	)
+}
+
+

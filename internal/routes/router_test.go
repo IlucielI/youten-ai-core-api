@@ -264,6 +264,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"POST", "/v1/auth/reset-password"},
 		{"GET", "/v1/auth/me"},
 		{"PUT", "/v1/auth/me"},
+		{"PUT", "/v1/auth/change-password"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -278,7 +279,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		}
 	}
 
-	// Verify /v1/auth/me (GET and PUT) are protected by auth middleware (returns 401 Unauthorized without header)
+	// Verify /v1/auth/me (GET and PUT) and /v1/auth/change-password (PUT) are protected by auth middleware (returns 401 Unauthorized without header)
 	wMeGet := httptest.NewRecorder()
 	reqMeGet, _ := http.NewRequest(http.MethodGet, "/v1/auth/me", nil)
 	router.ServeHTTP(wMeGet, reqMeGet)
@@ -293,6 +294,15 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wMePut.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 Unauthorized for PUT /v1/auth/me without token, got %d", wMePut.Code)
 	}
+
+	wChangePwd := httptest.NewRecorder()
+	reqChangePwd, _ := http.NewRequest(http.MethodPut, "/v1/auth/change-password", strings.NewReader(`{"old_password":"old","new_password":"new"}`))
+	reqChangePwd.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wChangePwd, reqChangePwd)
+	if wChangePwd.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for PUT /v1/auth/change-password without token, got %d", wChangePwd.Code)
+	}
 }
+
 
 

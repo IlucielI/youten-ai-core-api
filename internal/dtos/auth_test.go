@@ -373,3 +373,62 @@ func TestUpdateProfileRequest_Validate(t *testing.T) {
 	}
 }
 
+func TestChangePasswordRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.ChangePasswordRequest
+		wantErr bool
+	}{
+		{
+			name: "valid change password payload",
+			req: dtos.ChangePasswordRequest{
+				OldPassword: "oldSecurePassword1",
+				NewPassword: "newSecurePassword2",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty old password",
+			req: dtos.ChangePasswordRequest{
+				OldPassword: "",
+				NewPassword: "newSecurePassword2",
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty new password",
+			req: dtos.ChangePasswordRequest{
+				OldPassword: "oldSecurePassword1",
+				NewPassword: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "new password too short",
+			req: dtos.ChangePasswordRequest{
+				OldPassword: "oldSecurePassword1",
+				NewPassword: "short1",
+			},
+			wantErr: true,
+		},
+		{
+			name: "new password missing digit",
+			req: dtos.ChangePasswordRequest{
+				OldPassword: "oldSecurePassword1",
+				NewPassword: "noDigitsInPassword",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ChangePasswordRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+

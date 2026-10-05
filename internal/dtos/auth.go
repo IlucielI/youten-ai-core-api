@@ -85,6 +85,27 @@ func (r *UpdateProfileRequest) Validate() error {
 	)
 }
 
+// ChangePasswordRequest defines the input payload for changing an authenticated user's password.
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+// Validate performs structural and semantic validation on ChangePasswordRequest.
+func (r *ChangePasswordRequest) Validate() error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.OldPassword,
+			validation.Required.Error("old password is required"),
+		),
+		validation.Field(&r.NewPassword,
+			validation.Required.Error("new password is required"),
+			validation.Length(8, 72).Error("new password must be between 8 and 72 characters"),
+			validation.Match(digitRegex).Error("new password must contain at least one digit"),
+		),
+	)
+}
+
+
 
 // LoginRequest defines the input payload for user authentication.
 type LoginRequest struct {

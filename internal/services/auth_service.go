@@ -521,5 +521,59 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req *dtos
 	return s.GetProfile(ctx, userID)
 }
 
+// ChangePassword verifies the user's current password and securely updates it with a new hashed password.
+// All other active refresh sessions for the user are revoked upon successful password change.
+func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, req *dtos.ChangePasswordRequest) error {
+	if s == nil || s.repo == nil {
+		return constants.ErrInternalServerError
+	}
+	if userID == uuid.Nil {
+		return constants.ErrUnauthorized
+	}
+	if req == nil {
+		return constants.ErrBadRequest.WithMessage("change password payload is required")
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrUserNotFound
+		}
+		return s.wrapError(ctx, err)
+	}
+	if user == nil || user.Status != constants.UserStatusActive {
+		return constants.ErrUserInactive
+	}
+
+	// Verify old password against stored hash
+	if !hasher.VerifyPassword(user.PasswordHash, req.OldPassword) {
+		return constants.ErrBadRequest.WithMessage("current password is incorrect")
+	}
+
+	// Ensure new password differs from old password
+	if req.OldPassword == req.NewPassword {
+		return constants.ErrBadRequest.WithMessage("new password cannot be the same as current password")
+	}
+
+	// Hash new password using bcrypt
+	newPasswordHash, err := hasher.HashPassword(req.NewPassword)
+	if err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	// Update user password in database
+	if err := s.repo.UpdateUserPassword(ctx, user.ID, newPasswordHash); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	// Revoke all other active sessions (refresh tokens) for security
+	if err := s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, constants.AuthTokenTypeRefresh); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	return nil
+}
+
+
 
 

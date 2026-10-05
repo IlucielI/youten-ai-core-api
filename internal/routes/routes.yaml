@@ -164,5 +164,13 @@ routes:
     handler: UpdateTranscriptSpeakers
     optional_auth: true
 
+  # Regenerate summary with custom angle endpoint
+  -
+    method: POST
+    path: /v1/recordings/:id/regenerate
+    handler: RegenerateSummary
+    optional_auth: true
+
+
 
 

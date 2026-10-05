@@ -478,6 +478,36 @@ func (s *Service) ListRecordings(ctx context.Context, query dtos.RecordingFilter
 	}, nil
 }
 
+// DeleteRecording handles soft-deleting a recording owned by the authenticated user.
+func (s *Service) DeleteRecording(ctx context.Context, id uuid.UUID) error {
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	if !isAuth || !hasUserID {
+		return constants.ErrUnauthorized
+	}
+
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound
+		}
+		return fmt.Errorf("failed to retrieve recording: %w", err)
+	}
+
+	if rec.UserID == nil || *rec.UserID != userID {
+		return constants.ErrForbidden
+	}
+
+	if err := s.repo.DeleteRecording(ctx, id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound
+		}
+		return fmt.Errorf("failed to soft-delete recording: %w", err)
+	}
+
+	return nil
+}
+
 // ImportRecordingFromURL validates target link against SSRF defense policies, streams media into S3,
 // records the new recording entry, and emits the background pipeline extraction event.
 func (s *Service) ImportRecordingFromURL(

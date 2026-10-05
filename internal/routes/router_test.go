@@ -267,6 +267,9 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"PUT", "/v1/auth/change-password"},
 		{"POST", "/v1/recordings/upload"},
 		{"POST", "/v1/recordings/import-url"},
+		{"GET", "/v1/recordings/:id"},
+		{"GET", "/v1/recordings"},
+		{"DELETE", "/v1/recordings/:id"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -356,6 +359,17 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router.ServeHTTP(wList, reqList)
 	if wList.Code != http.StatusUnauthorized {
 		t.Fatalf("expected /v1/recordings to return 401 Unauthorized without header (auth: true), got %d", wList.Code)
+	}
+
+	// Verify DELETE /v1/recordings/:id is configured with auth: true (returns 401 Unauthorized without header)
+	wDelete := httptest.NewRecorder()
+	reqDelete, err := http.NewRequest(http.MethodDelete, "/v1/recordings/00000000-0000-0000-0000-000000000001", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wDelete, reqDelete)
+	if wDelete.Code != http.StatusUnauthorized {
+		t.Fatalf("expected DELETE /v1/recordings/:id to return 401 Unauthorized without header (auth: true), got %d", wDelete.Code)
 	}
 }
 

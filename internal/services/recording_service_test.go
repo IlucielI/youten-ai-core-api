@@ -930,4 +930,145 @@ func TestService_ListRecordings_DBError(t *testing.T) {
 	}
 }
 
+func TestService_DeleteRecording_Unauthorized(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+
+	err := svc.DeleteRecording(context.Background(), recID)
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_DeleteRecording_Unauthorized_ContextNilUserID(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: uuid.Nil})
+	err := svc.DeleteRecording(ctx, recID)
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_DeleteRecording_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	err := svc.DeleteRecording(ctx, recID)
+	if !errors.Is(err, constants.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_DeleteRecording_FindError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(errors.New("db error"))
+
+	err := svc.DeleteRecording(ctx, recID)
+	if err == nil || !strings.Contains(err.Error(), "db error") {
+		t.Fatalf("expected db error, got %v", err)
+	}
+}
+
+func TestService_DeleteRecording_Forbidden_RecordingHasNilUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, nil))
+
+	err := svc.DeleteRecording(ctx, recID)
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for guest/nil user recording, got %v", err)
+	}
+}
+
+func TestService_DeleteRecording_Forbidden_DifferentUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	otherUserID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, otherUserID))
+
+	err := svc.DeleteRecording(ctx, recID)
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for other user recording, got %v", err)
+	}
+}
+
+func TestService_DeleteRecording_DeleteError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, userID))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "deleted_at"=\$1 WHERE id = \$2 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), recID).
+		WillReturnError(errors.New("delete failed"))
+	mock.ExpectRollback()
+
+	err := svc.DeleteRecording(ctx, recID)
+	if err == nil || !strings.Contains(err.Error(), "delete failed") {
+		t.Fatalf("expected delete error, got %v", err)
+	}
+}
+
+func TestService_DeleteRecording_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, userID))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "deleted_at"=\$1 WHERE id = \$2 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.DeleteRecording(ctx, recID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+
 

@@ -89,7 +89,14 @@ func (r *Repositories) ClaimRecordingToUser(ctx context.Context, id uuid.UUID, o
 
 // DeleteRecording performs a soft-delete on a recording.
 func (r *Repositories) DeleteRecording(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&models.Recording{}, "id = ?", id).Error
+	res := r.db.WithContext(ctx).Delete(&models.Recording{}, "id = ?", id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // RecordingFilter specifies filtering and pagination criteria for user recordings.

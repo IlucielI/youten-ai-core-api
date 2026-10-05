@@ -34,11 +34,6 @@ func (c *Controllers) GetRecordingDetail(ctx *gin.Context) {
 		return
 	}
 
-	if resp == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
-
 	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.RecordingDetailResponse]{
 		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
@@ -60,11 +55,6 @@ func (c *Controllers) ListRecordings(ctx *gin.Context) {
 	resp, err := c.svc.ListRecordings(ctx.Request.Context(), query)
 	if err != nil {
 		c.wrapError(ctx, err)
-		return
-	}
-
-	if resp == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
 		return
 	}
 
@@ -177,11 +167,6 @@ func (c *Controllers) SearchRecordings(ctx *gin.Context) {
 	res, err := c.svc.SearchWorkspaceSemantic(ctx.Request.Context(), query)
 	if err != nil {
 		c.wrapError(ctx, err)
-		return
-	}
-
-	if res == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
 		return
 	}
 

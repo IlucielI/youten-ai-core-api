@@ -91,6 +91,7 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 		middlewares.CORS(corsCfg),
 		middlewares.RateLimit(cfg.RateLimiterLimit, cfg.RateLimiterBurst, cfg.RateLimiterEnabled),
 		middlewares.ClientMeta(),
+		middlewares.BodyLimit(cfg.MaxRequestBodySize),
 	)
 
 	// Central controllers container

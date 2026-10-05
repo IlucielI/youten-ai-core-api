@@ -133,9 +133,6 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 		return
 	}
 
-	// Limit body size for chat prompt payload (64KB)
-	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
-
 	var req dtos.RecordingChatRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
@@ -245,11 +242,6 @@ func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
 	res, err := c.svc.AskWorkspaceMemory(ctx.Request.Context(), req)
 	if err != nil {
 		c.wrapError(ctx, err)
-		return
-	}
-
-	if res == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
 		return
 	}
 

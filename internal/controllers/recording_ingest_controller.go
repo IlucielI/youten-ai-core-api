@@ -16,10 +16,6 @@ import (
 // PresignUpload generates a pre-signed S3 PUT URL so that the frontend
 // can upload the media file directly to object storage without streaming through the backend.
 func (c *Controllers) PresignUpload(ctx *gin.Context) {
-
-	// Restrict payload size for metadata JSON (64KB)
-	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
-
 	var req dtos.PresignUploadRequest
 	if err := ctx.ShouldBind(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
@@ -52,11 +48,6 @@ func (c *Controllers) PresignUpload(ctx *gin.Context) {
 		return
 	}
 
-	if resp == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
-
 	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.PresignUploadResponse]{
 		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
@@ -69,10 +60,6 @@ func (c *Controllers) PresignUpload(ctx *gin.Context) {
 // UploadRecording confirms media file upload after the frontend uploaded directly to S3.
 // The frontend only submits the filename and metadata, preventing file streams through the backend.
 func (c *Controllers) UploadRecording(ctx *gin.Context) {
-
-	// Restrict metadata payload size (64KB)
-	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
-
 	var req dtos.UploadRecordingRequest
 	if err := ctx.ShouldBind(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
@@ -100,11 +87,6 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 		return
 	}
 
-	if resp == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
-
 	ctx.JSON(http.StatusCreated, dtos.APIResponse[dtos.RecordingUploadResponse]{
 		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
@@ -116,10 +98,6 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 
 // ImportURL handles media ingestion from a remote URL with Anti-SSRF protection.
 func (c *Controllers) ImportURL(ctx *gin.Context) {
-
-	// Restrict JSON request body size (64KB)
-	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
-
 	var req dtos.ImportURLRequest
 	if err := ctx.ShouldBind(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
@@ -144,11 +122,6 @@ func (c *Controllers) ImportURL(ctx *gin.Context) {
 	resp, err := c.svc.ImportRecordingFromURL(ctx.Request.Context(), req)
 	if err != nil {
 		c.wrapError(ctx, err)
-		return
-	}
-
-	if resp == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
 		return
 	}
 
@@ -183,11 +156,6 @@ func (c *Controllers) RetryRecording(ctx *gin.Context) {
 	resp, err := c.svc.RetryRecordingPipeline(ctx.Request.Context(), id, ownershipToken)
 	if err != nil {
 		c.wrapError(ctx, err)
-		return
-	}
-
-	if resp == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
 		return
 	}
 

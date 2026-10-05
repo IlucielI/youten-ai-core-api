@@ -210,11 +210,6 @@ func (c *Controllers) GetWorkspaceSpeakers(ctx *gin.Context) {
 		return
 	}
 
-	if res == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
-
 	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SpeakerDirectoryResponse]{
 		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,

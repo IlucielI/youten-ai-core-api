@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -340,42 +339,8 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 	return sb.String()
 }
 
-type jsonExportPayload struct {
-	RecordingID      string                    `json:"recording_id"`
-	Title            string                    `json:"title"`
-	DurationSeconds  float64                   `json:"duration_seconds"`
-	Status           string                    `json:"status"`
-	CreatedAt        time.Time                 `json:"created_at"`
-	ExecutiveSummary string                    `json:"executive_summary,omitempty"`
-	ActionItems      []string                  `json:"action_items,omitempty"`
-	Chapters         []jsonExportChapter       `json:"chapters,omitempty"`
-	Highlights       []jsonExportHighlight     `json:"highlights,omitempty"`
-	Transcript       []jsonExportTranscriptSeg `json:"transcript,omitempty"`
-}
-
-type jsonExportChapter struct {
-	Title     string  `json:"title"`
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Summary   string  `json:"summary"`
-}
-
-type jsonExportHighlight struct {
-	Title     string  `json:"title,omitempty"`
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Note      string  `json:"note,omitempty"`
-}
-
-type jsonExportTranscriptSeg struct {
-	Speaker   string  `json:"speaker"`
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Text      string  `json:"text"`
-}
-
 func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []models.Chapter, highlights []models.Highlight, segments []models.TranscriptSegment) ([]byte, error) {
-	payload := jsonExportPayload{
+	payload := dtos.JSONExportPayload{
 		RecordingID:      rec.ID.String(),
 		Title:            rec.Title,
 		DurationSeconds:  rec.DurationSeconds,
@@ -386,7 +351,7 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 	}
 
 	for _, ch := range chapters {
-		payload.Chapters = append(payload.Chapters, jsonExportChapter{
+		payload.Chapters = append(payload.Chapters, dtos.JSONExportChapter{
 			Title:     ch.Title,
 			StartTime: ch.StartTime,
 			EndTime:   ch.EndTime,
@@ -403,7 +368,7 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 		if h.Note != nil {
 			note = *h.Note
 		}
-		payload.Highlights = append(payload.Highlights, jsonExportHighlight{
+		payload.Highlights = append(payload.Highlights, dtos.JSONExportHighlight{
 			Title:     title,
 			StartTime: h.StartTime,
 			EndTime:   h.EndTime,
@@ -419,7 +384,7 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 		if speaker == "" {
 			speaker = "Speaker"
 		}
-		payload.Transcript = append(payload.Transcript, jsonExportTranscriptSeg{
+		payload.Transcript = append(payload.Transcript, dtos.JSONExportTranscriptSeg{
 			Speaker:   speaker,
 			StartTime: s.StartTime,
 			EndTime:   s.EndTime,

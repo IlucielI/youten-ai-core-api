@@ -359,10 +359,3 @@ type CommentResponse struct {
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at,omitempty"`
 }
-
-// ExportResult contains the generated file data and metadata for HTTP response streaming.
-type ExportResult struct {
-	Filename    string
-	ContentType string
-	Data        []byte
-}

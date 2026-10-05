@@ -18,11 +18,10 @@ import (
 	"code-base-golang/internal/pkg/ctxmeta"
 )
 
-// RecordingChatStreamResult carries the stream channel and completion callback.
+// RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
 type RecordingChatStreamResult struct {
 	StreamChannel     <-chan dtos.StreamChunk
 	RetrievedChunkIDs []string
-	SaveAssistantMsg  func(ctx context.Context, fullContent string) (*models.ChatMessage, []string, error)
 }
 
 // InitiateRecordingChatStream validates ownership, retrieves relevant context chunks via vector search,
@@ -111,19 +110,14 @@ func (s *Service) InitiateRecordingChatStream(
 		return nil, fmt.Errorf("failed to stream chat completion: %w", err)
 	}
 
-	saveAssistantMsg := func(saveCtx context.Context, fullContent string) (*models.ChatMessage, []string, error) {
-		return s.saveAssistantChatMessage(saveCtx, rec.ID, fullContent, retrievedChunkIDs)
-	}
-
 	return &RecordingChatStreamResult{
 		StreamChannel:     streamCh,
 		RetrievedChunkIDs: retrievedChunkIDs,
-		SaveAssistantMsg:  saveAssistantMsg,
 	}, nil
 }
 
-// saveAssistantChatMessage parses citations, maps the model entity, and persists the assistant response turn.
-func (s *Service) saveAssistantChatMessage(
+// SaveAssistantChatMessage parses citations, maps the model entity, and persists the assistant response turn.
+func (s *Service) SaveAssistantChatMessage(
 	ctx context.Context,
 	recordingID uuid.UUID,
 	content string,

@@ -189,7 +189,7 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 	saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	asstMsg, citations, err := result.SaveAssistantMsg(saveCtx, fullContent.String())
+	asstMsg, citations, err := c.svc.SaveAssistantChatMessage(saveCtx, id, fullContent.String(), result.RetrievedChunkIDs)
 	if err != nil {
 		_ = sse.WriteChatError(ctx.Writer, "failed to persist assistant message")
 		return

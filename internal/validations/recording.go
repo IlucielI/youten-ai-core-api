@@ -46,7 +46,7 @@ func ValidateClaimRecordingRequest(r *dtos.ClaimRecordingRequest) error {
 // ValidateBulkClaimRequest validates a bulk guest-recording claim payload.
 func ValidateBulkClaimRequest(r *dtos.BulkClaimRequest) error {
 	return validation.ValidateStruct(r,
-		validation.Field(&r.Tokens, validation.Required, validation.Length(1, 100)),
+		validation.Field(&r.Tokens, validation.Required, validation.Length(1, 100), validation.Each(validation.Required, validation.Length(1, 255))),
 	)
 }
 

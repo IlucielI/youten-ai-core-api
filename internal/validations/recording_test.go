@@ -134,6 +134,20 @@ func TestRecordingDTO_BulkClaimRequest_Validation(t *testing.T) {
 	if err := validations.ValidateBulkClaimRequest(&tooManyTokens); err == nil {
 		t.Error("expected error for tokens exceeding 100 items, got nil")
 	}
+
+	blankToken := dtos.BulkClaimRequest{
+		Tokens: []string{"valid-token", ""},
+	}
+	if err := validations.ValidateBulkClaimRequest(&blankToken); err == nil {
+		t.Error("expected error for empty token in tokens slice, got nil")
+	}
+
+	oversizedToken := dtos.BulkClaimRequest{
+		Tokens: []string{strings.Repeat("a", 256)},
+	}
+	if err := validations.ValidateBulkClaimRequest(&oversizedToken); err == nil {
+		t.Error("expected error for token exceeding 255 chars, got nil")
+	}
 }
 
 func TestRecordingDTO_ShareToggleRequest_Validation(t *testing.T) {

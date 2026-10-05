@@ -13,6 +13,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/sse"
+	"code-base-golang/internal/validations"
 )
 
 // PresignUpload generates a pre-signed S3 PUT URL so that the frontend
@@ -33,7 +34,7 @@ func (c *Controllers) PresignUpload(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidatePresignUploadRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -86,7 +87,7 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateUploadRecordingRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -133,7 +134,7 @@ func (c *Controllers) ImportURL(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateImportURLRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -276,7 +277,7 @@ func (c *Controllers) ClaimRecording(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateClaimRecordingRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -313,7 +314,7 @@ func (c *Controllers) ClaimBulkRecordings(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateBulkClaimRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -359,7 +360,7 @@ func (c *Controllers) ToggleRecordingShare(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateShareToggleRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -559,7 +560,7 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateRecordingChatRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -669,7 +670,7 @@ func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateUpdateSpeakersRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -728,7 +729,7 @@ func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 		}
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateRegenerateSummaryRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -857,7 +858,7 @@ func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateCreateCommentRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,

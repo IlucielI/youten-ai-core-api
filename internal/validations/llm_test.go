@@ -1,10 +1,11 @@
-package dtos_test
+package validations_test
 
 import (
 	"strings"
 	"testing"
 
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/validations"
 )
 
 func TestRecordingChatRequest_Validate(t *testing.T) {
@@ -64,7 +65,7 @@ func TestRecordingChatRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateRecordingChatRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}

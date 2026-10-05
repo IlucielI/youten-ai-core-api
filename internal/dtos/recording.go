@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"github.com/go-ozzo/ozzo-validation/v4/is"
 	"github.com/google/uuid"
 )
 
@@ -60,13 +58,6 @@ type PresignUploadRequest struct {
 	ContentType string `form:"content_type" json:"content_type"`
 }
 
-// Validate checks request constraints for presign upload.
-func (r PresignUploadRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.Filename, validation.Required, validation.Length(1, 255)),
-	)
-}
-
 // PresignUploadResponse carries the temporary pre-signed direct upload coordinates.
 type PresignUploadResponse struct {
 	UploadURL string `json:"upload_url"`
@@ -81,16 +72,6 @@ type UploadRecordingRequest struct {
 	Title     string `form:"title" json:"title"`
 	Template  string `form:"template" json:"template"`
 	Language  string `form:"language" json:"language"`
-}
-
-// Validate checks request constraints.
-func (r UploadRecordingRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.Filename, validation.Required, validation.Length(1, 255)),
-		validation.Field(&r.Title, validation.Length(0, 255)),
-		validation.Field(&r.Template, validation.Length(0, 100)),
-		validation.Field(&r.Language, validation.Length(0, 50)),
-	)
 }
 
 // RecordingUploadResponse represents the response payload returned after successful ingestion.
@@ -113,16 +94,6 @@ type ImportURLRequest struct {
 	Title    string `form:"title" json:"title"`
 	Template string `form:"template" json:"template"`
 	Language string `form:"language" json:"language"`
-}
-
-// Validate checks request constraints for URL import.
-func (r ImportURLRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.URL, validation.Required, is.URL),
-		validation.Field(&r.Title, validation.Length(0, 255)),
-		validation.Field(&r.Template, validation.Length(0, 100)),
-		validation.Field(&r.Language, validation.Length(0, 50)),
-	)
 }
 
 // GetRecordingDetailQuery captures optional client query parameters when requesting recording detail.
@@ -277,23 +248,9 @@ type ClaimRecordingRequest struct {
 	OwnershipToken string `json:"ownership_token"`
 }
 
-// Validate validates ClaimRecordingRequest fields using ozzo-validation.
-func (r *ClaimRecordingRequest) Validate() error {
-	return validation.ValidateStruct(r,
-		validation.Field(&r.OwnershipToken, validation.Required, validation.Length(1, 255)),
-	)
-}
-
 // BulkClaimRequest encapsulates the list of guest ownership tokens to be claimed to the authenticated user account.
 type BulkClaimRequest struct {
 	Tokens []string `json:"tokens"`
-}
-
-// Validate validates BulkClaimRequest fields using ozzo-validation.
-func (r *BulkClaimRequest) Validate() error {
-	return validation.ValidateStruct(r,
-		validation.Field(&r.Tokens, validation.Required, validation.Length(1, 100)),
-	)
 }
 
 // BulkClaimResponse encapsulates the summary result of a bulk claim operation.
@@ -305,13 +262,6 @@ type BulkClaimResponse struct {
 // ShareToggleRequest encapsulates payload to enable or disable public sharing of a recording.
 type ShareToggleRequest struct {
 	IsShareEnabled *bool `json:"is_share_enabled"`
-}
-
-// Validate validates ShareToggleRequest fields using ozzo-validation.
-func (r *ShareToggleRequest) Validate() error {
-	return validation.ValidateStruct(r,
-		validation.Field(&r.IsShareEnabled, validation.NotNil),
-	)
 }
 
 // ShareToggleResponse encapsulates the resulting public sharing state and link.
@@ -358,30 +308,6 @@ type UpdateSpeakersRequest struct {
 	OwnershipToken string            `json:"ownership_token,omitempty"`
 }
 
-// Validate checks constraints for UpdateSpeakersRequest.
-func (r UpdateSpeakersRequest) Validate() error {
-	if len(r.Speakers) == 0 {
-		return validation.NewError("validation_required", "speakers mapping cannot be empty")
-	}
-	for label, name := range r.Speakers {
-		trimmedLabel := strings.TrimSpace(label)
-		if trimmedLabel == "" {
-			return validation.NewError("validation_required", "speaker label cannot be blank")
-		}
-		if len(trimmedLabel) > 50 {
-			return validation.NewError("validation_length", "speaker label cannot exceed 50 characters")
-		}
-		trimmedName := strings.TrimSpace(name)
-		if trimmedName == "" {
-			return validation.NewError("validation_required", "speaker name cannot be blank")
-		}
-		if len(trimmedName) > 100 {
-			return validation.NewError("validation_length", "speaker name cannot exceed 100 characters")
-		}
-	}
-	return nil
-}
-
 // UpdateSpeakersResponse returns the result of the speaker label rename operation.
 type UpdateSpeakersResponse struct {
 	UpdatedCount int               `json:"updated_count"`
@@ -393,14 +319,6 @@ type RegenerateSummaryRequest struct {
 	TemplateCategory string  `json:"template_category,omitempty"`
 	CustomAngle      *string `json:"custom_angle,omitempty"`
 	OwnershipToken   string  `json:"ownership_token,omitempty"`
-}
-
-// Validate checks constraints for RegenerateSummaryRequest.
-func (r RegenerateSummaryRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.TemplateCategory, validation.Length(0, 100)),
-		validation.Field(&r.CustomAngle, validation.NilOrNotEmpty, validation.Length(0, 2000)),
-	)
 }
 
 // SummaryVersionResponse represents a summary version returned after generation or listing.
@@ -424,15 +342,6 @@ type CreateCommentRequest struct {
 	AuthorName     string     `json:"author_name"`
 	ParentID       *uuid.UUID `json:"parent_id,omitempty"`
 	OwnershipToken string     `json:"ownership_token,omitempty"`
-}
-
-// Validate checks constraints for CreateCommentRequest.
-func (r CreateCommentRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.CommentText, validation.Required, validation.Length(1, 5000)),
-		validation.Field(&r.AuthorName, validation.Length(0, 100)),
-		validation.Field(&r.TimestampSec, validation.Min(0.0)),
-	)
 }
 
 // CommentResponse represents the comment returned after creation or listing.

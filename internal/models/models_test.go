@@ -26,6 +26,7 @@ func TestTableNames(t *testing.T) {
 		{model: ChatMessage{}, expected: "chat_messages"},
 		{model: Notification{}, expected: "notifications"},
 		{model: Report{}, expected: "reports"},
+		{model: BotWaitlist{}, expected: "bot_waitlists"},
 	}
 
 	for _, tc := range testCases {

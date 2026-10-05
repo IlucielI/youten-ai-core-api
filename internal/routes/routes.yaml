@@ -96,6 +96,13 @@ routes:
     handler: SearchRecordings
     auth: true
 
+  # Cross-meeting workspace memory AI chat endpoint
+  - method: POST
+    path: /v1/recordings/ask
+    handler: AskWorkspaceMemory
+    auth: true
+
+
   # Recording detail retrieval endpoint
   - method: GET
     path: /v1/recordings/:id

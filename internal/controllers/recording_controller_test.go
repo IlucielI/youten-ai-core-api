@@ -20,6 +20,7 @@ import (
 	gormPostgres "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"code-base-golang/internal/adapters/llm"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
@@ -4298,3 +4299,171 @@ func TestControllers_SearchRecordings_Success(t *testing.T) {
 	}
 }
 
+func TestControllers_AskWorkspaceMemory_NilController(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"test"}`))
+
+	var ctrls *Controllers
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic on nil controller: %v", r)
+		}
+	}()
+	ctrls.AskWorkspaceMemory(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_AskWorkspaceMemory_NilService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"test"}`))
+
+	ctrls := &Controllers{svc: nil}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("AskWorkspaceMemory panicked with nil service: %v", r)
+		}
+	}()
+	ctrls.AskWorkspaceMemory(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_AskWorkspaceMemory_InvalidJSON(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`not-json`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.AskWorkspaceMemory(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_AskWorkspaceMemory_InvalidValidation(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"   "}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.AskWorkspaceMemory(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_AskWorkspaceMemory_Unauthorized(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	// Missing auth context -> returns 401 Unauthorized
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"what was agreed?"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.AskWorkspaceMemory(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", w.Code)
+	}
+}
+
+func TestControllers_AskWorkspaceMemory_ServiceError(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	ctrls.Service().SetEmbedding(&dummyEmbeddingProvider{})
+
+	// Simulate database error during cross-meeting chunk search
+	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
+	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WillReturnError(errors.New("database connection failed"))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"what was agreed?"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	ctrls.AskWorkspaceMemory(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_AskWorkspaceMemory_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	recID := uuid.New()
+	chunkID := uuid.New()
+
+	ctrls.Service().SetEmbedding(&dummyEmbeddingProvider{})
+
+	mockLLM := llm.NewMock()
+	mockLLM.GenerateChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+		return &dtos.ChatResponse{
+			Content: `Based on [Meeting: "Q3 Planning", 00:15], target delivery is October.`,
+		}, nil
+	}
+	ctrls.Service().SetLLM(mockLLM)
+
+	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
+	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}).
+			AddRow(chunkID, recID, "Q3 Planning", 0, "Delivery planned for October.", 15.0, 50.0, 0.15))
+
+	body := `{"question":"When is delivery scheduled?","history":[{"role":"user","content":"hello"}]}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	ctrls.AskWorkspaceMemory(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.WorkspaceAskResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp.Data.Answer != `Based on [Meeting: "Q3 Planning", 00:15], target delivery is October.` {
+		t.Errorf("unexpected answer: %s", resp.Data.Answer)
+	}
+	if len(resp.Data.Sources) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(resp.Data.Sources))
+	}
+	if resp.Data.Sources[0].RecordingTitle != "Q3 Planning" {
+		t.Errorf("expected source title 'Q3 Planning', got %s", resp.Data.Sources[0].RecordingTitle)
+	}
+}

@@ -93,3 +93,61 @@ func TestSemanticSearchQuery_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkspaceAskRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.WorkspaceAskRequest
+		wantErr bool
+	}{
+		{
+			name: "valid question minimal",
+			req: dtos.WorkspaceAskRequest{
+				Question: "What were the key decisions in last week's meetings?",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid question with history",
+			req: dtos.WorkspaceAskRequest{
+				Question: "Who owns the marketing deliverable?",
+				History: []dtos.ChatMessageInput{
+					{Role: "user", Content: "Hello"},
+					{Role: "assistant", Content: "Hi, how can I help?"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty question",
+			req: dtos.WorkspaceAskRequest{
+				Question: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "whitespace only question",
+			req: dtos.WorkspaceAskRequest{
+				Question: "    \t\n  ",
+			},
+			wantErr: true,
+		},
+		{
+			name: "question exceeding max length 4000",
+			req: dtos.WorkspaceAskRequest{
+				Question: strings.Repeat("q", 4001),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+

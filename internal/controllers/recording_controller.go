@@ -1274,3 +1274,50 @@ func (c *Controllers) SearchRecordings(ctx *gin.Context) {
 	})
 }
 
+// AskWorkspaceMemory handles cross-meeting AI chat questions with meeting citations.
+func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	var req dtos.WorkspaceAskRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	res, err := c.svc.AskWorkspaceMemory(ctx.Request.Context(), req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	if res == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.WorkspaceAskResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "workspace memory response generated successfully",
+		Data:      *res,
+		Timestamp: time.Now(),
+	})
+}
+

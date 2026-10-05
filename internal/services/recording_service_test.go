@@ -1594,9 +1594,100 @@ func TestService_ToggleRecordingShare_DBError(t *testing.T) {
 	}
 }
 
+func TestService_GetSharedRecording_EmptyToken(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	ctx := context.Background()
 
+	_, err := svc.GetSharedRecording(ctx, "   ")
+	if !errors.Is(err, constants.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for empty token, got %v", err)
+	}
+}
 
+func TestService_GetSharedRecording_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	ctx := context.Background()
 
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(share_token = \$1 AND is_share_enabled = TRUE\) AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs("invalid-token", 1).
+		WillReturnError(gorm.ErrRecordNotFound)
 
+	_, err := svc.GetSharedRecording(ctx, "invalid-token")
+	if !errors.Is(err, constants.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
 
+func TestService_GetSharedRecording_DBError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	ctx := context.Background()
 
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(share_token = \$1 AND is_share_enabled = TRUE\) AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs("token-123", 1).
+		WillReturnError(errors.New("db query error"))
+
+	_, err := svc.GetSharedRecording(ctx, "token-123")
+	if err == nil || !strings.Contains(err.Error(), "failed to retrieve shared recording") {
+		t.Fatalf("expected error, got %v", err)
+	}
+}
+
+func TestService_GetSharedRecording_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	ctx := context.Background()
+	recID := uuid.New()
+	audioKey := "recordings/audio.mp3"
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(share_token = \$1 AND is_share_enabled = TRUE\) AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs("valid-token", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "audio_url", "is_share_enabled", "share_token"}).
+			AddRow(recID, "Public Meeting", 180.0, audioKey, true, "valid-token"))
+
+	// ListTranscriptSegmentsByRecordingID
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_label", "text"}).
+			AddRow(uuid.New(), recID, "spk_0", "Hello public world"))
+
+	// FindActiveSummaryByRecordingID
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "markdown_content", "is_active"}).
+			AddRow(uuid.New(), recID, "Public summary markdown", true))
+
+	// ListChaptersByRecordingID
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1.*LIMIT \$2`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "title"}).
+			AddRow(uuid.New(), recID, "Introduction"))
+
+	// ListHighlightsByRecordingID
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "source"}).
+			AddRow(uuid.New(), recID, "KEY_POINT"))
+
+	resp, err := svc.GetSharedRecording(ctx, "valid-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.ID)
+	}
+	if resp.Title != "Public Meeting" {
+		t.Errorf("expected Title 'Public Meeting', got %s", resp.Title)
+	}
+	if len(resp.Segments) != 1 {
+		t.Errorf("expected 1 segment, got %d", len(resp.Segments))
+	}
+	if resp.ActiveSummary == nil || resp.ActiveSummary.MarkdownContent != "Public summary markdown" {
+		t.Errorf("expected active summary markdown content, got %v", resp.ActiveSummary)
+	}
+	if len(resp.Chapters) != 1 {
+		t.Errorf("expected 1 chapter, got %d", len(resp.Chapters))
+	}
+	if len(resp.Highlights) != 1 {
+		t.Errorf("expected 1 highlight, got %d", len(resp.Highlights))
+	}
+}

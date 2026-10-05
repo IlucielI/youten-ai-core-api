@@ -130,5 +130,8 @@ routes:
     handler: ToggleRecordingShare
     auth: true
 
-
-
+  # Public read-only shared recording viewer endpoint
+  -
+    method: GET
+    path: /v1/recordings/shared/:token
+    handler: GetSharedRecording

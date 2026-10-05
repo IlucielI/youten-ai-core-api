@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -461,7 +462,39 @@ func (c *Controllers) ToggleRecordingShare(ctx *gin.Context) {
 	})
 }
 
+// GetSharedRecording handles public retrieval of a shared recording by its share token.
+func (c *Controllers) GetSharedRecording(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
 
+	token := strings.TrimSpace(ctx.Param("token"))
+	if token == "" {
+		c.wrapError(ctx, constants.ErrNotFound)
+		return
+	}
 
+	resp, err := c.svc.GetSharedRecording(ctx.Request.Context(), token)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
 
-
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SharedRecordingResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "shared recording retrieved successfully",
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}

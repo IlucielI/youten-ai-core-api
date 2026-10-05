@@ -372,6 +372,29 @@ func TestRecordingDTO_ShareToggleResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_SharedRecordingResponse_Structure(t *testing.T) {
+	resp := dtos.SharedRecordingResponse{
+		ID:               "rec-123",
+		Title:            "Shared Title",
+		DurationSeconds:  120.5,
+		SelectedTemplate: "GENERAL",
+		OutputLanguage:   "id",
+		Segments:         []dtos.TranscriptSegmentDTO{},
+		Chapters:         []dtos.ChapterDTO{},
+		Highlights:       []dtos.HighlightDTO{},
+	}
+	if resp.ID != "rec-123" {
+		t.Errorf("expected ID 'rec-123', got %s", resp.ID)
+	}
+	if resp.Title != "Shared Title" {
+		t.Errorf("expected Title 'Shared Title', got %s", resp.Title)
+	}
+	if resp.DurationSeconds != 120.5 {
+		t.Errorf("expected DurationSeconds 120.5, got %f", resp.DurationSeconds)
+	}
+}
+
+
 
 
 

@@ -647,7 +647,129 @@ func (s *Service) ToggleRecordingShare(ctx context.Context, id uuid.UUID, req dt
 	}, nil
 }
 
+// GetSharedRecording retrieves a public read-only recording payload using an active share token.
+func (s *Service) GetSharedRecording(ctx context.Context, shareToken string) (*dtos.SharedRecordingResponse, error) {
+	token := strings.TrimSpace(shareToken)
+	if token == "" {
+		return nil, constants.ErrNotFound
+	}
 
+	rec, err := s.repo.FindRecordingByShareToken(ctx, token)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve shared recording: %w", err)
+	}
+
+	// Generate pre-signed audio playback URL if stored in object storage
+	var playbackURL *string
+	if rec.AudioURL != nil && *rec.AudioURL != "" {
+		if strings.HasPrefix(*rec.AudioURL, "http://") || strings.HasPrefix(*rec.AudioURL, "https://") {
+			playbackURL = rec.AudioURL
+		} else {
+			presigned, err := s.storage.PresignGetObject(ctx, s.cfg.S3BucketName, *rec.AudioURL, 1*time.Hour)
+			if err == nil {
+				playbackURL = &presigned
+			} else {
+				playbackURL = rec.AudioURL
+			}
+		}
+	}
+
+	// Fetch related child entities
+	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, rec.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch transcript segments: %w", err)
+	}
+
+	activeSummary, err := s.repo.FindActiveSummaryByRecordingID(ctx, rec.ID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to fetch active summary: %w", err)
+	}
+
+	chapters, err := s.repo.ListChaptersByRecordingID(ctx, rec.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch chapters: %w", err)
+	}
+
+	highlights, err := s.repo.ListHighlightsByRecordingID(ctx, rec.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch highlights: %w", err)
+	}
+
+	segmentDTOs := make([]dtos.TranscriptSegmentDTO, len(segments))
+	for i, seg := range segments {
+		segmentDTOs[i] = dtos.TranscriptSegmentDTO{
+			ID:            seg.ID.String(),
+			SpeakerLabel:  seg.SpeakerLabel,
+			SpeakerName:   seg.SpeakerName,
+			StartTime:     seg.StartTime,
+			EndTime:       seg.EndTime,
+			Text:          seg.Text,
+			WordsData:     seg.WordsData,
+			SequenceOrder: seg.SequenceOrder,
+		}
+	}
+
+	var summaryDTO *dtos.SummaryDTO
+	if activeSummary != nil {
+		summaryDTO = &dtos.SummaryDTO{
+			ID:               activeSummary.ID.String(),
+			TemplateCategory: activeSummary.TemplateCategory,
+			CustomAngle:      activeSummary.CustomAngle,
+			Version:          activeSummary.Version,
+			IsActive:         activeSummary.IsActive,
+			StructuredData:   activeSummary.StructuredData,
+			MarkdownContent:  activeSummary.MarkdownContent,
+			CreatedAt:        activeSummary.CreatedAt,
+			UpdatedAt:        activeSummary.UpdatedAt,
+		}
+	}
+
+	chapterDTOs := make([]dtos.ChapterDTO, len(chapters))
+	for i, chap := range chapters {
+		chapterDTOs[i] = dtos.ChapterDTO{
+			ID:            chap.ID.String(),
+			Title:         chap.Title,
+			StartTime:     chap.StartTime,
+			EndTime:       chap.EndTime,
+			Summary:       chap.Summary,
+			SequenceOrder: chap.SequenceOrder,
+			CreatedAt:     chap.CreatedAt,
+		}
+	}
+
+	highlightDTOs := make([]dtos.HighlightDTO, len(highlights))
+	for i, hl := range highlights {
+		highlightDTOs[i] = dtos.HighlightDTO{
+			ID:        hl.ID.String(),
+			StartTime: hl.StartTime,
+			EndTime:   hl.EndTime,
+			Title:     hl.Title,
+			Note:      hl.Note,
+			Source:    hl.Source,
+			ClipURL:   hl.ClipURL,
+			CreatedAt: hl.CreatedAt,
+		}
+	}
+
+	return &dtos.SharedRecordingResponse{
+		ID:               rec.ID.String(),
+		Title:            rec.Title,
+		DurationSeconds:  rec.DurationSeconds,
+		AudioURL:         playbackURL,
+		PlaybackURL:      playbackURL,
+		SelectedTemplate: rec.SelectedTemplate,
+		DetectedLanguage: rec.DetectedLanguage,
+		OutputLanguage:   rec.OutputLanguage,
+		Segments:         segmentDTOs,
+		ActiveSummary:    summaryDTO,
+		Chapters:         chapterDTOs,
+		Highlights:       highlightDTOs,
+		CreatedAt:        rec.CreatedAt,
+	}, nil
+}
 
 // ImportRecordingFromURL validates target link against SSRF defense policies, streams media into S3,
 // records the new recording entry, and emits the background pipeline extraction event.

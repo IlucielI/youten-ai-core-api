@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/constants"
 )
 
 func TestGenerateTokenPair_And_Validate(t *testing.T) {
@@ -56,7 +57,7 @@ func TestGenerateTokenPair_And_Validate(t *testing.T) {
 	if accessClaims.SessionID != sessionID {
 		t.Errorf("expected session ID %s, got %s", sessionID, accessClaims.SessionID)
 	}
-	if accessClaims.TokenType != "access" {
+	if accessClaims.TokenType != constants.JWTTokenTypeAccess {
 		t.Errorf("expected token type access, got %s", accessClaims.TokenType)
 	}
 
@@ -68,7 +69,7 @@ func TestGenerateTokenPair_And_Validate(t *testing.T) {
 	if refreshClaims.UserID != userID {
 		t.Errorf("expected user ID %v, got %v", userID, refreshClaims.UserID)
 	}
-	if refreshClaims.TokenType != "refresh" {
+	if refreshClaims.TokenType != constants.JWTTokenTypeRefresh {
 		t.Errorf("expected token type refresh, got %s", refreshClaims.TokenType)
 	}
 

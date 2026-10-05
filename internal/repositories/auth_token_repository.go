@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/models"
 )
 
@@ -16,7 +17,7 @@ func (r *Repositories) CreateAuthToken(ctx context.Context, token *models.AuthTo
 }
 
 // FindAuthTokenByHashAndType retrieves a valid (unrevoked, unexpired) token by its hash and type.
-func (r *Repositories) FindAuthTokenByHashAndType(ctx context.Context, tokenHash string, tokenType string) (*models.AuthToken, error) {
+func (r *Repositories) FindAuthTokenByHashAndType(ctx context.Context, tokenHash string, tokenType constants.AuthTokenType) (*models.AuthToken, error) {
 	var token models.AuthToken
 	err := r.db.WithContext(ctx).
 		Where("token_hash = ? AND type = ? AND revoked_at IS NULL AND expires_at > ?", tokenHash, tokenType, time.Now()).
@@ -56,7 +57,7 @@ func (r *Repositories) RotateAuthToken(ctx context.Context, revokeTokenID uuid.U
 }
 
 // RevokeAllAuthTokensByUserID revokes all active tokens for a user, optionally filtered by token type.
-func (r *Repositories) RevokeAllAuthTokensByUserID(ctx context.Context, userID uuid.UUID, tokenType string) error {
+func (r *Repositories) RevokeAllAuthTokensByUserID(ctx context.Context, userID uuid.UUID, tokenType constants.AuthTokenType) error {
 	now := time.Now()
 	query := r.db.WithContext(ctx).Model(&models.AuthToken{}).Where("user_id = ? AND revoked_at IS NULL", userID)
 	if tokenType != "" {

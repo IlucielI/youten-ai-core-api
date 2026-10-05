@@ -17,7 +17,7 @@ type CustomClaims struct {
 	UserID    uuid.UUID `json:"sub"`
 	SessionID string    `json:"sid"`
 	Email     string    `json:"email"`
-	TokenType string    `json:"type"` // "access" or "refresh"
+	TokenType constants.JWTTokenType `json:"type"` // "access" or "refresh"
 	jwt.RegisteredClaims
 }
 

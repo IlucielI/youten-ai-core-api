@@ -2109,4 +2109,124 @@ func TestService_RetryRecordingPipeline_Success_ShareToken(t *testing.T) {
 	}
 }
 
+func TestService_UpdateTranscriptSpeakers_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.UpdateTranscriptSpeakers(ctx, recID, "token", dtos.UpdateSpeakersRequest{
+		Speakers: map[string]string{"SPEAKER_00": "Bayu"},
+	})
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_UpdateTranscriptSpeakers_Forbidden_Unauthorized(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token"}).
+			AddRow(recID, &ownerID, "secret-token"))
+
+	_, err := svc.UpdateTranscriptSpeakers(ctx, recID, "wrong-token", dtos.UpdateSpeakersRequest{
+		Speakers: map[string]string{"SPEAKER_00": "Bayu"},
+	})
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_UpdateTranscriptSpeakers_Forbidden_WrongUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	otherUserID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: otherUserID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token"}).
+			AddRow(recID, &ownerID, "secret-token"))
+
+	_, err := svc.UpdateTranscriptSpeakers(ctx, recID, "", dtos.UpdateSpeakersRequest{
+		Speakers: map[string]string{"SPEAKER_00": "Bayu"},
+	})
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_UpdateTranscriptSpeakers_Success_Guest(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-ownership-token"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "speaker_name"=\$1,"updated_at"=\$2 WHERE recording_id = \$3 AND speaker_label = \$4`).
+		WithArgs("Bayu", sqlmock.AnyArg(), recID, "SPEAKER_00").
+		WillReturnResult(sqlmock.NewResult(0, 4))
+	mock.ExpectCommit()
+
+	resp, err := svc.UpdateTranscriptSpeakers(ctx, recID, guestToken, dtos.UpdateSpeakersRequest{
+		Speakers: map[string]string{"SPEAKER_00": "Bayu"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.UpdatedCount != 4 {
+		t.Errorf("expected UpdatedCount 4, got %d", resp.UpdatedCount)
+	}
+	if resp.Speakers["SPEAKER_00"] != "Bayu" {
+		t.Errorf("expected speaker name 'Bayu', got %s", resp.Speakers["SPEAKER_00"])
+	}
+}
+
+func TestService_UpdateTranscriptSpeakers_Success_AuthenticatedOwner(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, &userID))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "speaker_name"=\$1,"updated_at"=\$2 WHERE recording_id = \$3 AND speaker_label = \$4`).
+		WithArgs("Alice", sqlmock.AnyArg(), recID, "SPEAKER_01").
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectCommit()
+
+	resp, err := svc.UpdateTranscriptSpeakers(ctx, recID, "", dtos.UpdateSpeakersRequest{
+		Speakers: map[string]string{"SPEAKER_01": "Alice"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.UpdatedCount != 2 {
+		t.Errorf("expected UpdatedCount 2, got %d", resp.UpdatedCount)
+	}
+	if resp.Speakers["SPEAKER_01"] != "Alice" {
+		t.Errorf("expected speaker name 'Alice', got %s", resp.Speakers["SPEAKER_01"])
+	}
+}
+
+
+
 

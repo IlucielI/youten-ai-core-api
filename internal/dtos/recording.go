@@ -350,3 +350,40 @@ type RetryRecordingResponse struct {
 	Message   string    `json:"message"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// UpdateSpeakersRequest holds the mapping of speaker labels to new speaker names.
+type UpdateSpeakersRequest struct {
+	Speakers       map[string]string `json:"speakers"`
+	OwnershipToken string            `json:"ownership_token,omitempty"`
+}
+
+// Validate checks constraints for UpdateSpeakersRequest.
+func (r UpdateSpeakersRequest) Validate() error {
+	if len(r.Speakers) == 0 {
+		return validation.NewError("validation_required", "speakers mapping cannot be empty")
+	}
+	for label, name := range r.Speakers {
+		trimmedLabel := strings.TrimSpace(label)
+		if trimmedLabel == "" {
+			return validation.NewError("validation_required", "speaker label cannot be blank")
+		}
+		if len(trimmedLabel) > 50 {
+			return validation.NewError("validation_length", "speaker label cannot exceed 50 characters")
+		}
+		trimmedName := strings.TrimSpace(name)
+		if trimmedName == "" {
+			return validation.NewError("validation_required", "speaker name cannot be blank")
+		}
+		if len(trimmedName) > 100 {
+			return validation.NewError("validation_length", "speaker name cannot exceed 100 characters")
+		}
+	}
+	return nil
+}
+
+// UpdateSpeakersResponse returns the result of the speaker label rename operation.
+type UpdateSpeakersResponse struct {
+	UpdatedCount int               `json:"updated_count"`
+	Speakers     map[string]string `json:"speakers"`
+}
+

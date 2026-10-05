@@ -40,6 +40,9 @@ var (
 	// ErrRecordingAlreadyCompleted is returned when attempting to retry a recording that has already completed.
 	ErrRecordingAlreadyCompleted = apperror.New(http.StatusConflict, "ERR_ALREADY_COMPLETED", "recording has already completed")
 
+	// ErrInvalidRetryState is returned when a retry is requested for a recording that is not in the FAILED state.
+	ErrInvalidRetryState = apperror.New(http.StatusConflict, "ERR_INVALID_RETRY_STATE", "recording can only be retried when status is FAILED")
+
 	// ErrSummaryVersionLimit is returned when attempting to generate more summary versions than allowed (cap of 5).
 	ErrSummaryVersionLimit = apperror.New(http.StatusConflict, "SUMMARY_VERSION_LIMIT", "summary version limit reached, maximum allowed versions is 5")
 

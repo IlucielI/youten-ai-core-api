@@ -19,13 +19,6 @@ import (
 	"time"
 )
 
-var (
-	// ErrRecordingNotFound is returned when recording does not exist.
-	ErrRecordingNotFound = errors.New("recording not found")
-	// ErrInvalidRetryState is returned when retry is requested for a recording that is not failed.
-	ErrInvalidRetryState = errors.New("recording can only be retried when status is FAILED")
-)
-
 // ProcessExtraction handles the audio extraction stage of the recording pipeline.
 func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
@@ -599,7 +592,7 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 // ResumeRecordingPipeline executes Smart State Recovery using an already-loaded recording model.
 func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models.Recording) (*payload.RecordingPipelinePayload, error) {
 	if recording.Status != models.RecordingStatusFailed {
-		return nil, ErrInvalidRetryState
+		return nil, constants.ErrInvalidRetryState
 	}
 
 	// Check existing assets to resume at exact failing point

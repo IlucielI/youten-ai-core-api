@@ -1737,5 +1737,146 @@ func TestService_UpdateProfile_Errors(t *testing.T) {
 	}
 }
 
+func TestService_ChangePassword_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "change@example.com"
+	now := time.Now()
+	oldPassword := "OldPassword123"
+	oldHash, err := hasher.HashPassword(oldPassword)
+	if err != nil {
+		t.Fatalf("failed to hash password: %v", err)
+	}
+
+	// 1. FindUserByID
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
+			AddRow(userID, email, oldHash, constants.UserStatusActive, now))
+
+	// 2. UpdateUserPassword
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "password_hash"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. RevokeAllAuthTokensByUserID
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeRefresh).
+		WillReturnResult(sqlmock.NewResult(2, 2))
+	mock.ExpectCommit()
+
+	err = svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
+		OldPassword: oldPassword,
+		NewPassword: "BrandNewPassword456",
+	})
+	if err != nil {
+		t.Fatalf("expected successful password change, got: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_ChangePassword_Errors(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	now := time.Now()
+	correctPassword := "CorrectPassword123"
+	correctHash, _ := hasher.HashPassword(correctPassword)
+
+	// 1. Nil service receiver
+	var nilSvc *services.Service
+	err := nilSvc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
+		OldPassword: correctPassword,
+		NewPassword: "NewPassword123",
+	})
+	if !errors.Is(err, constants.ErrInternalServerError) {
+		t.Fatalf("expected ErrInternalServerError on nil receiver, got: %v", err)
+	}
+
+	// 2. Nil user ID
+	err = svc.ChangePassword(context.Background(), uuid.Nil, &dtos.ChangePasswordRequest{
+		OldPassword: correctPassword,
+		NewPassword: "NewPassword123",
+	})
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
+	}
+
+	// 3. Nil request payload
+	err = svc.ChangePassword(context.Background(), userID, nil)
+	if err == nil {
+		t.Fatal("expected error on nil request, got nil")
+	}
+
+	// 4. User not found
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	err = svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
+		OldPassword: correctPassword,
+		NewPassword: "NewPassword123",
+	})
+	if !errors.Is(err, constants.ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound, got: %v", err)
+	}
+
+	// 5. Inactive/Suspended user
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
+			AddRow(userID, "user@example.com", correctHash, constants.UserStatusSuspended, now))
+
+	err = svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
+		OldPassword: correctPassword,
+		NewPassword: "NewPassword123",
+	})
+	if !errors.Is(err, constants.ErrUserInactive) {
+		t.Fatalf("expected ErrUserInactive, got: %v", err)
+	}
+
+	// 6. Incorrect old password
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
+			AddRow(userID, "user@example.com", correctHash, constants.UserStatusActive, now))
+
+	err = svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
+		OldPassword: "WrongOldPassword999",
+		NewPassword: "NewPassword123",
+	})
+	if err == nil {
+		t.Fatal("expected error on incorrect old password, got nil")
+	}
+
+	// 7. New password same as old password
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
+			AddRow(userID, "user@example.com", correctHash, constants.UserStatusActive, now))
+
+	err = svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
+		OldPassword: correctPassword,
+		NewPassword: correctPassword,
+	})
+	if err == nil {
+		t.Fatal("expected error when new password matches old password, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+
 
 

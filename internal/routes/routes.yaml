@@ -56,5 +56,12 @@ routes:
     handler: UpdateProfile
     auth: true
 
+  # Change password endpoint
+  - method: PUT
+    path: /v1/auth/change-password
+    handler: ChangePassword
+    auth: true
+
+
 
 

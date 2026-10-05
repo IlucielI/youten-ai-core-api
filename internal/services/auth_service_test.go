@@ -1440,24 +1440,18 @@ func TestService_GetProfile_Errors(t *testing.T) {
 	svc, mock, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
 
-	// 1. Nil user ID
-	_, err := svc.GetProfile(context.Background(), uuid.Nil)
-	if !errors.Is(err, constants.ErrUnauthorized) {
-		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
-	}
-
-	// 2. User not found
+	// 1. User not found
 	unknownID := uuid.New()
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(unknownID, 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
-	_, err = svc.GetProfile(context.Background(), unknownID)
+	_, err := svc.GetProfile(context.Background(), unknownID)
 	if !errors.Is(err, constants.ErrUserNotFound) {
 		t.Fatalf("expected ErrUserNotFound, got: %v", err)
 	}
 
-	// 3. DB error on count
+	// 2. DB error on count
 	existingID := uuid.New()
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(existingID, 1).
@@ -1526,25 +1520,19 @@ func TestService_UpdateProfile_Errors(t *testing.T) {
 
 	userID := uuid.New()
 
-	// 1. Nil user ID
-	_, err := svc.UpdateProfile(context.Background(), uuid.Nil, &dtos.UpdateProfileRequest{FullName: "Valid Name"})
-	if !errors.Is(err, constants.ErrUnauthorized) {
-		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
-	}
-
-	// 2. User not found (0 rows affected)
+	// 1. User not found (0 rows affected)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
 		WithArgs("Ghost", sqlmock.AnyArg(), userID).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	_, err = svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "Ghost"})
+	_, err := svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "Ghost"})
 	if !errors.Is(err, constants.ErrUserNotFound) {
 		t.Fatalf("expected ErrUserNotFound on 0 rows affected, got: %v", err)
 	}
 
-	// 3. DB error
+	// 2. DB error
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
 		WithArgs("Failure", sqlmock.AnyArg(), userID).
@@ -1616,21 +1604,12 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 	correctPassword := "CorrectPassword123"
 	correctHash, _ := hasher.HashPassword(correctPassword)
 
-	// 1. Nil user ID
-	err := svc.ChangePassword(context.Background(), uuid.Nil, &dtos.ChangePasswordRequest{
-		OldPassword: correctPassword,
-		NewPassword: "NewPassword123",
-	})
-	if !errors.Is(err, constants.ErrUnauthorized) {
-		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
-	}
-
-	// 2. User not found
+	// 1. User not found
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
-	err = svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
+	err := svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
 		OldPassword: correctPassword,
 		NewPassword: "NewPassword123",
 	})
@@ -1638,7 +1617,7 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound, got: %v", err)
 	}
 
-	// 3. Inactive/Suspended user
+	// 2. Inactive/Suspended user
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
@@ -1652,7 +1631,7 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUserInactive, got: %v", err)
 	}
 
-	// 4. Incorrect old password
+	// 3. Incorrect old password
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).

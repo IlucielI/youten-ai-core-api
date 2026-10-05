@@ -372,10 +372,6 @@ func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.A
 
 // GetProfile retrieves the profile and dynamic daily quota calculation for an authenticated user.
 func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserProfileResponse, error) {
-	if userID == uuid.Nil {
-		return nil, constants.ErrUnauthorized
-	}
-
 	user, err := s.repo.FindUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -412,10 +408,6 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 
 // UpdateProfile updates mutable profile attributes for the authenticated user and returns the refreshed profile.
 func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req *dtos.UpdateProfileRequest) (*dtos.UserProfileResponse, error) {
-	if userID == uuid.Nil {
-		return nil, constants.ErrUnauthorized
-	}
-
 	fullName := strings.TrimSpace(req.FullName)
 
 	if err := s.repo.UpdateUserFullName(ctx, userID, fullName); err != nil {
@@ -431,10 +423,6 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req *dtos
 // ChangePassword verifies the user's current password and securely updates it with a new hashed password.
 // All other active refresh sessions for the user are revoked upon successful password change.
 func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, req *dtos.ChangePasswordRequest) error {
-	if userID == uuid.Nil {
-		return constants.ErrUnauthorized
-	}
-
 	user, err := s.repo.FindUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

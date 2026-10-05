@@ -90,6 +90,12 @@ routes:
     handler: ImportURL
     optional_auth: true
 
+  # Cross-meeting semantic vector search endpoint
+  - method: GET
+    path: /v1/recordings/search
+    handler: SearchRecordings
+    auth: true
+
   # Recording detail retrieval endpoint
   - method: GET
     path: /v1/recordings/:id

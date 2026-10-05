@@ -117,3 +117,50 @@ func (r *Repositories) DeleteTranscriptChunksByRecordingID(ctx context.Context, 
 	return r.db.WithContext(ctx).Where("recording_id = ?", recordingID).Delete(&models.TranscriptChunk{}).Error
 }
 
+// WorkspaceChunkMatch holds the search result for cross-meeting vector similarity matches.
+type WorkspaceChunkMatch struct {
+	ID             uuid.UUID `gorm:"column:id"`
+	RecordingID    uuid.UUID `gorm:"column:recording_id"`
+	RecordingTitle string    `gorm:"column:recording_title"`
+	ChunkIndex     int       `gorm:"column:chunk_index"`
+	Content        string    `gorm:"column:content"`
+	StartTime      float64   `gorm:"column:start_time"`
+	EndTime        float64   `gorm:"column:end_time"`
+	Distance       float64   `gorm:"column:distance"`
+}
+
+// SearchWorkspaceTranscriptChunks performs cross-meeting semantic vector search using pgvector cosine distance.
+func (r *Repositories) SearchWorkspaceTranscriptChunks(ctx context.Context, userID uuid.UUID, queryEmbedding []float32, topK int, maxDistance float64) ([]WorkspaceChunkMatch, error) {
+	if topK <= 0 {
+		topK = 10
+	}
+	vec := models.Vector(queryEmbedding)
+	var results []WorkspaceChunkMatch
+
+	query := r.db.WithContext(ctx).
+		Table("transcript_chunks tc").
+		Select("tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> ?) as distance", vec).
+		Joins("JOIN recordings r ON tc.recording_id = r.id").
+		Where("r.user_id = ? AND r.deleted_at IS NULL", userID)
+
+	if maxDistance > 0 {
+		query = query.Where("(tc.embedding <=> ?) <= ?", vec, maxDistance)
+	}
+
+	err := query.
+		Order(clause.OrderBy{
+			Expression: clause.Expr{
+				SQL:  "tc.embedding <=> ?",
+				Vars: []interface{}{vec},
+			},
+		}).
+		Limit(topK).
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+

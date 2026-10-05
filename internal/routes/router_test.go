@@ -576,6 +576,28 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wExport.Code == http.StatusUnauthorized {
 		t.Fatalf("expected GET /v1/recordings/:id/export not to return 401 Unauthorized without header (optional_auth), got %d", wExport.Code)
 	}
+
+	foundSearchRoute := false
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/v1/recordings/search" {
+			foundSearchRoute = true
+			break
+		}
+	}
+	if !foundSearchRoute {
+		t.Fatalf("expected GET /v1/recordings/search route to be registered")
+	}
+
+	// Verify GET /v1/recordings/search is protected by auth (returns 401 Unauthorized without header)
+	wSearch := httptest.NewRecorder()
+	reqSearch, err := http.NewRequest(http.MethodGet, "/v1/recordings/search?q=test", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wSearch, reqSearch)
+	if wSearch.Code != http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/search to return 401 Unauthorized without auth header, got %d", wSearch.Code)
+	}
 }
 
 

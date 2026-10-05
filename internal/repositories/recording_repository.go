@@ -87,6 +87,40 @@ func (r *Repositories) ClaimRecordingToUser(ctx context.Context, id uuid.UUID, o
 	return nil
 }
 
+// ClaimRecordingsByTokens binds multiple unclaimed guest recording sessions to a registered user account.
+func (r *Repositories) ClaimRecordingsByTokens(ctx context.Context, tokens []string, userID uuid.UUID) ([]uuid.UUID, error) {
+	if len(tokens) == 0 {
+		return []uuid.UUID{}, nil
+	}
+	var claimedIDs []uuid.UUID
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var recs []models.Recording
+		if err := tx.Where("ownership_token IN (?) AND is_guest = TRUE", tokens).
+			Find(&recs).Error; err != nil {
+			return err
+		}
+		if len(recs) == 0 {
+			return nil
+		}
+		for _, rec := range recs {
+			claimedIDs = append(claimedIDs, rec.ID)
+		}
+		return tx.Model(&models.Recording{}).
+			Where("id IN (?)", claimedIDs).
+			Updates(map[string]interface{}{
+				"user_id":  userID,
+				"is_guest": false,
+			}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	if claimedIDs == nil {
+		claimedIDs = []uuid.UUID{}
+	}
+	return claimedIDs, nil
+}
+
 // DeleteRecording performs a soft-delete on a recording.
 func (r *Repositories) DeleteRecording(ctx context.Context, id uuid.UUID) error {
 	res := r.db.WithContext(ctx).Delete(&models.Recording{}, "id = ?", id)

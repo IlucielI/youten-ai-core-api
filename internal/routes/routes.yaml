@@ -116,3 +116,11 @@ routes:
     handler: ClaimRecording
     auth: true
 
+  # Bulk claim guest recordings endpoint
+  -
+    method: POST
+    path: /v1/recordings/claim
+    handler: ClaimBulkRecordings
+    auth: true
+
+

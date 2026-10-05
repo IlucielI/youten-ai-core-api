@@ -1254,6 +1254,140 @@ func TestService_ClaimRecording_Success(t *testing.T) {
 	}
 }
 
+func TestService_ClaimBulkRecordings_Unauthorized(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.ClaimBulkRecordings(ctx, dtos.BulkClaimRequest{
+		Tokens: []string{"tok-1"},
+	})
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_ClaimBulkRecordings_EmptyTokens(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	_, err := svc.ClaimBulkRecordings(ctx, dtos.BulkClaimRequest{
+		Tokens: []string{"  ", ""},
+	})
+	if !errors.Is(err, constants.ErrBadRequest) {
+		t.Fatalf("expected ErrBadRequest, got %v", err)
+	}
+}
+
+func TestService_ClaimBulkRecordings_ZeroMatch(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1,\$2\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("tok-1", "tok-2").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}))
+	mock.ExpectCommit()
+
+	resp, err := svc.ClaimBulkRecordings(ctx, dtos.BulkClaimRequest{
+		Tokens: []string{"tok-1", "tok-2"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ClaimedCount != 0 {
+		t.Errorf("expected ClaimedCount 0, got %d", resp.ClaimedCount)
+	}
+	if len(resp.RecordingIDs) != 0 {
+		t.Errorf("expected 0 RecordingIDs, got %d", len(resp.RecordingIDs))
+	}
+}
+
+func TestService_ClaimBulkRecordings_PartialMatch(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1,\$2\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("tok-1", "tok-2").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+			AddRow(recID, "tok-1", true))
+
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE id IN \(\$4\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	resp, err := svc.ClaimBulkRecordings(ctx, dtos.BulkClaimRequest{
+		Tokens: []string{"tok-1", "tok-2"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ClaimedCount != 1 {
+		t.Errorf("expected ClaimedCount 1, got %d", resp.ClaimedCount)
+	}
+	if len(resp.RecordingIDs) != 1 || resp.RecordingIDs[0] != recID.String() {
+		t.Errorf("expected RecordingIDs [%s], got %v", recID.String(), resp.RecordingIDs)
+	}
+}
+
+func TestService_ClaimBulkRecordings_RepoError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("tok-1").
+		WillReturnError(errors.New("db query error"))
+	mock.ExpectRollback()
+
+	_, err := svc.ClaimBulkRecordings(ctx, dtos.BulkClaimRequest{
+		Tokens: []string{"tok-1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed to bulk claim recordings") {
+		t.Fatalf("expected error, got %v", err)
+	}
+}
+
+func TestService_ClaimBulkRecordings_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID1 := uuid.New()
+	recID2 := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1,\$2\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("tok-1", "tok-2").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+			AddRow(recID1, "tok-1", true).
+			AddRow(recID2, "tok-2", true))
+
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE id IN \(\$4,\$5\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recID1, recID2).
+		WillReturnResult(sqlmock.NewResult(1, 2))
+	mock.ExpectCommit()
+
+	resp, err := svc.ClaimBulkRecordings(ctx, dtos.BulkClaimRequest{
+		Tokens: []string{"tok-1", "tok-2"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ClaimedCount != 2 {
+		t.Errorf("expected ClaimedCount 2, got %d", resp.ClaimedCount)
+	}
+	if len(resp.RecordingIDs) != 2 {
+		t.Errorf("expected 2 recording IDs, got %d", len(resp.RecordingIDs))
+	}
+}
+
+
 
 
 

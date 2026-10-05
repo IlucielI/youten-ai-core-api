@@ -292,6 +292,43 @@ func TestRecordingDTO_ClaimRecordingRequest_Validation(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_BulkClaimRequest_Validation(t *testing.T) {
+	validReq := dtos.BulkClaimRequest{
+		Tokens: []string{"tok-1", "tok-2"},
+	}
+	if err := validReq.Validate(); err != nil {
+		t.Errorf("expected valid bulk claim request, got %v", err)
+	}
+
+	emptyTokens := dtos.BulkClaimRequest{
+		Tokens: []string{},
+	}
+	if err := emptyTokens.Validate(); err == nil {
+		t.Error("expected error for empty tokens, got nil")
+	}
+
+	tooManyTokens := dtos.BulkClaimRequest{
+		Tokens: make([]string, 101),
+	}
+	if err := tooManyTokens.Validate(); err == nil {
+		t.Error("expected error for tokens exceeding 100 items, got nil")
+	}
+}
+
+func TestRecordingDTO_BulkClaimResponse_Structure(t *testing.T) {
+	resp := dtos.BulkClaimResponse{
+		ClaimedCount: 2,
+		RecordingIDs: []string{"00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"},
+	}
+	if resp.ClaimedCount != 2 {
+		t.Errorf("expected ClaimedCount 2, got %d", resp.ClaimedCount)
+	}
+	if len(resp.RecordingIDs) != 2 {
+		t.Errorf("expected 2 recording IDs, got %d", len(resp.RecordingIDs))
+	}
+}
+
+
 
 
 

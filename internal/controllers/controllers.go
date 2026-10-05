@@ -32,6 +32,14 @@ func (c *Controllers) SetService(s *services.Service) {
 	c.svc = s
 }
 
+// Service returns the underlying service container.
+func (c *Controllers) Service() *services.Service {
+	if c == nil {
+		return nil
+	}
+	return c.svc
+}
+
 // wrapError translates any error into a standard JSON response using AppError metadata.
 func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 	if err == nil {

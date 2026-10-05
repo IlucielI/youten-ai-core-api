@@ -10,6 +10,7 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/sse"
 )
 
 // PresignUpload generates a pre-signed S3 PUT URL so that the frontend
@@ -497,4 +498,106 @@ func (c *Controllers) GetSharedRecording(ctx *gin.Context) {
 		Data:      resp,
 		Timestamp: time.Now(),
 	})
+}
+
+// StreamRecordingProgress handles real-time SSE progress streaming for a recording pipeline.
+func (c *Controllers) StreamRecordingProgress(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(ctx.Query("token"))
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	}
+
+	initial, subCh, unsub, err := c.svc.GetRecordingProgress(ctx.Request.Context(), id, ownershipToken)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+	defer unsub()
+
+	// Write SSE Response Headers
+	ctx.Writer.Header().Set("Content-Type", "text/event-stream")
+	ctx.Writer.Header().Set("Cache-Control", "no-cache")
+	ctx.Writer.Header().Set("Connection", "keep-alive")
+	ctx.Writer.Header().Set("Transfer-Encoding", "chunked")
+	ctx.Writer.Header().Set("X-Accel-Buffering", "no")
+	ctx.Writer.WriteHeader(http.StatusOK)
+	ctx.Writer.Flush()
+
+	// Stream initial event
+	if err := sse.WriteProgress(ctx.Writer, *initial); err != nil {
+		return
+	}
+	ctx.Writer.Flush()
+
+	if sse.IsTerminalStatus(initial.Status) {
+		return
+	}
+
+	pingTicker := time.NewTicker(15 * time.Second)
+	defer pingTicker.Stop()
+
+	pollTicker := time.NewTicker(2 * time.Second)
+	defer pollTicker.Stop()
+
+	lastStatus := initial.Status
+
+	for {
+		select {
+		case <-ctx.Request.Context().Done():
+			return
+		case event, ok := <-subCh:
+			if !ok {
+				return
+			}
+			lastStatus = event.Status
+			if err := sse.WriteProgress(ctx.Writer, event); err != nil {
+				return
+			}
+			ctx.Writer.Flush()
+			if sse.IsTerminalStatus(event.Status) {
+				return
+			}
+		case <-pollTicker.C:
+			current, err := c.svc.PollRecordingProgress(ctx.Request.Context(), id)
+			if err == nil && current != nil && current.Status != lastStatus {
+				lastStatus = current.Status
+				if err := sse.WriteProgress(ctx.Writer, *current); err != nil {
+					return
+				}
+				ctx.Writer.Flush()
+				if sse.IsTerminalStatus(current.Status) {
+					return
+				}
+			}
+		case <-pingTicker.C:
+			if err := sse.WritePing(ctx.Writer); err != nil {
+				return
+			}
+			ctx.Writer.Flush()
+		}
+	}
 }

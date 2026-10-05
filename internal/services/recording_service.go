@@ -1373,5 +1373,48 @@ func (s *Service) ListSummaryVersions(ctx context.Context, id uuid.UUID, ownersh
 	return result, nil
 }
 
+// ActivateSummaryVersion activates a specific historical summary version for a recording.
+func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, versionID string, ownershipToken string) (*dtos.SummaryVersionResponse, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Verify ownership
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, constants.ErrForbidden
+	}
+
+	activated, err := s.repo.ActivateSummaryVersion(ctx, rec.ID, versionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dtos.SummaryVersionResponse{
+		ID:               activated.ID.String(),
+		Version:          activated.Version,
+		TemplateCategory: activated.TemplateCategory,
+		CustomAngle:      activated.CustomAngle,
+		StructuredData:   activated.StructuredData,
+		MarkdownContent:  activated.MarkdownContent,
+		IsActive:         activated.IsActive,
+		CreatedAt:        activated.CreatedAt,
+	}, nil
+}
+
+
 
 

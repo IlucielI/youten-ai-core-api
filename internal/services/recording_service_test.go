@@ -2716,6 +2716,156 @@ func TestService_ListSummaryVersions_EmptyList(t *testing.T) {
 	}
 }
 
+func TestService_ActivateSummaryVersion_NotFound_Recording(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.ActivateSummaryVersion(ctx, recID, uuid.New().String(), "token")
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_ActivateSummaryVersion_Forbidden_Unauthorized(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "valid-token", nil))
+
+	_, err := svc.ActivateSummaryVersion(ctx, recID, uuid.New().String(), "wrong-token")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_ActivateSummaryVersion_Forbidden_WrongUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	otherUserID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: otherUserID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "token", &ownerID))
+
+	_, err := svc.ActivateSummaryVersion(ctx, recID, uuid.New().String(), "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_ActivateSummaryVersion_NotFound_Summary(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	missingSumID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, guestToken, nil))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND id = \$2.*LIMIT \$3`).
+		WithArgs(recID, missingSumID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectRollback()
+
+	_, err := svc.ActivateSummaryVersion(ctx, recID, missingSumID.String(), guestToken)
+	if !errors.Is(err, constants.ErrSummaryNotFound) {
+		t.Fatalf("expected ErrSummaryNotFound, got %v", err)
+	}
+}
+
+func TestService_ActivateSummaryVersion_Success_GuestWithUUID(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	targetSumID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, guestToken, nil))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND id = \$2.*LIMIT \$3`).
+		WithArgs(recID, targetSumID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(targetSumID, recID, 2, "GENERAL", models.JSONMap{"summary": "test"}, "# Test", false, time.Now()))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 2))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(true, sqlmock.AnyArg(), targetSumID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	resp, err := svc.ActivateSummaryVersion(ctx, recID, targetSumID.String(), guestToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != targetSumID.String() {
+		t.Errorf("expected summary ID %s, got %s", targetSumID.String(), resp.ID)
+	}
+	if !resp.IsActive {
+		t.Errorf("expected is_active true, got %v", resp.IsActive)
+	}
+	if resp.Version != 2 {
+		t.Errorf("expected version 2, got %d", resp.Version)
+	}
+}
+
+func TestService_ActivateSummaryVersion_Success_AuthenticatedOwnerWithVersionInt(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	targetSumID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "token", &userID))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND version = \$2.*LIMIT \$3`).
+		WithArgs(recID, 3, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(targetSumID, recID, 3, "EXECUTIVE", models.JSONMap{"summary": "v3"}, "# V3", false, time.Now()))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 3))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(true, sqlmock.AnyArg(), targetSumID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	resp, err := svc.ActivateSummaryVersion(ctx, recID, "3", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != targetSumID.String() || resp.Version != 3 || !resp.IsActive {
+		t.Errorf("unexpected activated response: %+v", resp)
+	}
+}
+
+
 
 
 

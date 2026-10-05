@@ -178,6 +178,14 @@ routes:
     handler: ListSummaryVersions
     optional_auth: true
 
+  # Activate summary version endpoint
+  -
+    method: PATCH
+    path: /v1/recordings/:id/summaries/:versionId/activate
+    handler: ActivateSummaryVersion
+    optional_auth: true
+
+
 
 
 

@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/adapters/redis"
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/models"
 )
 
@@ -227,6 +228,42 @@ func TestRepositories_SummaryVersionOperations(t *testing.T) {
 	}
 	if versions[0].Version != 1 || versions[1].Version != 2 {
 		t.Errorf("expected versions in ASC order (1, 2), got (%d, %d)", versions[0].Version, versions[1].Version)
+	}
+
+	// 6. ActivateSummaryVersion - Success by UUID
+	targetSumID := uuid.New()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND id = \$2.*LIMIT \$3`).
+		WithArgs(recID, targetSumID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "is_active"}).
+			AddRow(targetSumID, recID, 1, false))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 2))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(true, sqlmock.AnyArg(), targetSumID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	actSum, err := repo.ActivateSummaryVersion(context.Background(), recID, targetSumID.String())
+	if err != nil {
+		t.Fatalf("unexpected error activating summary version: %v", err)
+	}
+	if !actSum.IsActive {
+		t.Errorf("expected activated summary is_active = true, got %v", actSum.IsActive)
+	}
+
+	// 7. ActivateSummaryVersion - Target Version Not Found
+	missingSumID := uuid.New()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND id = \$2.*LIMIT \$3`).
+		WithArgs(recID, missingSumID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectRollback()
+
+	_, err = repo.ActivateSummaryVersion(context.Background(), recID, missingSumID.String())
+	if !errors.Is(err, constants.ErrSummaryNotFound) {
+		t.Fatalf("expected ErrSummaryNotFound, got %v", err)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

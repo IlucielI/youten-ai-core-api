@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"context"
+	"errors"
+	"strconv"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -116,3 +118,45 @@ func (r *Repositories) SaveNewSummaryVersion(ctx context.Context, summary *model
 		return tx.Create(summary).Error
 	})
 }
+
+// ActivateSummaryVersion transactionally deactivates all summaries for a recording and activates the target version by UUID or version number.
+func (r *Repositories) ActivateSummaryVersion(ctx context.Context, recordingID uuid.UUID, versionID string) (*models.Summary, error) {
+	var target models.Summary
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.Where("recording_id = ?", recordingID)
+		if targetUUID, err := uuid.Parse(versionID); err == nil {
+			query = query.Where("id = ?", targetUUID)
+		} else if targetVer, err := strconv.Atoi(versionID); err == nil {
+			query = query.Where("version = ?", targetVer)
+		} else {
+			return constants.ErrSummaryNotFound
+		}
+
+		if err := query.First(&target).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return constants.ErrSummaryNotFound
+			}
+			return err
+		}
+
+		if err := tx.Model(&models.Summary{}).
+			Where("recording_id = ?", recordingID).
+			Update("is_active", false).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(&models.Summary{}).
+			Where("id = ?", target.ID).
+			Update("is_active", true).Error; err != nil {
+			return err
+		}
+
+		target.IsActive = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &target, nil
+}
+

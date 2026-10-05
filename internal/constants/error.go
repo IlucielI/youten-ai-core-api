@@ -43,6 +43,9 @@ var (
 	// ErrSummaryVersionLimit is returned when attempting to generate more summary versions than allowed (cap of 5).
 	ErrSummaryVersionLimit = apperror.New(http.StatusConflict, "SUMMARY_VERSION_LIMIT", "summary version limit reached, maximum allowed versions is 5")
 
+	// ErrSummaryNotFound is returned when a requested summary version is not found.
+	ErrSummaryNotFound = apperror.New(http.StatusNotFound, "ERR_SUMMARY_NOT_FOUND", "summary version not found")
+
 	// ErrEmailAlreadyExists is returned when attempting to register with an email that is already registered.
 	ErrEmailAlreadyExists = apperror.New(http.StatusConflict, "ERR_EMAIL_ALREADY_EXISTS", "email is already registered")
 

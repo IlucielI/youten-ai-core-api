@@ -969,6 +969,59 @@ func (c *Controllers) ListSummaryVersions(ctx *gin.Context) {
 	})
 }
 
+// ActivateSummaryVersion handles switching the active summary version of a recording.
+func (c *Controllers) ActivateSummaryVersion(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	versionID := strings.TrimSpace(ctx.Param("versionId"))
+	if versionID == "" {
+		c.wrapError(ctx, constants.ErrBadRequest)
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	resp, err := c.svc.ActivateSummaryVersion(ctx.Request.Context(), id, versionID, ownershipToken)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SummaryVersionResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "summary version activated successfully",
+		Data:      *resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 
 

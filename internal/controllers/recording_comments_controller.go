@@ -178,9 +178,9 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 	defer pingTicker.Stop()
 
 	var fullContent strings.Builder
+	streaming := true
 
-streamLoop:
-	for {
+	for streaming {
 		select {
 		case <-ctx.Request.Context().Done():
 			return
@@ -190,7 +190,8 @@ streamLoop:
 			}
 		case chunk, ok := <-result.StreamChannel:
 			if !ok {
-				break streamLoop
+				streaming = false
+				break
 			}
 			if chunk.Err != nil {
 				_ = sse.WriteChatError(ctx.Writer, chunk.Err.Error())

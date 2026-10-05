@@ -1021,6 +1021,77 @@ func (c *Controllers) ActivateSummaryVersion(ctx *gin.Context) {
 	})
 }
 
+// CreateInlineComment handles adding an inline comment or reply to a recording.
+func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	var req dtos.CreateCommentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(req.OwnershipToken)
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	resp, err := c.svc.CreateInlineComment(ctx.Request.Context(), id, ownershipToken, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, dtos.APIResponse[dtos.CommentResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "comment created successfully",
+		Data:      *resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 
 

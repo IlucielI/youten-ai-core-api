@@ -8,6 +8,7 @@ import (
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/go-ozzo/ozzo-validation/v4/is"
+	"github.com/google/uuid"
 )
 
 // SupportedMIMETypes enumerates the allowed audio and video MIME formats.
@@ -413,4 +414,40 @@ type SummaryVersionResponse struct {
 	IsActive         bool                   `json:"is_active"`
 	CreatedAt        time.Time              `json:"created_at"`
 }
+
+// CreateCommentRequest represents the payload to create a timestamped inline comment or reply.
+type CreateCommentRequest struct {
+	TimestampSec   float64    `json:"timestamp_sec"`
+	SegmentID      *uuid.UUID `json:"segment_id,omitempty"`
+	SelectedText   *string    `json:"selected_text,omitempty"`
+	CommentText    string     `json:"comment_text"`
+	AuthorName     string     `json:"author_name"`
+	ParentID       *uuid.UUID `json:"parent_id,omitempty"`
+	OwnershipToken string     `json:"ownership_token,omitempty"`
+}
+
+// Validate checks constraints for CreateCommentRequest.
+func (r CreateCommentRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.CommentText, validation.Required, validation.Length(1, 5000)),
+		validation.Field(&r.AuthorName, validation.Length(0, 100)),
+		validation.Field(&r.TimestampSec, validation.Min(0.0)),
+	)
+}
+
+// CommentResponse represents the comment returned after creation or listing.
+type CommentResponse struct {
+	ID           string            `json:"id"`
+	RecordingID  string            `json:"recording_id,omitempty"`
+	SegmentID    *string           `json:"segment_id,omitempty"`
+	TimestampSec float64           `json:"timestamp_sec"`
+	SelectedText *string           `json:"selected_text,omitempty"`
+	AuthorName   string            `json:"author_name"`
+	CommentText  string            `json:"comment_text"`
+	ParentID     *string           `json:"parent_id,omitempty"`
+	Replies      []CommentResponse `json:"replies,omitempty"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at,omitempty"`
+}
+
 

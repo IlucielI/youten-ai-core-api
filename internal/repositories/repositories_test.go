@@ -271,3 +271,45 @@ func TestRepositories_SummaryVersionOperations(t *testing.T) {
 	}
 }
 
+func TestRepositories_InlineCommentOperations(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open gorm db: %v", err)
+	}
+
+	repo := New(gormDB, nil)
+	recID := uuid.New()
+	commID := uuid.New()
+
+	comment := models.InlineComment{
+		ID:           commID,
+		RecordingID:  recID,
+		TimestampSec: 10.5,
+		AuthorName:   "Bayu",
+		CommentText:  "Action item here",
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
+		WithArgs(recID, nil, 10.5, nil, "Bayu", "Action item here", nil, commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(commID, time.Now(), time.Now()))
+	mock.ExpectCommit()
+
+	if err := repo.CreateInlineComment(context.Background(), &comment); err != nil {
+		t.Fatalf("unexpected error creating inline comment: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+

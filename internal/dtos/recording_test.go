@@ -598,3 +598,76 @@ func TestRecordingDTO_SummaryVersionResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_CreateCommentRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.CreateCommentRequest
+		wantErr bool
+	}{
+		{
+			name: "valid request",
+			req: dtos.CreateCommentRequest{
+				TimestampSec: 12.5,
+				CommentText:  "Great point on architecture!",
+				AuthorName:   "Alice",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty comment text",
+			req: dtos.CreateCommentRequest{
+				TimestampSec: 0,
+				CommentText:  "",
+				AuthorName:   "Alice",
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative timestamp",
+			req: dtos.CreateCommentRequest{
+				TimestampSec: -1.0,
+				CommentText:  "Valid comment",
+				AuthorName:   "Alice",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.req.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestRecordingDTO_CommentResponse_Structure(t *testing.T) {
+	now := time.Now()
+	resp := dtos.CommentResponse{
+		ID:           "comm-1",
+		TimestampSec: 15.0,
+		AuthorName:   "Bob",
+		CommentText:  "Let's review this segment.",
+		CreatedAt:    now,
+	}
+
+	if resp.ID != "comm-1" {
+		t.Errorf("expected ID comm-1, got %s", resp.ID)
+	}
+	if resp.TimestampSec != 15.0 {
+		t.Errorf("expected TimestampSec 15.0, got %f", resp.TimestampSec)
+	}
+	if resp.AuthorName != "Bob" {
+		t.Errorf("expected AuthorName Bob, got %s", resp.AuthorName)
+	}
+	if resp.CommentText != "Let's review this segment." {
+		t.Errorf("expected CommentText, got %s", resp.CommentText)
+	}
+	if !resp.CreatedAt.Equal(now) {
+		t.Errorf("expected CreatedAt %v, got %v", now, resp.CreatedAt)
+	}
+}
+
+

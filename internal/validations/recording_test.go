@@ -241,6 +241,16 @@ func TestRecordingDTO_UpdateSpeakersRequest_Validation(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "duplicate speaker label after trimming",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: map[string]string{
+					"SPEAKER_00":  "Bayu",
+					" SPEAKER_00": "Bayu Two",
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

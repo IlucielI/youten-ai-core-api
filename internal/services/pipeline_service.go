@@ -568,7 +568,7 @@ func (s *Service) ProcessChapterization(ctx context.Context, p payload.Recording
 				StartTime:   seg.StartTime,
 				EndTime:     seg.EndTime,
 				Title:       &title,
-				Source:      constants.HighlightSourceAISuggested,
+				Source:      constants.HighlightSourceAI,
 			})
 		}
 	}

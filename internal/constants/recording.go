@@ -41,9 +41,8 @@ const (
 
 // Highlight origin sources.
 const (
-	HighlightSourceManual      = "manual"
-	HighlightSourceAI          = "ai"
-	HighlightSourceAISuggested = "AI_SUGGESTED"
+	HighlightSourceManual = "manual"
+	HighlightSourceAI     = "ai"
 )
 
 // Notification types for in-app milestone alerts and system notifications.

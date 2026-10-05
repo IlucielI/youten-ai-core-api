@@ -1326,4 +1326,52 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	}, nil
 }
 
+// ListSummaryVersions retrieves all summary versions for a recording ordered by version ASC.
+func (s *Service) ListSummaryVersions(ctx context.Context, id uuid.UUID, ownershipToken string) ([]dtos.SummaryVersionResponse, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Verify ownership
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, constants.ErrForbidden
+	}
+
+	summaries, err := s.repo.ListSummaryVersions(ctx, rec.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list summary versions: %w", err)
+	}
+
+	result := make([]dtos.SummaryVersionResponse, 0, len(summaries))
+	for _, sum := range summaries {
+		result = append(result, dtos.SummaryVersionResponse{
+			ID:               sum.ID.String(),
+			Version:          sum.Version,
+			TemplateCategory: sum.TemplateCategory,
+			CustomAngle:      sum.CustomAngle,
+			StructuredData:   sum.StructuredData,
+			MarkdownContent:  sum.MarkdownContent,
+			IsActive:         sum.IsActive,
+			CreatedAt:        sum.CreatedAt,
+		})
+	}
+
+	return result, nil
+}
+
+
 

@@ -1227,10 +1227,50 @@ func (c *Controllers) ExportRecording(ctx *gin.Context) {
 	ctx.Data(http.StatusOK, result.ContentType, result.Data)
 }
 
+// SearchRecordings handles cross-meeting semantic vector search across user recordings.
+func (c *Controllers) SearchRecordings(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
 
+	var query dtos.SemanticSearchQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
 
+	if err := query.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
 
+	res, err := c.svc.SearchWorkspaceSemantic(ctx.Request.Context(), query)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
 
+	if res == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
 
-
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SemanticSearchResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "search results retrieved successfully",
+		Data:      *res,
+		Timestamp: time.Now(),
+	})
+}
 

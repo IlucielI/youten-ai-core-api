@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,25 @@ func (p *dummyPublisher) Publish(ctx context.Context, topic string, payload any)
 	return nil
 }
 func (p *dummyPublisher) MustPublish(ctx context.Context, topic string, payload any) {}
+
+type dummyEmbeddingProvider struct {
+	embeddings [][]float32
+	err        error
+}
+
+func (d *dummyEmbeddingProvider) CreateEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+	if d.err != nil {
+		return nil, d.err
+	}
+	if len(d.embeddings) > 0 {
+		return d.embeddings, nil
+	}
+	res := make([][]float32, len(texts))
+	for i := range texts {
+		res[i] = make([]float32, 1024)
+	}
+	return res, nil
+}
 
 func setupRecordingTestControllers(t *testing.T) (*Controllers, sqlmock.Sqlmock, *dummyStorage, func()) {
 	gin.SetMode(gin.TestMode)
@@ -4173,11 +4193,108 @@ func TestControllers_ExportRecording_Success_Txt(t *testing.T) {
 	}
 }
 
+func TestControllers_SearchRecordings_NilController(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/search?q=test", nil)
 
+	var ctrls *Controllers
+	ctrls.SearchRecordings(c)
 
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
 
+func TestControllers_SearchRecordings_NilService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/search?q=test", nil)
 
+	ctrls := &Controllers{svc: nil}
+	ctrls.SearchRecordings(c)
 
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
 
+func TestControllers_SearchRecordings_InvalidQuery(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
 
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/search?q=", nil)
+
+	ctrls.SearchRecordings(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_SearchRecordings_ServiceError(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	// Missing auth context -> returns 401 Unauthorized
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/search?q=something", nil)
+
+	ctrls.SearchRecordings(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", w.Code)
+	}
+}
+
+func TestControllers_SearchRecordings_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	recID := uuid.New()
+	chunkID := uuid.New()
+
+	ctrls.Service().SetEmbedding(&dummyEmbeddingProvider{})
+
+	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
+	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.3, sqlmock.AnyArg(), 10).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}).
+			AddRow(chunkID, recID, "Quarterly Business Review", 1, "We reviewed annual profit projections.", 30.0, 65.0, 0.12))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/search?q=profit%20projections&limit=10&threshold=0.7", nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	ctrls.SearchRecordings(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.SemanticSearchResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp.Data.Count != 1 {
+		t.Errorf("expected count 1, got %d", resp.Data.Count)
+	}
+	if len(resp.Data.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(resp.Data.Results))
+	}
+	if resp.Data.Results[0].RecordingTitle != "Quarterly Business Review" {
+		t.Errorf("expected recording title 'Quarterly Business Review', got %s", resp.Data.Results[0].RecordingTitle)
+	}
+	if resp.Data.Results[0].Score != 0.88 {
+		t.Errorf("expected score 0.88, got %f", resp.Data.Results[0].Score)
+	}
+}
 

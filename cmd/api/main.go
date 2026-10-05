@@ -141,7 +141,7 @@ func main() {
 		WithEmbedding(embeddingAdapter).
 		WithAudioExtractor(audioExtractor)
 	ctrls := controllers.New(cfg, svc)
-	router := routes.NewRouter(cfg, ctrls)
+	router := routes.NewRouter(cfg, ctrls, svc)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

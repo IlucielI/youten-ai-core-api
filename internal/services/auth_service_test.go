@@ -1456,3 +1456,53 @@ func TestService_ResetPassword_NilReceiverAndPayload(t *testing.T) {
 		t.Fatal("expected error on password > 72 chars, got nil")
 	}
 }
+
+func TestService_Authenticate(t *testing.T) {
+	svc, _, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	cfg := config.Config{
+		AppName:              "youten-test",
+		JWTSecret:            "test-jwt-secret-key-1234567890",
+		JWTAccessExpiration:  15 * time.Minute,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+
+	userID := uuid.New()
+	email := "authuser@example.com"
+	sessionID := "sess-xyz"
+
+	// 1. Valid Access Token
+	tokenPair, err := jwt.GenerateTokenPair(cfg, userID, email, sessionID)
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+
+	authUser, err := svc.Authenticate(context.Background(), tokenPair.AccessToken)
+	if err != nil {
+		t.Fatalf("expected valid authentication, got error: %v", err)
+	}
+	if authUser.UserID != userID || authUser.Email != email || authUser.SessionID != sessionID || authUser.IsGuest {
+		t.Fatalf("unexpected authUser: %+v", authUser)
+	}
+
+	// 2. Reject Refresh Token passed as Access Token
+	_, err = svc.Authenticate(context.Background(), tokenPair.RefreshToken)
+	if !errors.Is(err, constants.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken when refresh token passed, got: %v", err)
+	}
+
+	// 3. Reject invalid/malformed token string
+	_, err = svc.Authenticate(context.Background(), "invalid-token-string")
+	if !errors.Is(err, constants.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken on malformed token, got: %v", err)
+	}
+
+	// 4. Nil service receiver
+	var nilSvc *services.Service
+	_, err = nilSvc.Authenticate(context.Background(), tokenPair.AccessToken)
+	if !errors.Is(err, constants.ErrInternalServerError) {
+		t.Fatalf("expected ErrInternalServerError on nil service, got: %v", err)
+	}
+}
+

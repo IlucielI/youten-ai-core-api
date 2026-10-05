@@ -20,6 +20,7 @@ type AuthUser struct {
 	UserID    uuid.UUID
 	Email     string
 	SessionID string
+	IsGuest   bool
 }
 
 // WithAuthUser injects the authenticated user into the context.
@@ -30,13 +31,39 @@ func WithAuthUser(ctx context.Context, user AuthUser) context.Context {
 	return context.WithValue(ctx, authUserKey, user)
 }
 
-// GetAuthUser retrieves the authenticated user from the context.
+// WithGuestUser injects an anonymous guest identity into the context.
+func WithGuestUser(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, authUserKey, AuthUser{
+		IsGuest: true,
+	})
+}
+
+// GetAuthUser retrieves the authenticated or guest user from the context.
 func GetAuthUser(ctx context.Context) (AuthUser, bool) {
 	if ctx == nil {
 		return AuthUser{}, false
 	}
 	user, ok := ctx.Value(authUserKey).(AuthUser)
 	return user, ok
+}
+
+// GetAuthUserID retrieves the authenticated non-guest user ID from context.
+// Returns uuid.Nil and false if context has no user, is nil, or represents a guest.
+func GetAuthUserID(ctx context.Context) (uuid.UUID, bool) {
+	user, ok := GetAuthUser(ctx)
+	if !ok || user.IsGuest || user.UserID == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return user.UserID, true
+}
+
+// IsAuthenticated checks whether the context contains an authenticated, non-guest user.
+func IsAuthenticated(ctx context.Context) bool {
+	user, ok := GetAuthUser(ctx)
+	return ok && !user.IsGuest && user.UserID != uuid.Nil
 }
 
 // WithClientMeta injects client IP and User-Agent metadata into the context.

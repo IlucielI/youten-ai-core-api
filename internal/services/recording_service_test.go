@@ -828,3 +828,106 @@ func TestService_GetRecordingDetail_Success_ShareToken(t *testing.T) {
 	}
 }
 
+func TestService_ListRecordings_Unauthorized(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+
+	_, err := svc.ListRecordings(context.Background(), dtos.RecordingFilterQuery{})
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_ListRecordings_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+	now := time.Now()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND \(LOWER\(title\) LIKE \$2 OR LOWER\(original_filename\) LIKE \$3\) AND status = \$4 AND selected_template = \$5 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID, "%sprint%", "%sprint%", "COMPLETED", "MOM").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE user_id = \$1 AND \(LOWER\(title\) LIKE \$2 OR LOWER\(original_filename\) LIKE \$3\) AND status = \$4 AND selected_template = \$5 AND "recordings"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$6`).
+		WithArgs(userID, "%sprint%", "%sprint%", "COMPLETED", "MOM", 10).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "user_id", "title", "original_filename", "file_size_bytes", "duration_seconds",
+			"source_type", "status", "selected_template", "output_language", "is_guest", "created_at", "updated_at",
+		}).AddRow(
+			recID, userID, "Sprint Planning", "sprint.mp3", 1024, 120.0,
+			"UPLOAD", "COMPLETED", "MOM", "en", false, now, now,
+		))
+
+	resp, err := svc.ListRecordings(ctx, dtos.RecordingFilterQuery{
+		Search:   "sprint",
+		Status:   "COMPLETED",
+		Template: "MOM",
+		Page:     1,
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].Title != "Sprint Planning" {
+		t.Errorf("expected Title Sprint Planning, got %s", resp.Items[0].Title)
+	}
+	if resp.Pagination.TotalItems != 1 {
+		t.Errorf("expected TotalItems 1, got %d", resp.Pagination.TotalItems)
+	}
+	if resp.Pagination.TotalPages != 1 {
+		t.Errorf("expected TotalPages 1, got %d", resp.Pagination.TotalPages)
+	}
+}
+
+func TestService_ListRecordings_EmptyResults(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE user_id = \$1 AND "recordings"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$2`).
+		WithArgs(userID, 10).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	resp, err := svc.ListRecordings(ctx, dtos.RecordingFilterQuery{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Items) != 0 {
+		t.Errorf("expected 0 items, got %d", len(resp.Items))
+	}
+	if resp.Pagination.TotalItems != 0 {
+		t.Errorf("expected TotalItems 0, got %d", resp.Pagination.TotalItems)
+	}
+	if resp.Pagination.TotalPages != 0 {
+		t.Errorf("expected TotalPages 0, got %d", resp.Pagination.TotalPages)
+	}
+}
+
+func TestService_ListRecordings_DBError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID).
+		WillReturnError(errors.New("db connection failure"))
+
+	_, err := svc.ListRecordings(ctx, dtos.RecordingFilterQuery{})
+	if err == nil || !strings.Contains(err.Error(), "db connection failure") {
+		t.Fatalf("expected db connection error, got %v", err)
+	}
+}
+
+

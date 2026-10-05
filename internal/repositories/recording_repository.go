@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,21 +92,79 @@ func (r *Repositories) DeleteRecording(ctx context.Context, id uuid.UUID) error 
 	return r.db.WithContext(ctx).Delete(&models.Recording{}, "id = ?", id).Error
 }
 
-// ListRecordingsByUserID retrieves paginated recordings owned by a user.
-func (r *Repositories) ListRecordingsByUserID(ctx context.Context, userID uuid.UUID, limit int, offset int) ([]models.Recording, int64, error) {
+// RecordingFilter specifies filtering and pagination criteria for user recordings.
+type RecordingFilter struct {
+	Search    string
+	Status    string
+	Template  string
+	SortBy    string
+	SortOrder string
+	Limit     int
+	Offset    int
+}
+
+// ListRecordingsWithFilter retrieves paginated recordings owned by a user matching criteria.
+func (r *Repositories) ListRecordingsWithFilter(ctx context.Context, userID uuid.UUID, filter RecordingFilter) ([]models.Recording, int64, error) {
 	var list []models.Recording
 	var total int64
 
 	query := r.db.WithContext(ctx).Model(&models.Recording{}).Where("user_id = ?", userID)
+
+	if filter.Search != "" {
+		searchPattern := "%" + strings.ToLower(filter.Search) + "%"
+		query = query.Where("LOWER(title) LIKE ? OR LOWER(original_filename) LIKE ?", searchPattern, searchPattern)
+	}
+
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+
+	if filter.Template != "" {
+		query = query.Where("selected_template = ?", filter.Template)
+	}
+
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&list).Error; err != nil {
+	orderCol := "created_at"
+	switch filter.SortBy {
+	case "title", "duration_seconds", "file_size_bytes", "created_at":
+		orderCol = filter.SortBy
+	}
+
+	orderDir := "DESC"
+	if strings.ToUpper(filter.SortOrder) == "ASC" {
+		orderDir = "ASC"
+	}
+
+	orderClause := fmt.Sprintf("%s %s", orderCol, orderDir)
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 10
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	if err := query.Order(orderClause).Limit(limit).Offset(offset).Find(&list).Error; err != nil {
 		return nil, 0, err
 	}
 
 	return list, total, nil
+}
+
+// ListRecordingsByUserID retrieves paginated recordings owned by a user with default ordering.
+func (r *Repositories) ListRecordingsByUserID(ctx context.Context, userID uuid.UUID, limit int, offset int) ([]models.Recording, int64, error) {
+	return r.ListRecordingsWithFilter(ctx, userID, RecordingFilter{
+		Limit:  limit,
+		Offset: offset,
+	})
 }
 
 // UpdateRecordingAudioURL sets the audio_url and duration_seconds of a recording.

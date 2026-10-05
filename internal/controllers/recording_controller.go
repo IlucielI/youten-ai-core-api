@@ -215,3 +215,45 @@ func (c *Controllers) GetRecordingDetail(ctx *gin.Context) {
 	})
 }
 
+// ListRecordings handles retrieving paginated and filtered recordings owned by the authenticated user.
+func (c *Controllers) ListRecordings(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	var query dtos.RecordingFilterQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	resp, err := c.svc.ListRecordings(ctx.Request.Context(), query)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	if resp == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.RecordingListResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "recordings retrieved successfully",
+		Data:      *resp,
+		Timestamp: time.Now(),
+	})
+}
+

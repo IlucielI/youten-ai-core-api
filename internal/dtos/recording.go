@@ -206,3 +206,68 @@ type RecordingDetailResponse struct {
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
+
+// PaginationMeta represents pagination details in list responses.
+type PaginationMeta struct {
+	CurrentPage int   `json:"current_page"`
+	PageSize    int   `json:"page_size"`
+	TotalItems  int64 `json:"total_items"`
+	TotalPages  int   `json:"total_pages"`
+}
+
+// RecordingListItem represents a concise summary of a recording in the library list.
+type RecordingListItem struct {
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	OriginalFilename string    `json:"original_filename"`
+	FileSizeBytes    int64     `json:"file_size_bytes"`
+	DurationSeconds  float64   `json:"duration_seconds"`
+	SourceType       string    `json:"source_type"`
+	Status           string    `json:"status"`
+	SelectedTemplate string    `json:"selected_template"`
+	DetectedLanguage *string   `json:"detected_language,omitempty"`
+	OutputLanguage   string    `json:"output_language"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// RecordingListResponse contains list of items and pagination metadata.
+type RecordingListResponse struct {
+	Items      []RecordingListItem `json:"items"`
+	Pagination PaginationMeta      `json:"pagination"`
+}
+
+// RecordingFilterQuery contains query parameters for filtering and paginating recordings.
+type RecordingFilterQuery struct {
+	Search    string `form:"search" json:"search"`
+	Status    string `form:"status" json:"status"`
+	Template  string `form:"template" json:"template"`
+	Page      int    `form:"page" json:"page"`
+	Limit     int    `form:"limit" json:"limit"`
+	SortBy    string `form:"sort_by" json:"sort_by"`
+	SortOrder string `form:"sort_order" json:"sort_order"`
+}
+
+// SetDefaults sanitizes and defaults pagination and sorting values.
+func (q *RecordingFilterQuery) SetDefaults() {
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Limit < 1 {
+		q.Limit = 10
+	} else if q.Limit > 100 {
+		q.Limit = 100
+	}
+	q.SortBy = strings.ToLower(strings.TrimSpace(q.SortBy))
+	switch q.SortBy {
+	case "title", "duration_seconds", "file_size_bytes", "created_at":
+		// valid
+	default:
+		q.SortBy = "created_at"
+	}
+	q.SortOrder = strings.ToLower(strings.TrimSpace(q.SortOrder))
+	if q.SortOrder != "asc" {
+		q.SortOrder = "desc"
+	}
+}
+

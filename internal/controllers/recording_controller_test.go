@@ -718,4 +718,119 @@ func TestControllers_GetRecordingDetail_Success_HeaderToken(t *testing.T) {
 	}
 }
 
+func TestControllers_ListRecordings_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings", nil)
+
+	var nilCtrls *Controllers
+	nilCtrls.ListRecordings(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for nil controller, got %d", w.Code)
+	}
+
+	w2 := httptest.NewRecorder()
+	c2, _ := gin.CreateTestContext(w2)
+	c2.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings", nil)
+
+	ctrls := &Controllers{}
+	ctrls.ListRecordings(c2)
+
+	if w2.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for nil service, got %d", w2.Code)
+	}
+}
+
+func TestControllers_ListRecordings_Unauthorized(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings", nil)
+
+	ctrls.ListRecordings(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListRecordings_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	recID := uuid.New()
+	now := time.Now()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings?search=sprint&status=COMPLETED&template=MOM&page=1&limit=10&sort_by=created_at&sort_order=desc", nil)
+	ctx := ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID})
+	c.Request = req.WithContext(ctx)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND \(LOWER\(title\) LIKE \$2 OR LOWER\(original_filename\) LIKE \$3\) AND status = \$4 AND selected_template = \$5 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID, "%sprint%", "%sprint%", "COMPLETED", "MOM").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE user_id = \$1 AND \(LOWER\(title\) LIKE \$2 OR LOWER\(original_filename\) LIKE \$3\) AND status = \$4 AND selected_template = \$5 AND "recordings"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$6`).
+		WithArgs(userID, "%sprint%", "%sprint%", "COMPLETED", "MOM", 10).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "user_id", "title", "original_filename", "file_size_bytes", "duration_seconds",
+			"source_type", "status", "selected_template", "output_language", "is_guest", "created_at", "updated_at",
+		}).AddRow(
+			recID, userID, "Sprint Planning Meeting", "sprint.mp3", 2048, 180.0,
+			"UPLOAD", "COMPLETED", "MOM", "id", false, now, now,
+		))
+
+	ctrls.ListRecordings(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.RecordingListResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+
+	if len(resp.Data.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Data.Items))
+	}
+	if resp.Data.Items[0].Title != "Sprint Planning Meeting" {
+		t.Errorf("expected Title 'Sprint Planning Meeting', got %s", resp.Data.Items[0].Title)
+	}
+	if resp.Data.Pagination.TotalItems != 1 {
+		t.Errorf("expected total items 1, got %d", resp.Data.Pagination.TotalItems)
+	}
+}
+
+func TestControllers_ListRecordings_ServiceError(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings", nil)
+	ctx := ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID})
+	c.Request = req.WithContext(ctx)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID).
+		WillReturnError(errors.New("db query error"))
+
+	ctrls.ListRecordings(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+
 

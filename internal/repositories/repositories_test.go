@@ -299,7 +299,7 @@ func TestRepositories_InlineCommentOperations(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
-		WithArgs(recID, nil, 10.5, nil, "Bayu", "Action item here", nil, commID).
+		WithArgs(recID, nil, nil, 10.5, nil, "Bayu", "Action item here", nil, commID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(commID, time.Now(), time.Now()))
 	mock.ExpectCommit()
 
@@ -359,6 +359,39 @@ func TestRepositories_ListInlineCommentsByRecordingID(t *testing.T) {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
+
+func TestRepositories_DeleteInlineComment(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open gorm db: %v", err)
+	}
+
+	repo := New(gormDB, nil)
+	commID := uuid.New()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "inline_comments" WHERE id = \$1`).
+		WithArgs(commID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	if err := repo.DeleteInlineComment(context.Background(), commID); err != nil {
+		t.Fatalf("unexpected error deleting comment: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 
 
 

@@ -199,6 +199,14 @@ routes:
     handler: ListInlineComments
     optional_auth: true
 
+  # Delete recording inline comment endpoint
+  -
+    method: DELETE
+    path: /v1/recordings/:id/comments/:commentId
+    handler: DeleteInlineComment
+    optional_auth: true
+
+
 
 
 

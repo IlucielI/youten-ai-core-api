@@ -11,6 +11,8 @@ type InlineComment struct {
 	ID           uuid.UUID            `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
 	RecordingID  uuid.UUID            `gorm:"type:uuid;not null;index:idx_comments_recording_time,priority:1" json:"recording_id"`
 	Recording    *Recording           `gorm:"foreignKey:RecordingID;constraint:OnDelete:CASCADE" json:"recording,omitempty"`
+	UserID       *uuid.UUID           `gorm:"type:uuid;index:idx_comments_user_id" json:"user_id,omitempty"`
+	User         *User                `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"user,omitempty"`
 	SegmentID    *uuid.UUID           `gorm:"type:uuid" json:"segment_id,omitempty"`
 	Segment      *TranscriptSegment   `gorm:"foreignKey:SegmentID;constraint:OnDelete:SET NULL" json:"segment,omitempty"`
 	TimestampSec float64              `gorm:"not null;default:0;index:idx_comments_recording_time,priority:2" json:"timestamp_sec"`

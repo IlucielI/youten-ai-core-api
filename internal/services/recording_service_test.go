@@ -2909,7 +2909,7 @@ func TestService_CreateInlineComment_Success_GuestWithToken(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
-		WithArgs(recID, nil, 14.5, nil, "Alice", "Great summary!", nil, sqlmock.AnyArg()).
+		WithArgs(recID, nil, nil, 14.5, nil, "Alice", "Great summary!", nil, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
 			AddRow(uuid.New(), time.Now(), time.Now()))
 	mock.ExpectCommit()
@@ -2940,7 +2940,7 @@ func TestService_CreateInlineComment_Success_PubliclyShared(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
-		WithArgs(recID, nil, 0.0, nil, "Anonymous", "Shared viewer note", nil, sqlmock.AnyArg()).
+		WithArgs(recID, nil, nil, 0.0, nil, "Anonymous", "Shared viewer note", nil, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
 			AddRow(uuid.New(), time.Now(), time.Now()))
 	mock.ExpectCommit()
@@ -2979,7 +2979,7 @@ func TestService_CreateInlineComment_Success_ReplyToParent(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
-		WithArgs(recID, nil, 10.0, nil, "Bob", "Reply to parent", parentID, sqlmock.AnyArg()).
+		WithArgs(recID, nil, nil, 10.0, nil, "Bob", "Reply to parent", parentID, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
 			AddRow(uuid.New(), time.Now(), time.Now()))
 	mock.ExpectCommit()
@@ -3212,6 +3212,220 @@ func TestService_ListInlineComments_Success_PubliclyShared(t *testing.T) {
 		t.Fatal("expected empty slice")
 	}
 }
+
+func TestService_DeleteInlineComment_RecordingNotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	commID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, "token")
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_DeleteInlineComment_CommentNotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	commID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, "token")
+	if !errors.Is(err, constants.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_DeleteInlineComment_CommentDifferentRecording(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	otherRecID := uuid.New()
+	commID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "comment_text"}).
+			AddRow(commID, otherRecID, "Comment on other rec"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, "token")
+	if !errors.Is(err, constants.ErrBadRequest) {
+		t.Fatalf("expected ErrBadRequest, got %v", err)
+	}
+}
+
+func TestService_DeleteInlineComment_Forbidden(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	commID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "secret-token", nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, "Alice", "Test comment"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, "wrong-token")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_DeleteInlineComment_Success_RecordingOwnerAuthenticated(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	commID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", &userID, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, "Guest Author", "Test comment"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "inline_comments" WHERE id = \$1`).
+		WithArgs(commID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_DeleteInlineComment_Success_RecordingOwnerGuestToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	commID := uuid.New()
+	guestToken := "guest-owner-token"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, guestToken, nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, "Someone", "Test comment"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "inline_comments" WHERE id = \$1`).
+		WithArgs(commID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, guestToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_DeleteInlineComment_Success_CommentAuthorAuthenticated(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	commID := uuid.New()
+	ownerID := uuid.New()
+	commentAuthorID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: commentAuthorID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", &ownerID, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "user_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, &commentAuthorID, "Charlie Brown", "Author comment"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "inline_comments" WHERE id = \$1`).
+		WithArgs(commID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_DeleteInlineComment_Forbidden_SameNameDifferentUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	commID := uuid.New()
+	ownerID := uuid.New()
+	actualAuthorID := uuid.New()
+	impersonatorID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: impersonatorID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", &ownerID, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "user_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, &actualAuthorID, "Charlie Brown", "Author comment"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	err := svc.DeleteInlineComment(ctx, recID, commID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for different user, got %v", err)
+	}
+}
+
 
 
 

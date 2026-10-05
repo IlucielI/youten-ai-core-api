@@ -1137,6 +1137,58 @@ func (c *Controllers) ListInlineComments(ctx *gin.Context) {
 	})
 }
 
+// DeleteInlineComment handles deleting an inline comment for a recording.
+func (c *Controllers) DeleteInlineComment(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	commentIDParam := ctx.Param("commentId")
+	commentID, err := uuid.Parse(commentIDParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	if err := c.svc.DeleteInlineComment(ctx.Request.Context(), id, commentID, ownershipToken); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.BaseResponse{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "comment deleted successfully",
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 
 

@@ -32,7 +32,7 @@ func GenerateTokenPair(cfg config.Config, userID uuid.UUID, email string, sessio
 		UserID:    userID,
 		SessionID: sessionID,
 		Email:     email,
-		TokenType: "access",
+		TokenType: constants.JWTTokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			Issuer:    cfg.AppName,
@@ -51,7 +51,7 @@ func GenerateTokenPair(cfg config.Config, userID uuid.UUID, email string, sessio
 		UserID:    userID,
 		SessionID: sessionID,
 		Email:     email,
-		TokenType: "refresh",
+		TokenType: constants.JWTTokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			Issuer:    cfg.AppName,

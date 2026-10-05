@@ -154,7 +154,7 @@ func TestService_GetRecordingDetail_Success_AuthenticatedOwner(t *testing.T) {
 	if len(resp.Chapters) != 1 || resp.Chapters[0].Title != "Introduction" {
 		t.Errorf("unexpected chapters: %+v", resp.Chapters)
 	}
-	if len(resp.Highlights) != 1 || resp.Highlights[0].Source != "manual" {
+	if len(resp.Highlights) != 1 || resp.Highlights[0].Source != constants.HighlightSourceManual {
 		t.Errorf("unexpected highlights: %+v", resp.Highlights)
 	}
 }

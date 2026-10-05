@@ -23,10 +23,26 @@ const (
 	ChatRoleAssistant = "assistant"
 )
 
-// Meeting voice bot waitlist default attributes.
+// Meeting voice bot waitlist default attributes and status.
 const (
 	DefaultBotPlatform    = "google_meet"
 	DefaultBotCompanySize = "1-10"
+
+	WaitlistStatusPending  = "PENDING"
+	WaitlistStatusApproved = "APPROVED"
+	WaitlistStatusRejected = "REJECTED"
+)
+
+// Recording media source types.
+const (
+	RecordingSourceTypeUpload = "UPLOAD"
+	RecordingSourceTypeLink   = "LINK"
+)
+
+// Highlight origin sources.
+const (
+	HighlightSourceManual = "manual"
+	HighlightSourceAI     = "ai"
 )
 
 // ExportFormat enumerates the supported MOM/transcript export formats.

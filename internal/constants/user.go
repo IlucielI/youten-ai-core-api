@@ -9,7 +9,11 @@ const (
 	DefaultUserDailyQuota  = 5
 	DefaultGuestDailyQuota = 1
 
-	// Auth token types
+	// Auth token types (database)
 	AuthTokenTypeRefresh = "REFRESH"
 	AuthTokenTypeReset   = "RESET_PASSWORD"
+
+	// JWT token claim types
+	JWTTokenTypeAccess  = "access"
+	JWTTokenTypeRefresh = "refresh"
 )

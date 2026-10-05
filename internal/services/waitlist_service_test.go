@@ -10,6 +10,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
 )
@@ -69,8 +70,8 @@ func TestService_JoinBotWaitlist_SuccessWithMailer(t *testing.T) {
 	if res.CompanySize != "11-50" {
 		t.Errorf("expected company size 11-50, got %s", res.CompanySize)
 	}
-	if res.Status != "PENDING" {
-		t.Errorf("expected status PENDING, got %s", res.Status)
+	if res.Status != constants.WaitlistStatusPending {
+		t.Errorf("expected status %s, got %s", constants.WaitlistStatusPending, res.Status)
 	}
 	if !strings.Contains(res.Message, "successfully") {
 		t.Errorf("expected success message, got %s", res.Message)

@@ -195,7 +195,8 @@ func TestRouter_AuthEndpoints(t *testing.T) {
 		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wRefresh.Code)
 	}
 
-	// Verify POST /v1/auth/logout route is registered and resolves to handler
+	// Verify POST /v1/auth/logout route is registered and protected by auth middleware
+	// (returns 401 Unauthorized without a bearer token, since logout requires an active session).
 	wLogout := httptest.NewRecorder()
 	reqLogout, err := http.NewRequest(http.MethodPost, "/v1/auth/logout", strings.NewReader("{}"))
 	if err != nil {
@@ -207,8 +208,8 @@ func TestRouter_AuthEndpoints(t *testing.T) {
 	if wLogout.Code == http.StatusNotFound {
 		t.Fatalf("expected /v1/auth/logout to be registered, but got 404 Not Found")
 	}
-	if wLogout.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wLogout.Code)
+	if wLogout.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for POST /v1/auth/logout without token (auth-protected), got %d", wLogout.Code)
 	}
 
 	// Verify POST /v1/auth/forgot-password route is registered and resolves to handler

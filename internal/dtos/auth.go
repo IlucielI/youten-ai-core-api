@@ -68,6 +68,24 @@ type UserProfileResponse struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// UpdateProfileRequest defines the input payload for updating user profile attributes.
+type UpdateProfileRequest struct {
+	FullName string `json:"full_name"`
+}
+
+// Validate performs structural and semantic validation on UpdateProfileRequest.
+func (r *UpdateProfileRequest) Validate() error {
+	r.FullName = strings.TrimSpace(r.FullName)
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.FullName,
+			validation.Required.Error("full name is required"),
+			validation.Length(2, 100).Error("full name must be between 2 and 100 characters"),
+		),
+	)
+}
+
+
 // LoginRequest defines the input payload for user authentication.
 type LoginRequest struct {
 	Email    string `json:"email"`

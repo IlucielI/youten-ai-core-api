@@ -60,3 +60,16 @@ func (r *Repositories) UpdateUserPassword(ctx context.Context, id uuid.UUID, pas
 	}
 	return nil
 }
+
+// UpdateUserFullName updates the display name for a specific user ID.
+func (r *Repositories) UpdateUserFullName(ctx context.Context, id uuid.UUID, fullName string) error {
+	res := r.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", id).Update("full_name", fullName)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+

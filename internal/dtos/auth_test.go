@@ -1,6 +1,7 @@
 package dtos_test
 
 import (
+	"strings"
 	"testing"
 
 	"code-base-golang/internal/dtos"
@@ -318,3 +319,57 @@ func TestResetPasswordRequest_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateProfileRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.UpdateProfileRequest
+		wantErr bool
+	}{
+		{
+			name: "valid full name",
+			req: dtos.UpdateProfileRequest{
+				FullName: "Jane Doe",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty full name",
+			req: dtos.UpdateProfileRequest{
+				FullName: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "whitespace only full name",
+			req: dtos.UpdateProfileRequest{
+				FullName: "   ",
+			},
+			wantErr: true,
+		},
+		{
+			name: "single char full name",
+			req: dtos.UpdateProfileRequest{
+				FullName: "J",
+			},
+			wantErr: true,
+		},
+		{
+			name: "too long full name",
+			req: dtos.UpdateProfileRequest{
+				FullName: strings.Repeat("a", 101),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("UpdateProfileRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+

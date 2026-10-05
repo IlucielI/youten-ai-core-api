@@ -249,36 +249,49 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	ctrls := controllers.New(cfg, nil)
 	router := routes.NewRouter(cfg, ctrls)
 
-	expectedRoutes := map[string]string{
-		"/v1/health":               "GET",
-		"/openapi.yaml":            "GET",
-		"/docs":                    "GET",
-		"/v1/auth/register":        "POST",
-		"/v1/auth/login":           "POST",
-		"/v1/auth/refresh":         "POST",
-		"/v1/auth/logout":          "POST",
-		"/v1/auth/forgot-password": "POST",
-		"/v1/auth/reset-password":  "POST",
-		"/v1/auth/me":              "GET",
+	expectedRoutePairs := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/v1/health"},
+		{"GET", "/openapi.yaml"},
+		{"GET", "/docs"},
+		{"POST", "/v1/auth/register"},
+		{"POST", "/v1/auth/login"},
+		{"POST", "/v1/auth/refresh"},
+		{"POST", "/v1/auth/logout"},
+		{"POST", "/v1/auth/forgot-password"},
+		{"POST", "/v1/auth/reset-password"},
+		{"GET", "/v1/auth/me"},
+		{"PUT", "/v1/auth/me"},
 	}
 
-	registered := make(map[string]string)
+	registeredPairs := make(map[string]bool)
 	for _, route := range router.Routes() {
-		registered[route.Path] = route.Method
+		registeredPairs[route.Method+" "+route.Path] = true
 	}
 
-	for path, method := range expectedRoutes {
-		if gotMethod, exists := registered[path]; !exists || gotMethod != method {
-			t.Errorf("expected route %s %s to be registered in Gin, found method %s (exists=%v)", method, path, gotMethod, exists)
+	for _, r := range expectedRoutePairs {
+		key := r.method + " " + r.path
+		if !registeredPairs[key] {
+			t.Errorf("expected route %s to be registered in Gin", key)
 		}
 	}
 
-	// Verify /v1/auth/me is protected by auth middleware (returns 401 Unauthorized without header)
-	wMe := httptest.NewRecorder()
-	reqMe, _ := http.NewRequest(http.MethodGet, "/v1/auth/me", nil)
-	router.ServeHTTP(wMe, reqMe)
-	if wMe.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 Unauthorized for /v1/auth/me without token, got %d", wMe.Code)
+	// Verify /v1/auth/me (GET and PUT) are protected by auth middleware (returns 401 Unauthorized without header)
+	wMeGet := httptest.NewRecorder()
+	reqMeGet, _ := http.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	router.ServeHTTP(wMeGet, reqMeGet)
+	if wMeGet.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for GET /v1/auth/me without token, got %d", wMeGet.Code)
+	}
+
+	wMePut := httptest.NewRecorder()
+	reqMePut, _ := http.NewRequest(http.MethodPut, "/v1/auth/me", strings.NewReader(`{"full_name":"New Name"}`))
+	reqMePut.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wMePut, reqMePut)
+	if wMePut.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for PUT /v1/auth/me without token, got %d", wMePut.Code)
 	}
 }
 

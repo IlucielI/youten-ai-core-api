@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"log"
+	"time"
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
@@ -43,6 +44,30 @@ func (w *WorkerServer) RegisterWorker() {
 	w.sub.MustSubscribe(constants.TopicRecordingChapterize, w.HandleRecordingChapterize)
 
 	log.Println("Done RegisterWorker")
+}
+
+// StartCleanupTicker runs a periodic background loop to clean up expired recordings and their files.
+func (w *WorkerServer) StartCleanupTicker(ctx context.Context, interval time.Duration) {
+	if w == nil || w.svc == nil || interval <= 0 || ctx == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				count, err := w.svc.CleanupExpiredRecordings(ctx, 100)
+				if err != nil {
+					log.Printf("[CLEANUP ERROR] failed to clean expired recordings: %v", err)
+				} else if count > 0 {
+					log.Printf("[CLEANUP] successfully removed %d expired recordings and storage objects", count)
+				}
+			}
+		}
+	}()
 }
 
 // HandleRecordingExtract handles audio extraction from uploaded video/audio files.

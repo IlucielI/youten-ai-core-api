@@ -8,6 +8,7 @@ import (
 
 // Canonical recording lifecycle states
 const (
+	RecordingStatusPending     = "PENDING"
 	RecordingStatusQueued       = "QUEUED"
 	RecordingStatusValidating   = "VALIDATING"
 	RecordingStatusExtracting   = "EXTRACTING"
@@ -50,7 +51,7 @@ type Recording struct {
 	DetectedLanguage *string    `gorm:"type:varchar(50)" json:"detected_language,omitempty"`
 	OutputLanguage   string     `gorm:"type:varchar(50);not null;default:'id'" json:"output_language"`
 	AnalyticsData    JSONMap    `gorm:"type:jsonb" json:"analytics_data,omitempty"`
-	IsGuest          bool       `gorm:"not null;default:true" json:"is_guest"`
+	IsGuest          bool       `gorm:"not null" json:"is_guest"`
 	GuestIP          *string    `gorm:"type:varchar(100)" json:"guest_ip,omitempty"`
 	ConsentGiven     bool       `gorm:"not null;default:false" json:"consent_given"`
 	ConsentVersion   string     `gorm:"type:varchar(50);not null;default:'1.0'" json:"consent_version"`

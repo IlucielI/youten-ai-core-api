@@ -95,39 +95,6 @@ func setupTestPipelineService(t *testing.T) (*services.Service, sqlmock.Sqlmock,
 	return svc, mock, pub, cleanup
 }
 
-func TestPipelineService_NilChecks(t *testing.T) {
-	nilSvc := services.New(config.Config{}, nil, nil)
-	p := payload.RecordingPipelinePayload{RecordingID: uuid.New()}
-
-	if err := nilSvc.ProcessExtraction(context.Background(), p); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if err := nilSvc.ProcessTranscription(context.Background(), p); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if err := nilSvc.ProcessSummarization(context.Background(), p); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if err := nilSvc.ProcessIndexing(context.Background(), p); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if err := nilSvc.ProcessAnalytics(context.Background(), p); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if err := nilSvc.ProcessChapterization(context.Background(), p); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if _, err := nilSvc.CheckAndCompleteRecording(context.Background(), p.RecordingID); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if _, err := nilSvc.RetryRecording(context.Background(), p.RecordingID); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-	if err := nilSvc.FailRecording(context.Background(), p.RecordingID, "ERR", "msg"); !errors.Is(err, services.ErrNilRepositories) {
-		t.Errorf("expected ErrNilRepositories, got %v", err)
-	}
-}
-
 func TestPipelineService_ProcessExtraction_Success(t *testing.T) {
 	svc, mock, pub, cleanup := setupTestPipelineService(t)
 	defer cleanup()

@@ -265,6 +265,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"GET", "/v1/auth/me"},
 		{"PUT", "/v1/auth/me"},
 		{"PUT", "/v1/auth/change-password"},
+		{"POST", "/v1/recordings/upload"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -281,14 +282,20 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 
 	// Verify /v1/auth/me (GET and PUT) and /v1/auth/change-password (PUT) are protected by auth middleware (returns 401 Unauthorized without header)
 	wMeGet := httptest.NewRecorder()
-	reqMeGet, _ := http.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	reqMeGet, err := http.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
 	router.ServeHTTP(wMeGet, reqMeGet)
 	if wMeGet.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 Unauthorized for GET /v1/auth/me without token, got %d", wMeGet.Code)
 	}
 
 	wMePut := httptest.NewRecorder()
-	reqMePut, _ := http.NewRequest(http.MethodPut, "/v1/auth/me", strings.NewReader(`{"full_name":"New Name"}`))
+	reqMePut, err := http.NewRequest(http.MethodPut, "/v1/auth/me", strings.NewReader(`{"full_name":"New Name"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
 	reqMePut.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wMePut, reqMePut)
 	if wMePut.Code != http.StatusUnauthorized {
@@ -296,11 +303,25 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	}
 
 	wChangePwd := httptest.NewRecorder()
-	reqChangePwd, _ := http.NewRequest(http.MethodPut, "/v1/auth/change-password", strings.NewReader(`{"old_password":"old","new_password":"new"}`))
+	reqChangePwd, err := http.NewRequest(http.MethodPut, "/v1/auth/change-password", strings.NewReader(`{"old_password":"old","new_password":"new"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
 	reqChangePwd.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wChangePwd, reqChangePwd)
 	if wChangePwd.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 Unauthorized for PUT /v1/auth/change-password without token, got %d", wChangePwd.Code)
+	}
+
+	// Verify /v1/recordings/upload is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wUpload := httptest.NewRecorder()
+	reqUpload, err := http.NewRequest(http.MethodPost, "/v1/recordings/upload", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wUpload, reqUpload)
+	if wUpload.Code == http.StatusUnauthorized {
+		t.Fatalf("expected /v1/recordings/upload not to return 401 Unauthorized without header (optional_auth), got %d", wUpload.Code)
 	}
 }
 

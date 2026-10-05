@@ -170,4 +170,44 @@ func (r *Repositories) CountUserRecordingsToday(ctx context.Context, userID uuid
 	return count, err
 }
 
+// CountGuestRecordingsToday counts how many recordings a guest IP has created since the beginning of the current UTC day.
+func (r *Repositories) CountGuestRecordingsToday(ctx context.Context, guestIP string) (int64, error) {
+	now := time.Now().UTC()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	var count int64
+	err := r.db.WithContext(ctx).Model(&models.Recording{}).
+		Where("is_guest = TRUE AND guest_ip = ? AND created_at >= ?", guestIP, startOfDay).
+		Count(&count).Error
+	return count, err
+}
 
+// FindLatestPendingRecording retrieves the most recent pending recording matching filename for a user or guest.
+func (r *Repositories) FindLatestPendingRecording(ctx context.Context, filename string, userID *uuid.UUID, guestIP *string) (*models.Recording, error) {
+	var rec models.Recording
+	query := r.db.WithContext(ctx).Where("original_filename = ? AND status = ?", filename, models.RecordingStatusPending)
+	if userID != nil {
+		query = query.Where("user_id = ?", *userID)
+	} else if guestIP != nil && *guestIP != "" {
+		query = query.Where("is_guest = TRUE AND guest_ip = ?", *guestIP)
+	}
+	if err := query.Order("created_at DESC").First(&rec).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+// FindExpiredRecordings retrieves recordings whose expires_at is not null and has passed.
+func (r *Repositories) FindExpiredRecordings(ctx context.Context, limit int) ([]models.Recording, error) {
+	var list []models.Recording
+	err := r.db.WithContext(ctx).
+		Where("expires_at IS NOT NULL AND expires_at <= ?", time.Now().UTC()).
+		Order("expires_at ASC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
+// HardDeleteRecording permanently deletes a recording row, triggering database CASCADE rules.
+func (r *Repositories) HardDeleteRecording(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Unscoped().Delete(&models.Recording{}, "id = ?", id).Error
+}

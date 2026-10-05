@@ -146,10 +146,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Register worker subscription to Message Queue
+	// Register worker subscription to Message Queue and background cleanup scheduler
 	if broker != nil {
 		workerServer := workers.New(cfg, svc, broker)
 		workerServer.RegisterWorker()
+		workerServer.StartCleanupTicker(ctx, 30*time.Minute)
 	}
 
 	httpServer := &http.Server{

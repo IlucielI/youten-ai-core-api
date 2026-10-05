@@ -273,6 +273,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"POST", "/v1/recordings/:id/claim"},
 		{"POST", "/v1/recordings/claim"},
 		{"PATCH", "/v1/recordings/:id/share"},
+		{"GET", "/v1/recordings/shared/:token"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -409,6 +410,17 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router.ServeHTTP(wShare, reqShare)
 	if wShare.Code != http.StatusUnauthorized {
 		t.Fatalf("expected PATCH /v1/recordings/:id/share to return 401 Unauthorized without header (auth: true), got %d", wShare.Code)
+	}
+
+	// Verify GET /v1/recordings/shared/:token is a public route (does NOT return 401 Unauthorized without header)
+	wShared := httptest.NewRecorder()
+	reqShared, err := http.NewRequest(http.MethodGet, "/v1/recordings/shared/token-123", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wShared, reqShared)
+	if wShared.Code == http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/shared/:token not to return 401 Unauthorized (public route), got %d", wShared.Code)
 	}
 }
 

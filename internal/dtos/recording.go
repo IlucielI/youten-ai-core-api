@@ -320,6 +320,24 @@ type ShareToggleResponse struct {
 	ShareURL       *string `json:"share_url,omitempty"`
 }
 
+// SharedRecordingResponse encapsulates the public, read-only payload for a shared recording session.
+type SharedRecordingResponse struct {
+	ID               string                 `json:"id"`
+	Title            string                 `json:"title"`
+	DurationSeconds  float64                `json:"duration_seconds"`
+	AudioURL         *string                `json:"audio_url,omitempty"`
+	PlaybackURL      *string                `json:"playback_url,omitempty"`
+	SelectedTemplate string                 `json:"selected_template"`
+	DetectedLanguage *string                `json:"detected_language,omitempty"`
+	OutputLanguage   string                 `json:"output_language"`
+	Segments         []TranscriptSegmentDTO `json:"segments"`
+	ActiveSummary    *SummaryDTO            `json:"active_summary,omitempty"`
+	Chapters         []ChapterDTO           `json:"chapters"`
+	Highlights       []HighlightDTO         `json:"highlights"`
+	CreatedAt        time.Time              `json:"created_at"`
+}
+
+
 
 
 

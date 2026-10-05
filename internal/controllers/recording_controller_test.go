@@ -1422,9 +1422,122 @@ func TestControllers_ToggleRecordingShare_Success(t *testing.T) {
 	}
 }
 
+func TestControllers_GetSharedRecording_NilReceiver(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/shared/test-token", nil)
 
+	var ctrls *Controllers
+	ctrls.GetSharedRecording(c)
 
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
 
+func TestControllers_GetSharedRecording_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/shared/test-token", nil)
 
+	ctrls := &Controllers{}
+	ctrls.GetSharedRecording(c)
 
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
 
+func TestControllers_GetSharedRecording_EmptyToken(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "token", Value: "  "}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/shared/%20", nil)
+
+	ctrls.GetSharedRecording(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetSharedRecording_NotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "token", Value: "non-existent-token"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/shared/non-existent-token", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(share_token = \$1 AND is_share_enabled = TRUE\) AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs("non-existent-token", 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.GetSharedRecording(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetSharedRecording_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	audioKey := "recordings/audio.mp3"
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "token", Value: "valid-share-token"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/shared/valid-share-token", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(share_token = \$1 AND is_share_enabled = TRUE\) AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs("valid-share-token", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "audio_url", "is_share_enabled", "share_token"}).
+			AddRow(recID, "Public Demo", 120.0, audioKey, true, "valid-share-token"))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "text"}).
+			AddRow(uuid.New(), recID, "Public transcript"))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "markdown_content", "is_active"}).
+			AddRow(uuid.New(), recID, "Public summary", true))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1.*LIMIT \$2`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "title"}).
+			AddRow(uuid.New(), recID, "Public Chapter"))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "source"}).
+			AddRow(uuid.New(), recID, "KEY_POINT"))
+
+	ctrls.GetSharedRecording(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.SharedRecordingResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if resp.Data.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.Data.ID)
+	}
+	if resp.Data.Title != "Public Demo" {
+		t.Errorf("expected Title 'Public Demo', got %s", resp.Data.Title)
+	}
+	if len(resp.Data.Segments) != 1 {
+		t.Errorf("expected 1 segment, got %d", len(resp.Data.Segments))
+	}
+}

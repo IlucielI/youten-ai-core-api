@@ -4,7 +4,6 @@ package services
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -464,20 +463,8 @@ func (s *Service) RetryRecordingPipeline(ctx context.Context, id uuid.UUID, owne
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// 1. Ownership verification
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		hasAccess = true
-	} else if ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(*rec.ShareToken)) == 1 {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// 1. Ownership verification: owner, ownership token, or active share token.
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareToken: true}) {
 		return nil, constants.ErrForbidden
 	}
 

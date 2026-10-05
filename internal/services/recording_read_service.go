@@ -29,23 +29,8 @@ func (s *Service) GetRecordingDetail(ctx context.Context, id uuid.UUID, ownershi
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Ownership verification:
-	// 1. Authenticated user matching recording.user_id
-	// 2. Ownership token matching recording.ownership_token
-	// 3. Share token matching recording.share_token (if sharing enabled)
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && ownershipToken == rec.OwnershipToken {
-		hasAccess = true
-	} else if ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil && ownershipToken == *rec.ShareToken {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Ownership verification: owner, ownership token, or active share token.
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareToken: true}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -272,20 +257,8 @@ func (s *Service) GetRecordingProgress(ctx context.Context, id uuid.UUID, owners
 		return nil, nil, nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Ownership verification
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && ownershipToken == rec.OwnershipToken {
-		hasAccess = true
-	} else if ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil && ownershipToken == *rec.ShareToken {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Ownership verification: owner, ownership token, or active share token.
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareToken: true}) {
 		return nil, nil, nil, constants.ErrForbidden
 	}
 

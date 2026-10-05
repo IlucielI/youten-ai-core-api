@@ -3,7 +3,6 @@ package services
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,20 +26,10 @@ func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownersh
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Verify access: owner, guest with token, or publicly shared recording
-	hasAccess := false
+	// Verify access: owner, ownership token, or publicly shared recording.
 	isAuth := ctxmeta.IsAuthenticated(ctx)
 	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		hasAccess = true
-	} else if rec.IsShareEnabled {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareOpen: true}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -106,20 +95,8 @@ func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershi
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Verify access: owner, guest with token, or publicly shared recording
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		hasAccess = true
-	} else if rec.IsShareEnabled {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Verify access: owner, ownership token, or publicly shared recording.
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareOpen: true}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -158,16 +135,12 @@ func (s *Service) DeleteInlineComment(ctx context.Context, recordingID uuid.UUID
 		return constants.ErrBadRequest
 	}
 
-	// Verify permission: comment author or recording owner
+	// Verify permission: recording owner (or ownership token), or the comment author.
 	isAuth := ctxmeta.IsAuthenticated(ctx)
 	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
 
-	canDelete := false
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		canDelete = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		canDelete = true
-	} else if isAuth && hasUserID && comment.UserID != nil && *comment.UserID == userID {
+	canDelete := s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{})
+	if !canDelete && isAuth && hasUserID && comment.UserID != nil && *comment.UserID == userID {
 		canDelete = true
 	}
 

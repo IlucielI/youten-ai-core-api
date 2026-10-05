@@ -3,7 +3,6 @@ package services
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/apperror"
-	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/templates"
 )
 
@@ -32,18 +30,8 @@ func (s *Service) UpdateTranscriptSpeakers(ctx context.Context, id uuid.UUID, ow
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Ownership verification: only recording owner (authenticated user or guest with ownership token)
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Ownership verification (owner or ownership token).
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -73,18 +61,8 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Verify ownership
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Verify ownership (owner or ownership token).
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -222,18 +200,8 @@ func (s *Service) ListSummaryVersions(ctx context.Context, id uuid.UUID, ownersh
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Verify ownership
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Verify ownership (owner or ownership token).
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -260,18 +228,8 @@ func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, vers
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Verify ownership
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Verify ownership (owner or ownership token).
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 

@@ -21,6 +21,28 @@ import (
 	"code-base-golang/internal/pkg/jwt"
 )
 
+// resolveDailyQuota returns the effective daily quota for a user, honoring a per-user override when set.
+func resolveDailyQuota(user *models.User) int {
+	if user.DailyQuotaOverride != nil {
+		return *user.DailyQuotaOverride
+	}
+	return constants.DefaultUserDailyQuota
+}
+
+// newUserResponse maps a user model into its public response representation.
+func newUserResponse(user *models.User) dtos.UserResponse {
+	return dtos.UserResponse{
+		ID:                 user.ID,
+		Email:              user.Email,
+		FullName:           user.FullName,
+		Status:             user.Status,
+		DailyQuota:         resolveDailyQuota(user),
+		DailyQuotaOverride: user.DailyQuotaOverride,
+		EmailVerified:      user.EmailVerified,
+		CreatedAt:          user.CreatedAt,
+	}
+}
+
 // Register creates a new user account with a hashed password and default daily quota.
 func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dtos.UserResponse, error) {
 
@@ -53,21 +75,8 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 		return nil, s.wrapError(ctx, err)
 	}
 
-	dailyQuota := constants.DefaultUserDailyQuota
-	if user.DailyQuotaOverride != nil {
-		dailyQuota = *user.DailyQuotaOverride
-	}
-
-	return &dtos.UserResponse{
-		ID:                 user.ID,
-		Email:              user.Email,
-		FullName:           user.FullName,
-		Status:             user.Status,
-		DailyQuota:         dailyQuota,
-		DailyQuotaOverride: user.DailyQuotaOverride,
-		EmailVerified:      user.EmailVerified,
-		CreatedAt:          user.CreatedAt,
-	}, nil
+	resp := newUserResponse(user)
+	return &resp, nil
 }
 
 // Login authenticates a user by email and password, returning an access and refresh token pair.
@@ -114,27 +123,13 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 		return nil, s.wrapError(ctx, err)
 	}
 
-	dailyQuota := constants.DefaultUserDailyQuota
-	if user.DailyQuotaOverride != nil {
-		dailyQuota = *user.DailyQuotaOverride
-	}
-
 	return &dtos.AuthResponse{
 		AccessToken:      tokenPair.AccessToken,
 		RefreshToken:     tokenPair.RefreshToken,
 		TokenType:        tokenPair.TokenType,
 		ExpiresIn:        tokenPair.ExpiresIn,
 		RefreshExpiresIn: tokenPair.RefreshExpiresIn,
-		User: dtos.UserResponse{
-			ID:                 user.ID,
-			Email:              user.Email,
-			FullName:           user.FullName,
-			Status:             user.Status,
-			DailyQuota:         dailyQuota,
-			DailyQuotaOverride: user.DailyQuotaOverride,
-			EmailVerified:      user.EmailVerified,
-			CreatedAt:          user.CreatedAt,
-		},
+		User:             newUserResponse(user),
 	}, nil
 }
 
@@ -201,27 +196,13 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 		return nil, s.wrapError(ctx, err)
 	}
 
-	dailyQuota := constants.DefaultUserDailyQuota
-	if user.DailyQuotaOverride != nil {
-		dailyQuota = *user.DailyQuotaOverride
-	}
-
 	return &dtos.AuthResponse{
 		AccessToken:      tokenPair.AccessToken,
 		RefreshToken:     tokenPair.RefreshToken,
 		TokenType:        tokenPair.TokenType,
 		ExpiresIn:        tokenPair.ExpiresIn,
 		RefreshExpiresIn: tokenPair.RefreshExpiresIn,
-		User: dtos.UserResponse{
-			ID:                 user.ID,
-			Email:              user.Email,
-			FullName:           user.FullName,
-			Status:             user.Status,
-			DailyQuota:         dailyQuota,
-			DailyQuotaOverride: user.DailyQuotaOverride,
-			EmailVerified:      user.EmailVerified,
-			CreatedAt:          user.CreatedAt,
-		},
+		User:             newUserResponse(user),
 	}, nil
 }
 
@@ -422,10 +403,7 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 		return nil, s.wrapError(ctx, err)
 	}
 
-	dailyQuota := constants.DefaultUserDailyQuota
-	if user.DailyQuotaOverride != nil {
-		dailyQuota = *user.DailyQuotaOverride
-	}
+	dailyQuota := resolveDailyQuota(user)
 
 	countToday, err := s.repo.CountUserRecordingsToday(ctx, user.ID)
 	if err != nil {

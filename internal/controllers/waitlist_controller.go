@@ -13,23 +13,13 @@ import (
 
 // JoinBotWaitlist handles public applicant registration for the meeting voice bot beta waitlist.
 func (c *Controllers) JoinBotWaitlist(ctx *gin.Context) {
-	if c == nil || c.svc == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   "controller service uninitialized",
-			Timestamp: time.Now(),
-		})
-		return
-	}
-
 	var req dtos.WaitlistRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateWaitlistRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}

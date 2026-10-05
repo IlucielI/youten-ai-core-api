@@ -1330,6 +1330,3 @@ func TestControllers_ChangePassword_ValidationErrors(t *testing.T) {
 		}
 	}
 }
-
-
-

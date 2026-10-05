@@ -34,9 +34,6 @@ func (c *Controllers) SetService(s *services.Service) {
 
 // Service returns the underlying service container.
 func (c *Controllers) Service() *services.Service {
-	if c == nil {
-		return nil
-	}
 	return c.svc
 }
 
@@ -60,4 +57,3 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 		Timestamp: time.Now(),
 	})
 }
-

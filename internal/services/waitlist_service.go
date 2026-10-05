@@ -18,11 +18,11 @@ func (s *Service) JoinBotWaitlist(ctx context.Context, req dtos.WaitlistRequest)
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	platform := strings.TrimSpace(req.Platform)
 	if platform == "" {
-		platform = "google_meet"
+		platform = constants.DefaultBotPlatform
 	}
 	companySize := strings.TrimSpace(req.CompanySize)
 	if companySize == "" {
-		companySize = "1-10"
+		companySize = constants.DefaultBotCompanySize
 	}
 
 	entry := &models.BotWaitlist{

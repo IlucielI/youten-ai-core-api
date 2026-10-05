@@ -199,7 +199,7 @@ func TestPipelineService_RetryRecording_SmartStateRecovery(t *testing.T) {
 			AddRow(recID, models.RecordingStatusCompleted))
 
 	_, err := svc.RetryRecording(context.Background(), recID)
-	if !errors.Is(err, services.ErrInvalidRetryState) {
+	if !errors.Is(err, constants.ErrInvalidRetryState) {
 		t.Errorf("expected ErrInvalidRetryState, got %v", err)
 	}
 

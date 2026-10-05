@@ -11,7 +11,7 @@ import (
 // CheckHealth inspects the connectivity of sub-systems (database, redis, s3 storage).
 func (s *Service) CheckHealth(ctx context.Context) dtos.HealthServices {
 	dbStatus := constants.IntegrationStatusConnected
-	if s == nil || s.repo == nil {
+	if s.repo == nil {
 		dbStatus = constants.IntegrationStatusDisconnected
 	} else {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -22,7 +22,7 @@ func (s *Service) CheckHealth(ctx context.Context) dtos.HealthServices {
 	}
 
 	redisStatus := constants.IntegrationStatusConnected
-	if s == nil || s.repo == nil {
+	if s.repo == nil {
 		redisStatus = constants.IntegrationStatusDisconnected
 	} else {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -33,7 +33,7 @@ func (s *Service) CheckHealth(ctx context.Context) dtos.HealthServices {
 	}
 
 	s3Status := constants.IntegrationStatusConnected
-	if s == nil || s.storage == nil {
+	if s.storage == nil {
 		s3Status = constants.IntegrationStatusDisconnected
 	} else {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -44,7 +44,7 @@ func (s *Service) CheckHealth(ctx context.Context) dtos.HealthServices {
 	}
 
 	rmqStatus := constants.IntegrationStatusConnected
-	if s == nil || s.publisher == nil {
+	if s.publisher == nil {
 		rmqStatus = constants.IntegrationStatusDisconnected
 	} else {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -55,7 +55,7 @@ func (s *Service) CheckHealth(ctx context.Context) dtos.HealthServices {
 	}
 
 	smtpStatus := constants.IntegrationStatusConnected
-	if s == nil || s.mailer == nil {
+	if s.mailer == nil {
 		smtpStatus = constants.IntegrationStatusDisconnected
 	} else {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)

@@ -13,16 +13,12 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/sse"
+	"code-base-golang/internal/validations"
 )
-
 
 // PresignUpload generates a pre-signed S3 PUT URL so that the frontend
 // can upload the media file directly to object storage without streaming through the backend.
 func (c *Controllers) PresignUpload(ctx *gin.Context) {
-	if c == nil || c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	// Restrict payload size for metadata JSON (64KB)
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
@@ -38,7 +34,7 @@ func (c *Controllers) PresignUpload(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidatePresignUploadRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -76,10 +72,6 @@ func (c *Controllers) PresignUpload(ctx *gin.Context) {
 // UploadRecording confirms media file upload after the frontend uploaded directly to S3.
 // The frontend only submits the filename and metadata, preventing file streams through the backend.
 func (c *Controllers) UploadRecording(ctx *gin.Context) {
-	if c == nil || c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	// Restrict metadata payload size (64KB)
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
@@ -95,7 +87,7 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateUploadRecordingRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -127,10 +119,6 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 
 // ImportURL handles media ingestion from a remote URL with Anti-SSRF protection.
 func (c *Controllers) ImportURL(ctx *gin.Context) {
-	if c == nil || c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	// Restrict JSON request body size (64KB)
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
@@ -146,7 +134,7 @@ func (c *Controllers) ImportURL(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateImportURLRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -179,10 +167,6 @@ func (c *Controllers) ImportURL(ctx *gin.Context) {
 // GetRecordingDetail handles retrieving recording metadata, segments, active summary, chapters,
 // and presigned playback audio URL.
 func (c *Controllers) GetRecordingDetail(ctx *gin.Context) {
-	if c == nil || c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	recID, err := uuid.Parse(idParam)
@@ -222,19 +206,6 @@ func (c *Controllers) GetRecordingDetail(ctx *gin.Context) {
 
 // ListRecordings handles retrieving paginated and filtered recordings owned by the authenticated user.
 func (c *Controllers) ListRecordings(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	var query dtos.RecordingFilterQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
@@ -264,19 +235,6 @@ func (c *Controllers) ListRecordings(ctx *gin.Context) {
 
 // DeleteRecording handles soft-deleting a recording owned by the authenticated user.
 func (c *Controllers) DeleteRecording(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -300,19 +258,6 @@ func (c *Controllers) DeleteRecording(ctx *gin.Context) {
 
 // ClaimRecording handles claiming a guest recording session to the authenticated user.
 func (c *Controllers) ClaimRecording(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -332,7 +277,7 @@ func (c *Controllers) ClaimRecording(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateClaimRecordingRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -357,19 +302,6 @@ func (c *Controllers) ClaimRecording(ctx *gin.Context) {
 
 // ClaimBulkRecordings handles claiming multiple guest recording sessions to the authenticated user.
 func (c *Controllers) ClaimBulkRecordings(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	var req dtos.BulkClaimRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -382,7 +314,7 @@ func (c *Controllers) ClaimBulkRecordings(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateBulkClaimRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -409,19 +341,6 @@ func (c *Controllers) ClaimBulkRecordings(ctx *gin.Context) {
 
 // ToggleRecordingShare handles toggling public sharing on or off for a recording.
 func (c *Controllers) ToggleRecordingShare(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -441,7 +360,7 @@ func (c *Controllers) ToggleRecordingShare(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateShareToggleRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -468,19 +387,6 @@ func (c *Controllers) ToggleRecordingShare(ctx *gin.Context) {
 
 // GetSharedRecording handles public retrieval of a shared recording by its share token.
 func (c *Controllers) GetSharedRecording(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	token := strings.TrimSpace(ctx.Param("token"))
 	if token == "" {
@@ -505,19 +411,6 @@ func (c *Controllers) GetSharedRecording(ctx *gin.Context) {
 
 // StreamRecordingProgress handles real-time SSE progress streaming for a recording pipeline.
 func (c *Controllers) StreamRecordingProgress(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -607,19 +500,6 @@ func (c *Controllers) StreamRecordingProgress(ctx *gin.Context) {
 
 // RetryRecording handles POST /v1/recordings/:id/retry to initiate a smart retry of a failed pipeline.
 func (c *Controllers) RetryRecording(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -658,19 +538,6 @@ func (c *Controllers) RetryRecording(ctx *gin.Context) {
 
 // StreamRecordingChat handles interactive RAG chat streaming via Server-Sent Events (SSE).
 func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -693,7 +560,7 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateRecordingChatRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -784,19 +651,6 @@ streamLoop:
 
 // UpdateTranscriptSpeakers handles batch updating speaker names on a recording's transcript segments.
 func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -816,7 +670,7 @@ func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateUpdateSpeakersRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -854,19 +708,6 @@ func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
 
 // RegenerateSummary handles generating a new summary version with optional template and custom angle.
 func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -888,7 +729,7 @@ func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 		}
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateRegenerateSummaryRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -926,19 +767,6 @@ func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 
 // ListSummaryVersions handles listing all summary versions for a recording.
 func (c *Controllers) ListSummaryVersions(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -972,19 +800,6 @@ func (c *Controllers) ListSummaryVersions(ctx *gin.Context) {
 
 // ActivateSummaryVersion handles switching the active summary version of a recording.
 func (c *Controllers) ActivateSummaryVersion(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -1024,19 +839,6 @@ func (c *Controllers) ActivateSummaryVersion(ctx *gin.Context) {
 
 // CreateInlineComment handles adding an inline comment or reply to a recording.
 func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -1056,7 +858,7 @@ func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateCreateCommentRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
 			Status:    constants.ResponseStatusFail,
 			Code:      constants.ResponseCodeBadRequest,
@@ -1094,19 +896,6 @@ func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
 
 // ListInlineComments handles retrieving all timestamped inline comments for a recording.
 func (c *Controllers) ListInlineComments(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -1140,19 +929,6 @@ func (c *Controllers) ListInlineComments(ctx *gin.Context) {
 
 // DeleteInlineComment handles deleting an inline comment for a recording.
 func (c *Controllers) DeleteInlineComment(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -1195,10 +971,6 @@ func (c *Controllers) ExportRecording(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": constants.ErrInternalServerError.Error()})
 		return
 	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	idParam := ctx.Param("id")
 	id, err := uuid.Parse(idParam)
@@ -1229,19 +1001,6 @@ func (c *Controllers) ExportRecording(ctx *gin.Context) {
 
 // SearchRecordings handles cross-meeting semantic vector search across user recordings.
 func (c *Controllers) SearchRecordings(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	var query dtos.SemanticSearchQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
@@ -1249,7 +1008,7 @@ func (c *Controllers) SearchRecordings(ctx *gin.Context) {
 		return
 	}
 
-	if err := query.Validate(); err != nil {
+	if err := validations.ValidateSemanticSearchQuery(&query); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
@@ -1276,19 +1035,6 @@ func (c *Controllers) SearchRecordings(ctx *gin.Context) {
 
 // AskWorkspaceMemory handles cross-meeting AI chat questions with meeting citations.
 func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	var req dtos.WorkspaceAskRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -1296,7 +1042,7 @@ func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateWorkspaceAskRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
@@ -1323,19 +1069,6 @@ func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
 
 // GetWorkspaceSpeakers handles retrieving aggregated speaker directory metrics across user meetings.
 func (c *Controllers) GetWorkspaceSpeakers(ctx *gin.Context) {
-	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Status:    constants.ResponseStatusError,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   constants.ErrInternalServerError.Message,
-			Timestamp: time.Now(),
-		})
-		return
-	}
-	if c.svc == nil {
-		c.wrapError(ctx, constants.ErrInternalServerError)
-		return
-	}
 
 	res, err := c.svc.GetWorkspaceSpeakers(ctx.Request.Context())
 	if err != nil {
@@ -1356,5 +1089,3 @@ func (c *Controllers) GetWorkspaceSpeakers(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
-
-

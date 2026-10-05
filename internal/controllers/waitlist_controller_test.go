@@ -17,40 +17,6 @@ import (
 	"code-base-golang/internal/dtos"
 )
 
-func TestControllers_JoinBotWaitlist_NilController(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	var ctrls *Controllers
-
-	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	req := httptest.NewRequest(http.MethodPost, "/v1/waitlist/bot", bytes.NewBufferString(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	ctx.Request = req
-
-	ctrls.JoinBotWaitlist(ctx)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 for nil controller, got %d", w.Code)
-	}
-}
-
-func TestControllers_JoinBotWaitlist_NilService(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	ctrls := &Controllers{}
-
-	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	req := httptest.NewRequest(http.MethodPost, "/v1/waitlist/bot", bytes.NewBufferString(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	ctx.Request = req
-
-	ctrls.JoinBotWaitlist(ctx)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 for nil service, got %d", w.Code)
-	}
-}
-
 func TestControllers_JoinBotWaitlist_InvalidJSON(t *testing.T) {
 	ctrls, _, cleanup := setupTestControllers(t)
 	defer cleanup()

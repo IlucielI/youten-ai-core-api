@@ -21,7 +21,7 @@ func (c *Controllers) Register(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateRegisterRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -49,7 +49,7 @@ func (c *Controllers) Login(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateLoginRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -77,7 +77,7 @@ func (c *Controllers) RefreshToken(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateRefreshTokenRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -105,7 +105,7 @@ func (c *Controllers) Logout(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateLogoutRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -132,7 +132,7 @@ func (c *Controllers) ForgotPassword(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateForgotPasswordRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -158,7 +158,7 @@ func (c *Controllers) ResetPassword(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateResetPasswordRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -213,7 +213,7 @@ func (c *Controllers) UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateUpdateProfileRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -247,7 +247,7 @@ func (c *Controllers) ChangePassword(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateChangePasswordRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -264,6 +264,3 @@ func (c *Controllers) ChangePassword(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
-
-
-

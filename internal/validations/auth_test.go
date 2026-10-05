@@ -1,10 +1,11 @@
-package dtos_test
+package validations_test
 
 import (
 	"strings"
 	"testing"
 
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/validations"
 )
 
 func TestRegisterRequest_Validate(t *testing.T) {
@@ -80,7 +81,7 @@ func TestRegisterRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateRegisterRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RegisterRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -130,7 +131,7 @@ func TestLoginRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateLoginRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("LoginRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -169,7 +170,7 @@ func TestRefreshTokenRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateRefreshTokenRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RefreshTokenRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -208,7 +209,7 @@ func TestLogoutRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateLogoutRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("LogoutRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -254,7 +255,7 @@ func TestForgotPasswordRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateForgotPasswordRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ForgotPasswordRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -312,7 +313,7 @@ func TestResetPasswordRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateResetPasswordRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ResetPasswordRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -365,7 +366,7 @@ func TestUpdateProfileRequest_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateUpdateProfileRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UpdateProfileRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -419,16 +420,22 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "new password same as old password",
+			req: dtos.ChangePasswordRequest{
+				OldPassword: "samePassword123",
+				NewPassword: "samePassword123",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.Validate()
+			err := validations.ValidateChangePasswordRequest(&tt.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ChangePasswordRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
 }
-
-

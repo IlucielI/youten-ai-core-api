@@ -1,250 +1,231 @@
 # Route configuration for Go Core API
-# Maps HTTP endpoints directly to Server methods
+# Maps HTTP endpoints directly to Server methods.
+#
+# Style conventions (keep consistent):
+#   - One list item per route using an inline leading dash.
+#   - Field order: method, path, handler, then auth/optional_auth/basic_auth when needed.
+#   - A single comment line above each route describing its purpose.
 routes:
-  # Health check endpoint
+  # Liveness and readiness health probe.
   - method: GET
     path: /v1/health
     handler: HealthCheck
 
-  # Documentation endpoints
+  # OpenAPI specification document.
   - method: GET
     path: /openapi.yaml
     handler: OpenAPISpec
 
+  # Interactive API documentation UI.
   - method: GET
     path: /docs
     handler: APIDocs
 
-  # Authentication endpoints
+  # Register a new user account.
   - method: POST
     path: /v1/auth/register
     handler: Register
 
+  # Authenticate and issue an access + refresh token pair.
   - method: POST
     path: /v1/auth/login
     handler: Login
 
-  # Token rotation endpoint (schema contract: lowercase method, path, handler)
+  # Rotate an expired access token using a valid refresh token (public: access token may be expired).
   - method: POST
     path: /v1/auth/refresh
     handler: RefreshToken
 
-  # Session termination endpoint (schema contract: lowercase method, path, handler)
+  # Terminate the current session and revoke its refresh token.
   - method: POST
     path: /v1/auth/logout
     handler: Logout
+    auth: true
 
-  # Password recovery endpoint
+  # Request a password reset email (one-time token).
   - method: POST
     path: /v1/auth/forgot-password
     handler: ForgotPassword
 
-  # Password reset confirmation endpoint
+  # Confirm a password reset using a valid reset token.
   - method: POST
     path: /v1/auth/reset-password
     handler: ResetPassword
 
-  # Current user profile endpoint
+  # Retrieve the authenticated user's profile and remaining quota.
   - method: GET
     path: /v1/auth/me
     handler: GetMe
     auth: true
 
-  # Update current user profile endpoint
+  # Update the authenticated user's profile.
   - method: PUT
     path: /v1/auth/me
     handler: UpdateProfile
     auth: true
 
-  # Change password endpoint
+  # Change the authenticated user's password.
   - method: PUT
     path: /v1/auth/change-password
     handler: ChangePassword
     auth: true
 
-  # Recording presigned upload direct to S3
+  # Generate a presigned URL for direct-to-S3 recording upload.
   - method: POST
     path: /v1/recordings/presign-upload
     handler: PresignUpload
     optional_auth: true
 
+  # Alias for presigned upload URL generation.
   - method: POST
     path: /v1/recordings/presign
     handler: PresignUpload
     optional_auth: true
 
-  # Recording confirmation & metadata ingestion endpoint
+  # Confirm an upload and ingest recording metadata.
   - method: POST
     path: /v1/recordings/upload
     handler: UploadRecording
     optional_auth: true
 
+  # Alias for upload confirmation and metadata ingestion.
   - method: POST
     path: /v1/recordings/confirm-upload
     handler: UploadRecording
     optional_auth: true
 
-  # Recording link import ingestion with anti-SSRF defense
+  # Import a recording from a URL with anti-SSRF defense.
   - method: POST
     path: /v1/recordings/import-url
     handler: ImportURL
     optional_auth: true
 
-  # Cross-meeting semantic vector search endpoint
+  # Cross-recording semantic vector search (registered users).
   - method: GET
     path: /v1/recordings/search
     handler: SearchRecordings
     auth: true
 
-  # Cross-meeting workspace memory AI chat endpoint
+  # Cross-recording workspace memory AI chat (registered users).
   - method: POST
     path: /v1/recordings/ask
     handler: AskWorkspaceMemory
     auth: true
 
-  # Workspace speakers directory endpoint
+  # Workspace speakers directory (registered users).
   - method: GET
     path: /v1/speakers
     handler: GetWorkspaceSpeakers
     auth: true
 
-
-
-  # Recording detail retrieval endpoint
+  # Retrieve recording detail (owner via token or registered user).
   - method: GET
     path: /v1/recordings/:id
     handler: GetRecordingDetail
     optional_auth: true
 
-  # List & filter recordings library endpoint
+  # List and filter the authenticated user's recordings.
   - method: GET
     path: /v1/recordings
     handler: ListRecordings
     auth: true
 
-  # Delete recording endpoint
-  -
-    method: DELETE
+  # Delete a recording.
+  - method: DELETE
     path: /v1/recordings/:id
     handler: DeleteRecording
     auth: true
 
-  # Claim guest recording endpoint
-  -
-    method: POST
+  # Claim a single guest recording into the authenticated account.
+  - method: POST
     path: /v1/recordings/:id/claim
     handler: ClaimRecording
     auth: true
 
-  # Bulk claim guest recordings endpoint
-  -
-    method: POST
+  # Bulk-claim guest recordings into the authenticated account.
+  - method: POST
     path: /v1/recordings/claim
     handler: ClaimBulkRecordings
     auth: true
 
-  # Toggle recording public share endpoint
-  -
-    method: PATCH
+  # Toggle a recording's public read-only share link.
+  - method: PATCH
     path: /v1/recordings/:id/share
     handler: ToggleRecordingShare
     auth: true
 
-  # Public read-only shared recording viewer endpoint
-  -
-    method: GET
+  # Public read-only shared recording viewer.
+  - method: GET
     path: /v1/recordings/shared/:token
     handler: GetSharedRecording
 
-  # Real-time pipeline progress SSE endpoint
-  -
-    method: GET
+  # Stream real-time pipeline progress via SSE.
+  - method: GET
     path: /v1/recordings/:id/progress
     handler: StreamRecordingProgress
     optional_auth: true
 
-  # Smart pipeline retry endpoint
-  -
-    method: POST
+  # Smart retry of a failed pipeline stage without re-upload.
+  - method: POST
     path: /v1/recordings/:id/retry
     handler: RetryRecording
     optional_auth: true
 
-  # Interactive RAG AI Chat Typewriter SSE endpoint
-  -
-    method: POST
+  # Interactive grounded RAG AI chat with SSE typewriter streaming.
+  - method: POST
     path: /v1/recordings/:id/chat
     handler: StreamRecordingChat
     optional_auth: true
 
-  # Update transcript speaker labels endpoint
-  -
-    method: PUT
+  # Rename transcript speaker labels.
+  - method: PUT
     path: /v1/recordings/:id/speakers
     handler: UpdateTranscriptSpeakers
     optional_auth: true
 
-  # Regenerate summary with custom angle endpoint
-  -
-    method: POST
+  # Regenerate the summary with a new template/angle.
+  - method: POST
     path: /v1/recordings/:id/regenerate
     handler: RegenerateSummary
     optional_auth: true
 
-  # List summary versions endpoint
-  -
-    method: GET
+  # List all summary versions of a recording.
+  - method: GET
     path: /v1/recordings/:id/summaries
     handler: ListSummaryVersions
     optional_auth: true
 
-  # Activate summary version endpoint
-  -
-    method: PATCH
+  # Activate a specific summary version.
+  - method: PATCH
     path: /v1/recordings/:id/summaries/:versionId/activate
     handler: ActivateSummaryVersion
     optional_auth: true
 
-  # Create timestamped inline comment endpoint
-  -
-    method: POST
+  # Create a timestamped inline comment.
+  - method: POST
     path: /v1/recordings/:id/comments
     handler: CreateInlineComment
     optional_auth: true
 
-  # List recording inline comments endpoint
-  -
-    method: GET
+  # List a recording's inline comments.
+  - method: GET
     path: /v1/recordings/:id/comments
     handler: ListInlineComments
     optional_auth: true
 
-  # Delete recording inline comment endpoint
-  -
-    method: DELETE
+  # Delete an inline comment.
+  - method: DELETE
     path: /v1/recordings/:id/comments/:commentId
     handler: DeleteInlineComment
     optional_auth: true
 
-  # Export meeting MOM and transcript endpoint
-  -
-    method: GET
+  # Export the active summary and transcript (PDF, viewer allowed).
+  - method: GET
     path: /v1/recordings/:id/export
     handler: ExportRecording
     optional_auth: true
 
-  # Meeting voice bot beta waitlist signup endpoint
-  -
-    method: POST
+  # Join the meeting voice bot beta waitlist.
+  - method: POST
     path: /v1/waitlist/bot
     handler: JoinBotWaitlist
-
-
-
-
-
-
-
-
-
-

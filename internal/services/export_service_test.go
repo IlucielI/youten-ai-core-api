@@ -360,4 +360,3 @@ func TestService_ExportRecordingMOM_UnicodeFilename(t *testing.T) {
 		t.Errorf("expected filename ending in _mom.txt, got %s", res.Filename)
 	}
 }
-

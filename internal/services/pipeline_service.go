@@ -19,12 +19,18 @@ import (
 	"time"
 )
 
-var (
-	// ErrRecordingNotFound is returned when recording does not exist.
-	ErrRecordingNotFound = errors.New("recording not found")
-	// ErrInvalidRetryState is returned when retry is requested for a recording that is not failed.
-	ErrInvalidRetryState = errors.New("recording can only be retried when status is FAILED")
-)
+// publishEvent dispatches a pipeline domain event, wrapping any broker failure with
+// the topic for context. A nil publisher is a no-op so the pipeline can run without a
+// broker (e.g. in tests).
+func (s *Service) publishEvent(ctx context.Context, topic string, payload any) error {
+	if s.publisher == nil {
+		return nil
+	}
+	if err := s.publisher.Publish(ctx, topic, payload); err != nil {
+		return fmt.Errorf("failed to publish %s event: %w", topic, err)
+	}
+	return nil
+}
 
 // ProcessExtraction handles the audio extraction stage of the recording pipeline.
 func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipelinePayload) error {
@@ -86,11 +92,9 @@ func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipe
 	nextPayload := p
 	nextPayload.AudioPath = destAudioKey
 	nextPayload.Stage = models.RecordingStatusTranscribing
-	if s.publisher != nil {
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingTranscribe, nextPayload)
-	}
-
-	return nil
+	// Dispatching the next stage gates pipeline progression; surface a failure so the
+	// worker nacks and retries extraction (which is local/cheap and idempotent).
+	return s.publishEvent(ctx, constants.TopicRecordingTranscribe, nextPayload)
 }
 
 // ProcessTranscription handles the speech-to-text diarization stage.
@@ -152,7 +156,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		wordsJSON, _ := json.Marshal(seg.Words)
 		speaker := seg.SpeakerLabel
 		if speaker == "" {
-			speaker = "Speaker 0"
+			speaker = constants.DefaultSpeakerLabel
 		}
 		modelSegments = append(modelSegments, models.TranscriptSegment{
 			RecordingID:   recording.ID,
@@ -170,8 +174,8 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	if len(modelSegments) == 0 && strings.TrimSpace(sttResult.Text) != "" {
 		modelSegments = append(modelSegments, models.TranscriptSegment{
 			RecordingID:   recording.ID,
-			SpeakerLabel:  "Speaker 0",
-			SpeakerName:   "Speaker 0",
+			SpeakerLabel:  constants.DefaultSpeakerLabel,
+			SpeakerName:   constants.DefaultSpeakerLabel,
 			StartTime:     0,
 			EndTime:       sttResult.Duration,
 			Text:          sttResult.Text,
@@ -187,12 +191,18 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 
 	_ = s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, sttResult.Duration, sttResult.Language)
 
-	// Analysis Fan-Out: dispatch parallel workers
-	if s.publisher != nil {
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingSummarize, p)
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingIndex, p)
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingAnalytics, p)
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingChapterize, p)
+	// Analysis fan-out: dispatch independent downstream stages. These are best-effort
+	// because transcription (paid STT) has already succeeded here; a failed dispatch is
+	// logged rather than returned so the worker does not re-run STT on retry.
+	for _, topic := range []string{
+		constants.TopicRecordingSummarize,
+		constants.TopicRecordingIndex,
+		constants.TopicRecordingAnalytics,
+		constants.TopicRecordingChapterize,
+	} {
+		if err := s.publishEvent(ctx, topic, p); err != nil {
+			log.Printf("[PIPELINE ERROR] recording %s: %v", p.RecordingID.String(), err)
+		}
 	}
 
 	return nil
@@ -213,11 +223,11 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	// Retrieve template
 	templateKey := recording.SelectedTemplate
 	if templateKey == "" {
-		templateKey = "GENERAL"
+		templateKey = constants.TemplateKeyGeneral
 	}
 	template, err := s.repo.FindTemplateByCategoryKey(ctx, templateKey)
 	if err != nil || template == nil {
-		template, _ = s.repo.FindTemplateByCategoryKey(ctx, "GENERAL")
+		template, _ = s.repo.FindTemplateByCategoryKey(ctx, constants.TemplateKeyGeneral)
 	}
 
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recording.ID)
@@ -574,12 +584,12 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 		_ = s.repo.CreateNotification(ctx, &notif)
 	}
 
-	// Publish completed domain event
-	if s.publisher != nil {
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingCompleted, payload.RecordingPipelinePayload{
-			RecordingID: recordingID,
-			Stage:       models.RecordingStatusCompleted,
-		})
+	// Publish completed domain event (best-effort terminal notification).
+	if err := s.publishEvent(ctx, constants.TopicRecordingCompleted, payload.RecordingPipelinePayload{
+		RecordingID: recordingID,
+		Stage:       models.RecordingStatusCompleted,
+	}); err != nil {
+		log.Printf("[PIPELINE ERROR] recording %s: %v", recordingID.String(), err)
 	}
 
 	log.Printf("[PIPELINE] Recording %s marked as COMPLETED", recordingID.String())
@@ -599,7 +609,7 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 // ResumeRecordingPipeline executes Smart State Recovery using an already-loaded recording model.
 func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models.Recording) (*payload.RecordingPipelinePayload, error) {
 	if recording.Status != models.RecordingStatusFailed {
-		return nil, ErrInvalidRetryState
+		return nil, constants.ErrInvalidRetryState
 	}
 
 	// Check existing assets to resume at exact failing point
@@ -619,8 +629,8 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 		p.Status = models.RecordingStatusQueued
 		_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil)
 		s.publishProgress(recording.ID, models.RecordingStatusQueued, nil, nil)
-		if s.publisher != nil {
-			_ = s.publisher.Publish(ctx, constants.TopicRecordingUploaded, p)
+		if err := s.publishEvent(ctx, constants.TopicRecordingUploaded, p); err != nil {
+			log.Printf("[PIPELINE ERROR] recording %s: %v", recording.ID.String(), err)
 		}
 		return &p, nil
 	}
@@ -633,8 +643,8 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 		p.Status = models.RecordingStatusQueued
 		_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil)
 		s.publishProgress(recording.ID, models.RecordingStatusQueued, nil, nil)
-		if s.publisher != nil {
-			_ = s.publisher.Publish(ctx, constants.TopicRecordingTranscribe, p)
+		if err := s.publishEvent(ctx, constants.TopicRecordingTranscribe, p); err != nil {
+			log.Printf("[PIPELINE ERROR] recording %s: %v", recording.ID.String(), err)
 		}
 		return &p, nil
 	}
@@ -645,11 +655,15 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 	_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusTranscribing, nil, nil)
 	s.publishProgress(recording.ID, models.RecordingStatusTranscribing, nil, nil)
 
-	if summary == nil && s.publisher != nil {
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingSummarize, p)
+	if summary == nil {
+		if err := s.publishEvent(ctx, constants.TopicRecordingSummarize, p); err != nil {
+			log.Printf("[PIPELINE ERROR] recording %s: %v", recording.ID.String(), err)
+		}
 	}
-	if len(chunks) == 0 && s.publisher != nil {
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingIndex, p)
+	if len(chunks) == 0 {
+		if err := s.publishEvent(ctx, constants.TopicRecordingIndex, p); err != nil {
+			log.Printf("[PIPELINE ERROR] recording %s: %v", recording.ID.String(), err)
+		}
 	}
 
 	if summary != nil && len(chunks) > 0 {
@@ -668,11 +682,12 @@ func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errC
 	}
 	s.publishProgress(recordingID, models.RecordingStatusFailed, &errCode, &errMsg)
 
-	if s.publisher != nil {
-		_ = s.publisher.Publish(ctx, constants.TopicRecordingFailed, payload.RecordingPipelinePayload{
-			RecordingID: recordingID,
-			Stage:       models.RecordingStatusFailed,
-		})
+	// Best-effort terminal failure notification.
+	if err := s.publishEvent(ctx, constants.TopicRecordingFailed, payload.RecordingPipelinePayload{
+		RecordingID: recordingID,
+		Stage:       models.RecordingStatusFailed,
+	}); err != nil {
+		log.Printf("[PIPELINE ERROR] recording %s: %v", recordingID.String(), err)
 	}
 
 	return nil

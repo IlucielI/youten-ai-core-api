@@ -20,16 +20,6 @@ func (s *Service) SearchWorkspaceSemantic(ctx context.Context, query dtos.Semant
 	}
 
 	trimmedQuery := strings.TrimSpace(query.Q)
-	if trimmedQuery == "" {
-		return nil, constants.ErrBadRequest
-	}
-
-	limit := query.Limit
-	if limit <= 0 {
-		limit = 10
-	} else if limit > 50 {
-		limit = 50
-	}
 
 	threshold := query.Threshold
 	if threshold < 0 {
@@ -55,7 +45,7 @@ func (s *Service) SearchWorkspaceSemantic(ctx context.Context, query dtos.Semant
 		maxDistance = math.Round((1.0-threshold)*10000) / 10000
 	}
 
-	matches, err := s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], limit, maxDistance)
+	matches, err := s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], query.Limit, maxDistance)
 	if err != nil {
 		return nil, constants.ErrInternalServerError.Wrap(err)
 	}

@@ -203,10 +203,6 @@ func (d *dummyAudioExtractor) ExtractMonoAudio(ctx context.Context, input io.Rea
 }
 
 func TestService_AIProviders(t *testing.T) {
-	var nilSvc *Service
-	if nilSvc.STT() != nil || nilSvc.LLM() != nil || nilSvc.Embedding() != nil || nilSvc.AudioExtractor() != nil {
-		t.Error("expected nil providers for nil service")
-	}
 
 	sttInst := &dummySTT{}
 	llmInst := &dummyLLM{}
@@ -242,4 +238,3 @@ func TestService_AIProviders(t *testing.T) {
 		t.Error("expected nil providers after Set(nil)")
 	}
 }
-

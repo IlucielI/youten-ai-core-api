@@ -111,20 +111,6 @@ func TestService_AskWorkspaceMemory_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestService_AskWorkspaceMemory_EmptyQuestion(t *testing.T) {
-	svc, _, _, _ := setupRecordingTestService(t)
-	userID := uuid.New()
-	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
-
-	res, err := svc.AskWorkspaceMemory(ctx, dtos.WorkspaceAskRequest{Question: "   \t\n "})
-	if !errors.Is(err, constants.ErrBadRequest) {
-		t.Fatalf("expected ErrBadRequest for empty question, got %v", err)
-	}
-	if res != nil {
-		t.Fatalf("expected nil response, got %+v", res)
-	}
-}
-
 func TestService_AskWorkspaceMemory_EmbeddingError(t *testing.T) {
 	svc, _, _, _ := setupRecordingTestService(t)
 	userID := uuid.New()

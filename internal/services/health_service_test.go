@@ -16,26 +16,6 @@ import (
 	"code-base-golang/internal/repositories"
 )
 
-func TestService_CheckHealth_NilService(t *testing.T) {
-	var s *Service
-	status := s.CheckHealth(context.Background())
-	if status.Database != constants.IntegrationStatusDisconnected {
-		t.Errorf("expected db disconnected on nil service, got %s", status.Database)
-	}
-	if status.Redis != constants.IntegrationStatusDisconnected {
-		t.Errorf("expected redis disconnected on nil service, got %s", status.Redis)
-	}
-	if status.S3 != constants.IntegrationStatusDisconnected {
-		t.Errorf("expected s3 disconnected on nil service, got %s", status.S3)
-	}
-	if status.RabbitMQ != constants.IntegrationStatusDisconnected {
-		t.Errorf("expected rabbitmq disconnected on nil service, got %s", status.RabbitMQ)
-	}
-	if status.SMTP != constants.IntegrationStatusDisconnected {
-		t.Errorf("expected smtp disconnected on nil service, got %s", status.SMTP)
-	}
-}
-
 func TestService_CheckHealth_EmptyDependencies(t *testing.T) {
 	s := New(config.Config{}, nil, nil)
 	status := s.CheckHealth(context.Background())

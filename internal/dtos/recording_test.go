@@ -670,4 +670,36 @@ func TestRecordingDTO_CommentResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_CommentResponse_ThreadedStructure(t *testing.T) {
+	parentID := "comm-parent"
+	child := dtos.CommentResponse{
+		ID:           "comm-child",
+		ParentID:     &parentID,
+		TimestampSec: 10.0,
+		AuthorName:   "Alice",
+		CommentText:  "Reply to parent",
+		CreatedAt:    time.Now(),
+	}
+
+	parent := dtos.CommentResponse{
+		ID:           parentID,
+		TimestampSec: 10.0,
+		AuthorName:   "Bob",
+		CommentText:  "Parent comment",
+		Replies:      []dtos.CommentResponse{child},
+		CreatedAt:    time.Now(),
+	}
+
+	if len(parent.Replies) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(parent.Replies))
+	}
+	if parent.Replies[0].ID != "comm-child" {
+		t.Errorf("expected reply ID comm-child, got %s", parent.Replies[0].ID)
+	}
+	if parent.Replies[0].ParentID == nil || *parent.Replies[0].ParentID != parentID {
+		t.Errorf("expected parent ID %s, got %v", parentID, parent.Replies[0].ParentID)
+	}
+}
+
+
 

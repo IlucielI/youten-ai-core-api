@@ -1510,6 +1510,99 @@ func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownersh
 	}, nil
 }
 
+// ListInlineComments retrieves all top-level inline comments with nested replies for a recording.
+func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershipToken string) ([]dtos.CommentResponse, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Verify access: owner, guest with token, or publicly shared recording
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+		hasAccess = true
+	} else if rec.IsShareEnabled {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, constants.ErrForbidden
+	}
+
+	comments, err := s.repo.ListInlineCommentsByRecordingID(ctx, rec.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list inline comments: %w", err)
+	}
+
+	res := make([]dtos.CommentResponse, 0, len(comments))
+	for _, c := range comments {
+		var segIDStr *string
+		if c.SegmentID != nil {
+			str := c.SegmentID.String()
+			segIDStr = &str
+		}
+
+		var parentIDStr *string
+		if c.ParentID != nil {
+			str := c.ParentID.String()
+			parentIDStr = &str
+		}
+
+		replies := make([]dtos.CommentResponse, 0, len(c.Replies))
+		for _, r := range c.Replies {
+			var rSegIDStr *string
+			if r.SegmentID != nil {
+				str := r.SegmentID.String()
+				rSegIDStr = &str
+			}
+
+			var rParentIDStr *string
+			if r.ParentID != nil {
+				str := r.ParentID.String()
+				rParentIDStr = &str
+			}
+
+			replies = append(replies, dtos.CommentResponse{
+				ID:           r.ID.String(),
+				RecordingID:  r.RecordingID.String(),
+				SegmentID:    rSegIDStr,
+				TimestampSec: r.TimestampSec,
+				SelectedText: r.SelectedText,
+				AuthorName:   r.AuthorName,
+				CommentText:  r.CommentText,
+				ParentID:     rParentIDStr,
+				CreatedAt:    r.CreatedAt,
+				UpdatedAt:    r.UpdatedAt,
+			})
+		}
+
+		res = append(res, dtos.CommentResponse{
+			ID:           c.ID.String(),
+			RecordingID:  c.RecordingID.String(),
+			SegmentID:    segIDStr,
+			TimestampSec: c.TimestampSec,
+			SelectedText: c.SelectedText,
+			AuthorName:   c.AuthorName,
+			CommentText:  c.CommentText,
+			ParentID:     parentIDStr,
+			Replies:      replies,
+			CreatedAt:    c.CreatedAt,
+			UpdatedAt:    c.UpdatedAt,
+		})
+	}
+
+	return res, nil
+}
+
+
 
 
 

@@ -1091,6 +1091,53 @@ func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
 	})
 }
 
+// ListInlineComments handles retrieving all timestamped inline comments for a recording.
+func (c *Controllers) ListInlineComments(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	resp, err := c.svc.ListInlineComments(ctx.Request.Context(), id, ownershipToken)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[[]dtos.CommentResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "comments retrieved successfully",
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 
 

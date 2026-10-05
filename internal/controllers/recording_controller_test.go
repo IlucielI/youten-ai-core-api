@@ -3910,6 +3910,269 @@ func TestControllers_DeleteInlineComment_Success_CommentAuthor(t *testing.T) {
 	}
 }
 
+func TestControllers_ExportRecording_NilReceiver(t *testing.T) {
+	var ctrls *Controllers
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+uuid.New().String()+"/export", nil)
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ExportRecording_NilService(t *testing.T) {
+	ctrls := &Controllers{}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+uuid.New().String()+"/export", nil)
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ExportRecording_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/invalid-uuid/export", nil)
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ExportRecording_RecordingNotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/export?format=markdown", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_ExportRecording_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	ownerID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/export?format=markdown", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "secret-token", &ownerID, false))
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+func TestControllers_ExportRecording_Success_Markdown(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-token-123"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/export?format=markdown", nil)
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "status", "created_at", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, "Product Sync", 600.0, "COMPLETED", time.Now(), nil, guestToken, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE ORDER BY version DESC.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "is_active", "markdown_content", "structured_data"}).
+			AddRow(uuid.New(), recID, 1, true, "Product sync markdown summary", `{"executive_summary":"Sync summary"}`))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_name", "speaker_label", "start_time", "end_time", "text"}).
+			AddRow(uuid.New(), recID, "PM", "Speaker 0", 0.0, 5.0, "Let's review the roadmap."))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+	if w.Header().Get("Content-Type") != "text/markdown; charset=utf-8" {
+		t.Errorf("expected text/markdown, got %s", w.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(w.Header().Get("Content-Disposition"), "attachment; filename=") {
+		t.Errorf("expected Content-Disposition attachment header, got %s", w.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestControllers_ExportRecording_Success_JSON(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/export?format=json&token=shared-token", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "status", "created_at", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, "API Planning", 300.0, "COMPLETED", time.Now(), nil, "shared-token", false))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE ORDER BY version DESC.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Errorf("expected application/json, got %s", w.Header().Get("Content-Type"))
+	}
+}
+
+func TestControllers_ExportRecording_Success_PDF(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/export?format=pdf", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "status", "created_at", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, "PDF Export Title", 100.0, "COMPLETED", time.Now(), nil, "token", true))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE ORDER BY version DESC.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "application/pdf" {
+		t.Errorf("expected application/pdf, got %s", w.Header().Get("Content-Type"))
+	}
+	if !bytes.HasPrefix(w.Body.Bytes(), []byte("%PDF-1.4")) {
+		t.Errorf("expected PDF header in body")
+	}
+}
+
+func TestControllers_ExportRecording_Success_Txt(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/export?format=txt", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "status", "created_at", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, "Txt Export Title", 100.0, "COMPLETED", time.Now(), nil, "token", true))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE ORDER BY version DESC.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	ctrls.ExportRecording(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Errorf("expected text/plain, got %s", w.Header().Get("Content-Type"))
+	}
+}
+
 
 
 

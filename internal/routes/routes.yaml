@@ -206,6 +206,13 @@ routes:
     handler: DeleteInlineComment
     optional_auth: true
 
+  # Export meeting MOM and transcript endpoint
+  -
+    method: GET
+    path: /v1/recordings/:id/export
+    handler: ExportRecording
+    optional_auth: true
+
 
 
 

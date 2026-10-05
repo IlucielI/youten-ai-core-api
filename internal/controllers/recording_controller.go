@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -1186,6 +1187,44 @@ func (c *Controllers) DeleteInlineComment(ctx *gin.Context) {
 		Message:   "comment deleted successfully",
 		Timestamp: time.Now(),
 	})
+}
+
+// ExportRecording handles downloading meeting MOM and transcript in multiple formats (markdown, txt, json, pdf).
+func (c *Controllers) ExportRecording(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": constants.ErrInternalServerError.Error()})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	format := strings.TrimSpace(ctx.DefaultQuery("format", "markdown"))
+
+	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	result, err := c.svc.ExportRecordingMOM(ctx.Request.Context(), id, ownershipToken, format)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", result.Filename))
+	ctx.Data(http.StatusOK, result.ContentType, result.Data)
 }
 
 

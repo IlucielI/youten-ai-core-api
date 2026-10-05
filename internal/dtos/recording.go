@@ -301,5 +301,25 @@ type BulkClaimResponse struct {
 	RecordingIDs []string `json:"recording_ids"`
 }
 
+// ShareToggleRequest encapsulates payload to enable or disable public sharing of a recording.
+type ShareToggleRequest struct {
+	IsShareEnabled *bool `json:"is_share_enabled"`
+}
+
+// Validate validates ShareToggleRequest fields using ozzo-validation.
+func (r *ShareToggleRequest) Validate() error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.IsShareEnabled, validation.NotNil),
+	)
+}
+
+// ShareToggleResponse encapsulates the resulting public sharing state and link.
+type ShareToggleResponse struct {
+	IsShareEnabled bool    `json:"is_share_enabled"`
+	ShareToken     *string `json:"share_token,omitempty"`
+	ShareURL       *string `json:"share_url,omitempty"`
+}
+
+
 
 

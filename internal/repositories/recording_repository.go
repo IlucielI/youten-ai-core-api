@@ -44,6 +44,24 @@ func (r *Repositories) FindRecordingByShareToken(ctx context.Context, token stri
 	return &rec, nil
 }
 
+// UpdateRecordingShareSettings updates public sharing status and share token of a recording.
+func (r *Repositories) UpdateRecordingShareSettings(ctx context.Context, id uuid.UUID, isShareEnabled bool, shareToken *string) error {
+	updates := map[string]interface{}{
+		"is_share_enabled": isShareEnabled,
+	}
+	if shareToken != nil {
+		updates["share_token"] = *shareToken
+	}
+	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", id).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // UpdateRecording saves full changes to an existing recording.
 func (r *Repositories) UpdateRecording(ctx context.Context, recording *models.Recording) error {
 	return r.db.WithContext(ctx).Save(recording).Error

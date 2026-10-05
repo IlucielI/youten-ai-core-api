@@ -272,6 +272,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"DELETE", "/v1/recordings/:id"},
 		{"POST", "/v1/recordings/:id/claim"},
 		{"POST", "/v1/recordings/claim"},
+		{"PATCH", "/v1/recordings/:id/share"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -396,6 +397,18 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router.ServeHTTP(wBulkClaim, reqBulkClaim)
 	if wBulkClaim.Code != http.StatusUnauthorized {
 		t.Fatalf("expected POST /v1/recordings/claim to return 401 Unauthorized without header (auth: true), got %d", wBulkClaim.Code)
+	}
+
+	// Verify PATCH /v1/recordings/:id/share is configured with auth: true (returns 401 Unauthorized without header)
+	wShare := httptest.NewRecorder()
+	reqShare, err := http.NewRequest(http.MethodPatch, "/v1/recordings/00000000-0000-0000-0000-000000000001/share", strings.NewReader(`{"is_share_enabled":true}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqShare.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wShare, reqShare)
+	if wShare.Code != http.StatusUnauthorized {
+		t.Fatalf("expected PATCH /v1/recordings/:id/share to return 401 Unauthorized without header (auth: true), got %d", wShare.Code)
 	}
 }
 

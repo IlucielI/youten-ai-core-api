@@ -49,21 +49,6 @@ func TestService_SearchWorkspaceSemantic_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestService_SearchWorkspaceSemantic_EmptyQuery(t *testing.T) {
-	svc, _, _, _ := setupRecordingTestService(t)
-	userID := uuid.New()
-	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
-
-	res, err := svc.SearchWorkspaceSemantic(ctx, dtos.SemanticSearchQuery{Q: "   "})
-	if !errors.Is(err, constants.ErrBadRequest) {
-		t.Fatalf("expected ErrBadRequest for whitespace query, got %v", err)
-	}
-	if res != nil {
-		t.Fatalf("expected nil response, got %+v", res)
-	}
-}
-
-
 func TestService_SearchWorkspaceSemantic_EmbeddingError(t *testing.T) {
 	svc, _, _, _ := setupRecordingTestService(t)
 	userID := uuid.New()

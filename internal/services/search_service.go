@@ -20,9 +20,6 @@ func (s *Service) SearchWorkspaceSemantic(ctx context.Context, query dtos.Semant
 	}
 
 	trimmedQuery := strings.TrimSpace(query.Q)
-	if trimmedQuery == "" {
-		return nil, constants.ErrBadRequest
-	}
 
 	limit := query.Limit
 	if limit <= 0 {

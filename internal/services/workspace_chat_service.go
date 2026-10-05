@@ -55,9 +55,6 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 	}
 
 	trimmedQ := strings.TrimSpace(req.Question)
-	if trimmedQ == "" {
-		return nil, constants.ErrBadRequest
-	}
 
 	embeddings, err := s.embedding.CreateEmbeddings(ctx, []string{trimmedQ})
 	if err != nil {

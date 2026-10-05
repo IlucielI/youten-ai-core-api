@@ -28,3 +28,13 @@ const (
 	DefaultBotPlatform    = "google_meet"
 	DefaultBotCompanySize = "1-10"
 )
+
+// ExportFormat enumerates the supported MOM/transcript export formats.
+type ExportFormat string
+
+const (
+	ExportFormatMarkdown ExportFormat = "markdown"
+	ExportFormatTxt      ExportFormat = "txt"
+	ExportFormatJSON     ExportFormat = "json"
+	ExportFormatPDF      ExportFormat = "pdf"
+)

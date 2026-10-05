@@ -16,30 +16,14 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 )
 
-// ExportFormat defines supported MOM and transcript export formats.
-type ExportFormat string
-
-const (
-	FormatMarkdown ExportFormat = "markdown"
-	FormatTxt      ExportFormat = "txt"
-	FormatJSON     ExportFormat = "json"
-	FormatPDF      ExportFormat = "pdf"
-)
-
-// ExportResult contains the generated file data and metadata for HTTP response streaming.
-type ExportResult struct {
-	Filename    string
-	ContentType string
-	Data        []byte
-}
-
 // ExportRecordingMOM generates a multi-format export of a meeting recording's executive summary,
 // action items, chapter breakdown, and diarized transcript.
-func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershipToken string, format string) (*ExportResult, error) {
+func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershipToken string, format string) (*dtos.ExportResult, error) {
 	rec, err := s.repo.FindRecordingByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -68,19 +52,19 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 	// Normalize format
 	normFormat := strings.ToLower(strings.TrimSpace(format))
 	if normFormat == "" {
-		normFormat = string(FormatMarkdown)
+		normFormat = string(constants.ExportFormatMarkdown)
 	}
 
-	var expFormat ExportFormat
+	var expFormat constants.ExportFormat
 	switch normFormat {
 	case "markdown", "md":
-		expFormat = FormatMarkdown
+		expFormat = constants.ExportFormatMarkdown
 	case "txt", "text", "plain":
-		expFormat = FormatTxt
+		expFormat = constants.ExportFormatTxt
 	case "json":
-		expFormat = FormatJSON
+		expFormat = constants.ExportFormatJSON
 	case "pdf":
-		expFormat = FormatPDF
+		expFormat = constants.ExportFormatPDF
 	default:
 		return nil, constants.ErrBadRequest
 	}
@@ -109,37 +93,37 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 	baseName := sanitizeExportFilename(rec.Title, fmt.Sprintf("recording_%s", rec.ID.String()[:8]))
 
 	switch expFormat {
-	case FormatMarkdown:
+	case constants.ExportFormatMarkdown:
 		data := buildMarkdownExport(rec, summary, chapters, highlights, segments)
-		return &ExportResult{
+		return &dtos.ExportResult{
 			Filename:    baseName + "_mom.md",
 			ContentType: "text/markdown; charset=utf-8",
 			Data:        []byte(data),
 		}, nil
 
-	case FormatTxt:
+	case constants.ExportFormatTxt:
 		data := buildTextExport(rec, summary, chapters, highlights, segments)
-		return &ExportResult{
+		return &dtos.ExportResult{
 			Filename:    baseName + "_mom.txt",
 			ContentType: "text/plain; charset=utf-8",
 			Data:        []byte(data),
 		}, nil
 
-	case FormatJSON:
+	case constants.ExportFormatJSON:
 		data, jErr := buildJSONExport(rec, summary, chapters, highlights, segments)
 		if jErr != nil {
 			return nil, fmt.Errorf("failed to marshal export json: %w", jErr)
 		}
-		return &ExportResult{
+		return &dtos.ExportResult{
 			Filename:    baseName + "_mom.json",
 			ContentType: "application/json; charset=utf-8",
 			Data:        data,
 		}, nil
 
-	case FormatPDF:
+	case constants.ExportFormatPDF:
 		textContent := buildTextExport(rec, summary, chapters, highlights, segments)
 		pdfBytes := generateStandardPDF(rec.Title, textContent)
-		return &ExportResult{
+		return &dtos.ExportResult{
 			Filename:    baseName + "_mom.pdf",
 			ContentType: "application/pdf",
 			Data:        pdfBytes,
@@ -393,15 +377,15 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 }
 
 type jsonExportPayload struct {
-	RecordingID      string                   `json:"recording_id"`
-	Title            string                   `json:"title"`
-	DurationSeconds  float64                  `json:"duration_seconds"`
-	Status           string                   `json:"status"`
-	CreatedAt        time.Time                `json:"created_at"`
-	ExecutiveSummary string                   `json:"executive_summary,omitempty"`
-	ActionItems      []string                 `json:"action_items,omitempty"`
-	Chapters         []jsonExportChapter      `json:"chapters,omitempty"`
-	Highlights       []jsonExportHighlight    `json:"highlights,omitempty"`
+	RecordingID      string                    `json:"recording_id"`
+	Title            string                    `json:"title"`
+	DurationSeconds  float64                   `json:"duration_seconds"`
+	Status           string                    `json:"status"`
+	CreatedAt        time.Time                 `json:"created_at"`
+	ExecutiveSummary string                    `json:"executive_summary,omitempty"`
+	ActionItems      []string                  `json:"action_items,omitempty"`
+	Chapters         []jsonExportChapter       `json:"chapters,omitempty"`
+	Highlights       []jsonExportHighlight     `json:"highlights,omitempty"`
 	Transcript       []jsonExportTranscriptSeg `json:"transcript,omitempty"`
 }
 

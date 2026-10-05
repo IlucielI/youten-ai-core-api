@@ -1070,5 +1070,190 @@ func TestService_DeleteRecording_Success(t *testing.T) {
 	}
 }
 
+func TestService_ClaimRecording_Unauthorized(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+
+	ctx := context.Background() // No auth
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "token-123"})
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_EmptyToken(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "   "})
+	if !errors.Is(err, constants.ErrBadRequest) {
+		t.Fatalf("expected ErrBadRequest for empty token, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "token-123"})
+	if !errors.Is(err, constants.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_FindError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(errors.New("db error"))
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "token-123"})
+	if err == nil || !strings.Contains(err.Error(), "failed to retrieve recording") {
+		t.Fatalf("expected find error, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_AlreadyClaimed_NotGuest(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "user_id", "ownership_token"}).
+			AddRow(recID, false, nil, "token-123"))
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "token-123"})
+	if !errors.Is(err, constants.ErrConflict) {
+		t.Fatalf("expected ErrConflict when is_guest is false, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_AlreadyClaimed_UserIDNotNull(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	existingOwner := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "user_id", "ownership_token"}).
+			AddRow(recID, true, existingOwner, "token-123"))
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "token-123"})
+	if !errors.Is(err, constants.ErrConflict) {
+		t.Fatalf("expected ErrConflict when user_id is already assigned, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_MismatchedToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "user_id", "ownership_token"}).
+			AddRow(recID, true, nil, "correct-token"))
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "wrong-token"})
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for wrong ownership token, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_ClaimRepoNotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "user_id", "ownership_token"}).
+			AddRow(recID, true, nil, "valid-token"))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE \(id = \$4 AND ownership_token = \$5 AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recID, "valid-token").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "valid-token"})
+	if !errors.Is(err, constants.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound when claim rows affected is 0, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_ClaimRepoError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "user_id", "ownership_token"}).
+			AddRow(recID, true, nil, "valid-token"))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE \(id = \$4 AND ownership_token = \$5 AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recID, "valid-token").
+		WillReturnError(errors.New("db update error"))
+	mock.ExpectRollback()
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "valid-token"})
+	if err == nil || !strings.Contains(err.Error(), "failed to claim recording") {
+		t.Fatalf("expected claim failure, got %v", err)
+	}
+}
+
+func TestService_ClaimRecording_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "user_id", "ownership_token"}).
+			AddRow(recID, true, nil, "valid-token"))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE \(id = \$4 AND ownership_token = \$5 AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recID, "valid-token").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "valid-token"})
+	if err != nil {
+		t.Fatalf("unexpected claim error: %v", err)
+	}
+}
+
+
 
 

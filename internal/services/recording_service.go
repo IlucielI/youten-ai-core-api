@@ -508,6 +508,47 @@ func (s *Service) DeleteRecording(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// ClaimRecording transfers ownership of a guest recording session to the authenticated user.
+func (s *Service) ClaimRecording(ctx context.Context, id uuid.UUID, req dtos.ClaimRecordingRequest) error {
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	if !isAuth || !hasUserID {
+		return constants.ErrUnauthorized
+	}
+
+	token := strings.TrimSpace(req.OwnershipToken)
+	if token == "" {
+		return constants.ErrBadRequest
+	}
+
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound
+		}
+		return fmt.Errorf("failed to retrieve recording: %w", err)
+	}
+
+	// Verify recording is an unclaimed guest recording
+	if !rec.IsGuest || rec.UserID != nil {
+		return constants.ErrConflict
+	}
+
+	// Verify ownership token
+	if rec.OwnershipToken != token {
+		return constants.ErrForbidden
+	}
+
+	if err := s.repo.ClaimRecordingToUser(ctx, id, token, userID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound
+		}
+		return fmt.Errorf("failed to claim recording: %w", err)
+	}
+
+	return nil
+}
+
 // ImportRecordingFromURL validates target link against SSRF defense policies, streams media into S3,
 // records the new recording entry, and emits the background pipeline extraction event.
 func (s *Service) ImportRecordingFromURL(

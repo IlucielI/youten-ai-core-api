@@ -270,6 +270,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"GET", "/v1/recordings/:id"},
 		{"GET", "/v1/recordings"},
 		{"DELETE", "/v1/recordings/:id"},
+		{"POST", "/v1/recordings/:id/claim"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -370,6 +371,18 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router.ServeHTTP(wDelete, reqDelete)
 	if wDelete.Code != http.StatusUnauthorized {
 		t.Fatalf("expected DELETE /v1/recordings/:id to return 401 Unauthorized without header (auth: true), got %d", wDelete.Code)
+	}
+
+	// Verify POST /v1/recordings/:id/claim is configured with auth: true (returns 401 Unauthorized without header)
+	wClaim := httptest.NewRecorder()
+	reqClaim, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/claim", strings.NewReader(`{"ownership_token":"tok"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqClaim.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wClaim, reqClaim)
+	if wClaim.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/claim to return 401 Unauthorized without header (auth: true), got %d", wClaim.Code)
 	}
 }
 

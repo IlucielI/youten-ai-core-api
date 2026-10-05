@@ -1,17 +1,9 @@
 package dtos
 
 import (
-	"regexp"
-	"strings"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"github.com/go-ozzo/ozzo-validation/v4/is"
 	"github.com/google/uuid"
-)
-
-var (
-	digitRegex = regexp.MustCompile(`[0-9]`)
 )
 
 // RegisterRequest defines the input payload for user registration.
@@ -19,28 +11,6 @@ type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	FullName string `json:"full_name"`
-}
-
-// Validate performs structural and semantic validation on RegisterRequest.
-func (r *RegisterRequest) Validate() error {
-	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
-	r.FullName = strings.TrimSpace(r.FullName)
-
-	return validation.ValidateStruct(r,
-		validation.Field(&r.Email,
-			validation.Required.Error("email is required"),
-			is.EmailFormat.Error("invalid email format"),
-		),
-		validation.Field(&r.FullName,
-			validation.Required.Error("full_name is required"),
-			validation.Length(2, 100).Error("full_name must be between 2 and 100 characters"),
-		),
-		validation.Field(&r.Password,
-			validation.Required.Error("password is required"),
-			validation.Length(8, 72).Error("password must be between 8 and 72 characters"),
-			validation.Match(digitRegex).Error("password must contain at least one digit"),
-		),
-	)
 }
 
 // UserResponse represents the public user response representation.
@@ -73,63 +43,16 @@ type UpdateProfileRequest struct {
 	FullName string `json:"full_name"`
 }
 
-// Validate performs structural and semantic validation on UpdateProfileRequest.
-func (r *UpdateProfileRequest) Validate() error {
-	r.FullName = strings.TrimSpace(r.FullName)
-
-	return validation.ValidateStruct(r,
-		validation.Field(&r.FullName,
-			validation.Required.Error("full name is required"),
-			validation.Length(2, 100).Error("full name must be between 2 and 100 characters"),
-		),
-	)
-}
-
 // ChangePasswordRequest defines the input payload for changing an authenticated user's password.
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
 }
 
-// Validate performs structural and semantic validation on ChangePasswordRequest.
-func (r *ChangePasswordRequest) Validate() error {
-	return validation.ValidateStruct(r,
-		validation.Field(&r.OldPassword,
-			validation.Required.Error("old password is required"),
-		),
-		validation.Field(&r.NewPassword,
-			validation.Required.Error("new password is required"),
-			validation.Length(8, 72).Error("new password must be between 8 and 72 characters"),
-			validation.Match(digitRegex).Error("new password must contain at least one digit"),
-			validation.By(func(value interface{}) error {
-				if newPassword, ok := value.(string); ok && newPassword == r.OldPassword {
-					return validation.NewError("validation_password_unchanged", "new password cannot be the same as current password")
-				}
-				return nil
-			}),
-		),
-	)
-}
-
 // LoginRequest defines the input payload for user authentication.
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-}
-
-// Validate performs structural and semantic validation on LoginRequest.
-func (r *LoginRequest) Validate() error {
-	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
-
-	return validation.ValidateStruct(r,
-		validation.Field(&r.Email,
-			validation.Required.Error("email is required"),
-			is.EmailFormat.Error("invalid email format"),
-		),
-		validation.Field(&r.Password,
-			validation.Required.Error("password is required"),
-		),
-	)
 }
 
 // AuthResponse represents the response envelope containing tokens and authenticated user info.
@@ -147,31 +70,9 @@ type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// Validate performs structural and semantic validation on RefreshTokenRequest.
-func (r *RefreshTokenRequest) Validate() error {
-	r.RefreshToken = strings.TrimSpace(r.RefreshToken)
-
-	return validation.ValidateStruct(r,
-		validation.Field(&r.RefreshToken,
-			validation.Required.Error("refresh_token is required"),
-		),
-	)
-}
-
 // LogoutRequest defines the input payload for terminating a session via refresh token.
 type LogoutRequest struct {
 	RefreshToken string `json:"refresh_token"`
-}
-
-// Validate performs structural and semantic validation on LogoutRequest.
-func (r *LogoutRequest) Validate() error {
-	r.RefreshToken = strings.TrimSpace(r.RefreshToken)
-
-	return validation.ValidateStruct(r,
-		validation.Field(&r.RefreshToken,
-			validation.Required.Error("refresh_token is required"),
-		),
-	)
 }
 
 // ForgotPasswordRequest defines the input payload for requesting a password reset email.
@@ -179,45 +80,8 @@ type ForgotPasswordRequest struct {
 	Email string `json:"email"`
 }
 
-// Validate performs structural and semantic validation on ForgotPasswordRequest.
-func (r *ForgotPasswordRequest) Validate() error {
-	return validation.ValidateStruct(r,
-		validation.Field(&r.Email,
-			validation.Required.Error("email is required"),
-			validation.By(func(value interface{}) error {
-				s, ok := value.(string)
-				if !ok {
-					return nil
-				}
-				trimmed := strings.TrimSpace(s)
-				if trimmed == "" {
-					return validation.NewError("validation_required", "email is required")
-				}
-				if err := is.EmailFormat.Validate(trimmed); err != nil {
-					return validation.NewError("validation_is_email", "invalid email format")
-				}
-				return nil
-			}),
-		),
-	)
-}
-
 // ResetPasswordRequest defines the input payload for confirming a password reset with a valid token.
 type ResetPasswordRequest struct {
 	Token       string `json:"token"`
 	NewPassword string `json:"new_password"`
-}
-
-// Validate performs structural and semantic validation on ResetPasswordRequest.
-func (r *ResetPasswordRequest) Validate() error {
-	return validation.ValidateStruct(r,
-		validation.Field(&r.Token,
-			validation.Required.Error("token is required"),
-		),
-		validation.Field(&r.NewPassword,
-			validation.Required.Error("new_password is required"),
-			validation.Length(8, 72).Error("new_password must be between 8 and 72 characters"),
-			validation.Match(digitRegex).Error("new_password must contain at least one digit"),
-		),
-	)
 }

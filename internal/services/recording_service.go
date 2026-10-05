@@ -19,6 +19,7 @@ import (
 	"code-base-golang/internal/payload"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/ssrf"
+	"code-base-golang/internal/repositories"
 )
 
 // GeneratePresignUpload generates a pre-signed S3 PUT URL for direct client-to-storage upload
@@ -414,6 +415,66 @@ func (s *Service) GetRecordingDetail(ctx context.Context, id uuid.UUID, ownershi
 		Highlights:       highlightDTOs,
 		CreatedAt:        rec.CreatedAt,
 		UpdatedAt:        rec.UpdatedAt,
+	}, nil
+}
+
+// ListRecordings retrieves paginated and filtered recordings owned by the authenticated user.
+func (s *Service) ListRecordings(ctx context.Context, query dtos.RecordingFilterQuery) (*dtos.RecordingListResponse, error) {
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	if !isAuth || !hasUserID {
+		return nil, constants.ErrUnauthorized
+	}
+
+	query.SetDefaults()
+	offset := (query.Page - 1) * query.Limit
+
+	repoFilter := repositories.RecordingFilter{
+		Search:    query.Search,
+		Status:    query.Status,
+		Template:  query.Template,
+		SortBy:    query.SortBy,
+		SortOrder: query.SortOrder,
+		Limit:     query.Limit,
+		Offset:    offset,
+	}
+
+	recordings, total, err := s.repo.ListRecordingsWithFilter(ctx, userID, repoFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list recordings: %w", err)
+	}
+
+	items := make([]dtos.RecordingListItem, len(recordings))
+	for i, rec := range recordings {
+		items[i] = dtos.RecordingListItem{
+			ID:               rec.ID.String(),
+			Title:            rec.Title,
+			OriginalFilename: rec.OriginalFilename,
+			FileSizeBytes:    rec.FileSizeBytes,
+			DurationSeconds:  rec.DurationSeconds,
+			SourceType:       rec.SourceType,
+			Status:           rec.Status,
+			SelectedTemplate: rec.SelectedTemplate,
+			DetectedLanguage: rec.DetectedLanguage,
+			OutputLanguage:   rec.OutputLanguage,
+			CreatedAt:        rec.CreatedAt,
+			UpdatedAt:        rec.UpdatedAt,
+		}
+	}
+
+	totalPages := 0
+	if query.Limit > 0 {
+		totalPages = int((total + int64(query.Limit) - 1) / int64(query.Limit))
+	}
+
+	return &dtos.RecordingListResponse{
+		Items: items,
+		Pagination: dtos.PaginationMeta{
+			CurrentPage: query.Page,
+			PageSize:    query.Limit,
+			TotalItems:  total,
+			TotalPages:  totalPages,
+		},
 	}, nil
 }
 

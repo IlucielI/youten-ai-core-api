@@ -346,6 +346,17 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wDetail.Code == http.StatusUnauthorized {
 		t.Fatalf("expected /v1/recordings/:id not to return 401 Unauthorized without header (optional_auth), got %d", wDetail.Code)
 	}
+
+	// Verify /v1/recordings is configured with auth: true (returns 401 Unauthorized without header)
+	wList := httptest.NewRecorder()
+	reqList, err := http.NewRequest(http.MethodGet, "/v1/recordings", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wList, reqList)
+	if wList.Code != http.StatusUnauthorized {
+		t.Fatalf("expected /v1/recordings to return 401 Unauthorized without header (auth: true), got %d", wList.Code)
+	}
 }
 
 

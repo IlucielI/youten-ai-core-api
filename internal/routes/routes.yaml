@@ -96,4 +96,11 @@ routes:
     handler: GetRecordingDetail
     optional_auth: true
 
+  # List & filter recordings library endpoint
+  - method: GET
+    path: /v1/recordings
+    handler: ListRecordings
+    auth: true
+
+
 

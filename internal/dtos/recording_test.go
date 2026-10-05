@@ -198,4 +198,76 @@ func TestRecordingDTO_RecordingDetailResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_RecordingFilterQuery_SetDefaults(t *testing.T) {
+	// Zero values should be populated with defaults
+	q := dtos.RecordingFilterQuery{}
+	q.SetDefaults()
+
+	if q.Page != 1 {
+		t.Errorf("expected default page 1, got %d", q.Page)
+	}
+	if q.Limit != 10 {
+		t.Errorf("expected default limit 10, got %d", q.Limit)
+	}
+	if q.SortBy != "created_at" {
+		t.Errorf("expected default sort_by created_at, got %s", q.SortBy)
+	}
+	if q.SortOrder != "desc" {
+		t.Errorf("expected default sort_order desc, got %s", q.SortOrder)
+	}
+
+	// Custom valid values should be preserved
+	qCustom := dtos.RecordingFilterQuery{
+		Page:      3,
+		Limit:     25,
+		SortBy:    "title",
+		SortOrder: "asc",
+	}
+	qCustom.SetDefaults()
+
+	if qCustom.Page != 3 || qCustom.Limit != 25 || qCustom.SortBy != "title" || qCustom.SortOrder != "asc" {
+		t.Errorf("unexpected customized filter values: %+v", qCustom)
+	}
+
+	// Limit capped at 100
+	qOver := dtos.RecordingFilterQuery{
+		Limit: 500,
+	}
+	qOver.SetDefaults()
+	if qOver.Limit != 100 {
+		t.Errorf("expected limit capped at 100, got %d", qOver.Limit)
+	}
+}
+
+func TestRecordingDTO_RecordingListResponse_Structure(t *testing.T) {
+	resp := dtos.RecordingListResponse{
+		Items: []dtos.RecordingListItem{
+			{
+				ID:               "rec-1",
+				Title:            "Sprint Review",
+				OriginalFilename: "review.mp3",
+				FileSizeBytes:    5000,
+				DurationSeconds:  60.0,
+				Status:           "COMPLETED",
+				SelectedTemplate: "MOM",
+				OutputLanguage:   "en",
+			},
+		},
+		Pagination: dtos.PaginationMeta{
+			CurrentPage: 1,
+			PageSize:    10,
+			TotalItems:  1,
+			TotalPages:  1,
+		},
+	}
+
+	if len(resp.Items) != 1 || resp.Items[0].Title != "Sprint Review" {
+		t.Errorf("unexpected list response items: %+v", resp.Items)
+	}
+	if resp.Pagination.TotalItems != 1 {
+		t.Errorf("expected total items 1, got %d", resp.Pagination.TotalItems)
+	}
+}
+
+
 

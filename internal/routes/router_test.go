@@ -554,6 +554,28 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wDelComment.Code == http.StatusUnauthorized {
 		t.Fatalf("expected DELETE /v1/recordings/:id/comments/:commentId not to return 401 Unauthorized without header (optional_auth), got %d", wDelComment.Code)
 	}
+
+	foundExportRoute := false
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/v1/recordings/:id/export" {
+			foundExportRoute = true
+			break
+		}
+	}
+	if !foundExportRoute {
+		t.Fatalf("expected GET /v1/recordings/:id/export route to be registered")
+	}
+
+	// Verify GET /v1/recordings/:id/export is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wExport := httptest.NewRecorder()
+	reqExport, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001/export?format=markdown", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wExport, reqExport)
+	if wExport.Code == http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/:id/export not to return 401 Unauthorized without header (optional_auth), got %d", wExport.Code)
+	}
 }
 
 

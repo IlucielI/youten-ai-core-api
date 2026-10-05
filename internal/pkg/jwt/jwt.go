@@ -17,7 +17,7 @@ type CustomClaims struct {
 	UserID    uuid.UUID `json:"sub"`
 	SessionID string    `json:"sid"`
 	Email     string    `json:"email"`
-	TokenType string    `json:"type"` // "access" or "refresh"
+	TokenType constants.JWTTokenType `json:"type"` // "access" or "refresh"
 	jwt.RegisteredClaims
 }
 
@@ -32,7 +32,7 @@ func GenerateTokenPair(cfg config.Config, userID uuid.UUID, email string, sessio
 		UserID:    userID,
 		SessionID: sessionID,
 		Email:     email,
-		TokenType: "access",
+		TokenType: constants.JWTTokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			Issuer:    cfg.AppName,
@@ -51,7 +51,7 @@ func GenerateTokenPair(cfg config.Config, userID uuid.UUID, email string, sessio
 		UserID:    userID,
 		SessionID: sessionID,
 		Email:     email,
-		TokenType: "refresh",
+		TokenType: constants.JWTTokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			Issuer:    cfg.AppName,

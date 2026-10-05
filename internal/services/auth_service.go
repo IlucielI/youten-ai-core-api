@@ -139,7 +139,7 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 
 	// 1. Validate JWT structure and signature
 	claims, err := jwt.ValidateToken(s.cfg, rawToken)
-	if err != nil || claims == nil || claims.TokenType != "refresh" {
+	if err != nil || claims == nil || claims.TokenType != constants.JWTTokenTypeRefresh {
 		return nil, constants.ErrInvalidToken
 	}
 
@@ -359,7 +359,7 @@ func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.A
 	if err != nil || claims == nil {
 		return nil, constants.ErrInvalidToken
 	}
-	if claims.TokenType != "access" {
+	if claims.TokenType != constants.JWTTokenTypeAccess {
 		return nil, constants.ErrInvalidToken
 	}
 	return &ctxmeta.AuthUser{

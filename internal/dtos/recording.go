@@ -126,6 +126,21 @@ type SummaryDTO struct {
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
+// SpeakerAnalytics represents participation metrics for an individual speaker.
+type SpeakerAnalytics struct {
+	Name         string  `json:"name"`
+	TotalSeconds float64 `json:"total_seconds"`
+	WordCount    int     `json:"word_count"`
+	SharePercent float64 `json:"share_percent"`
+}
+
+// RecordingAnalytics represents aggregated metrics for a processed recording.
+type RecordingAnalytics struct {
+	TotalDurationSeconds float64            `json:"total_duration_seconds"`
+	TotalWords           int                `json:"total_words"`
+	Speakers             []SpeakerAnalytics `json:"speakers"`
+}
+
 // ChapterDTO represents a chronological topic boundary in the recording detail.
 type ChapterDTO struct {
 	ID            string    `json:"id"`
@@ -358,11 +373,4 @@ type CommentResponse struct {
 	Replies      []CommentResponse `json:"replies,omitempty"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at,omitempty"`
-}
-
-// ExportResult contains the generated file data and metadata for HTTP response streaming.
-type ExportResult struct {
-	Filename    string
-	ContentType string
-	Data        []byte
 }

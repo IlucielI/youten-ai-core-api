@@ -16,13 +16,13 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/pkg/jsonutil"
 )
 
-// RecordingChatStreamResult carries the stream channel and completion callback.
+// RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
 type RecordingChatStreamResult struct {
 	StreamChannel     <-chan dtos.StreamChunk
 	RetrievedChunkIDs []string
-	SaveAssistantMsg  func(ctx context.Context, fullContent string) (*models.ChatMessage, []string, error)
 }
 
 // InitiateRecordingChatStream validates ownership, retrieves relevant context chunks via vector search,
@@ -111,45 +111,37 @@ func (s *Service) InitiateRecordingChatStream(
 		return nil, fmt.Errorf("failed to stream chat completion: %w", err)
 	}
 
-	saveAssistantMsg := func(saveCtx context.Context, fullContent string) (*models.ChatMessage, []string, error) {
-		citations := ExtractCitations(fullContent)
-		if citations == nil {
-			citations = []string{}
-		}
-
-		citationsJSON, err := json.Marshal(citations)
-		if err != nil {
-			citationsJSON = []byte("[]")
-		}
-
-		chunkIDsToSave := retrievedChunkIDs
-		if chunkIDsToSave == nil {
-			chunkIDsToSave = []string{}
-		}
-		chunkIDsJSON, err := json.Marshal(chunkIDsToSave)
-		if err != nil {
-			chunkIDsJSON = []byte("[]")
-		}
-
-		asstMsg := &models.ChatMessage{
-			ID:                uuid.New(),
-			RecordingID:       rec.ID,
-			SenderRole:        constants.ChatRoleAssistant,
-			Content:           fullContent,
-			Citations:         json.RawMessage(citationsJSON),
-			RetrievedChunkIDs: json.RawMessage(chunkIDsJSON),
-			CreatedAt:         time.Now().UTC(),
-		}
-
-		if err := s.repo.SaveChatMessage(saveCtx, asstMsg); err != nil {
-			return nil, nil, fmt.Errorf("failed to persist assistant chat message: %w", err)
-		}
-		return asstMsg, citations, nil
-	}
-
 	return &RecordingChatStreamResult{
 		StreamChannel:     streamCh,
 		RetrievedChunkIDs: retrievedChunkIDs,
-		SaveAssistantMsg:  saveAssistantMsg,
 	}, nil
 }
+
+// SaveAssistantChatMessage parses citations, maps the model entity, and persists the assistant response turn.
+func (s *Service) SaveAssistantChatMessage(
+	ctx context.Context,
+	recordingID uuid.UUID,
+	content string,
+	chunkIDs []string,
+) (*models.ChatMessage, []string, error) {
+	citations := ExtractCitations(content)
+	if citations == nil {
+		citations = []string{}
+	}
+
+	asstMsg := &models.ChatMessage{
+		ID:                uuid.New(),
+		RecordingID:       recordingID,
+		SenderRole:        constants.ChatRoleAssistant,
+		Content:           content,
+		Citations:         jsonutil.RawStringSlice(citations),
+		RetrievedChunkIDs: jsonutil.RawStringSlice(chunkIDs),
+		CreatedAt:         time.Now().UTC(),
+	}
+
+	if err := s.repo.SaveChatMessage(ctx, asstMsg); err != nil {
+		return nil, nil, fmt.Errorf("failed to persist assistant chat message: %w", err)
+	}
+	return asstMsg, citations, nil
+}
+

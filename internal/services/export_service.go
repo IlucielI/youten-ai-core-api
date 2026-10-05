@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
-	"unicode"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,6 +17,8 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/pkg/strutil"
+	"code-base-golang/internal/pkg/timeutil"
 )
 
 // ExportRecordingMOM generates a multi-format export of a meeting recording's executive summary,
@@ -90,7 +90,7 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 		return nil, fmt.Errorf("failed to fetch highlights: %w", err)
 	}
 
-	baseName := sanitizeExportFilename(rec.Title, fmt.Sprintf("recording_%s", rec.ID.String()[:8]))
+	baseName := strutil.SanitizeFilename(rec.Title, fmt.Sprintf("recording_%s", rec.ID.String()[:8]))
 
 	switch expFormat {
 	case constants.ExportFormatMarkdown:
@@ -133,43 +133,6 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 	return nil, constants.ErrBadRequest
 }
 
-func sanitizeExportFilename(title string, fallback string) string {
-	t := strings.TrimSpace(title)
-	if t == "" {
-		return fallback
-	}
-	var sb strings.Builder
-	for _, r := range t {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
-			sb.WriteRune(r)
-		} else if unicode.IsSpace(r) {
-			sb.WriteRune('_')
-		}
-	}
-	res := strings.Trim(sb.String(), "_-")
-	if res == "" {
-		return fallback
-	}
-	runes := []rune(res)
-	if len(runes) > 60 {
-		res = string(runes[:60])
-	}
-	return res
-}
-
-func formatTimestampSec(sec float64) string {
-	if sec < 0 {
-		sec = 0
-	}
-	totalSec := int(sec)
-	h := totalSec / 3600
-	m := (totalSec % 3600) / 60
-	s := totalSec % 60
-	if h > 0 {
-		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
-	}
-	return fmt.Sprintf("%02d:%02d", m, s)
-}
 
 func extractActionItems(summary *models.Summary) []string {
 	if summary == nil || summary.StructuredData == nil {
@@ -231,7 +194,7 @@ func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapter
 
 	sb.WriteString(fmt.Sprintf("# %s\n\n", rec.Title))
 	sb.WriteString(fmt.Sprintf("- **Date:** %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
-	sb.WriteString(fmt.Sprintf("- **Duration:** %s\n", formatTimestampSec(rec.DurationSeconds)))
+	sb.WriteString(fmt.Sprintf("- **Duration:** %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
 	sb.WriteString(fmt.Sprintf("- **Status:** %s\n\n", rec.Status))
 
 	execSummary := extractExecutiveSummary(summary)
@@ -252,7 +215,7 @@ func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapter
 	if len(chapters) > 0 {
 		sb.WriteString("## Chapter Breakdown\n\n")
 		for i, ch := range chapters {
-			sb.WriteString(fmt.Sprintf("### %d. %s (%s - %s)\n\n", i+1, ch.Title, formatTimestampSec(ch.StartTime), formatTimestampSec(ch.EndTime)))
+			sb.WriteString(fmt.Sprintf("### %d. %s (%s - %s)\n\n", i+1, ch.Title, timeutil.FormatTimestamp(ch.StartTime), timeutil.FormatTimestamp(ch.EndTime)))
 			if ch.Summary != "" {
 				sb.WriteString(ch.Summary + "\n\n")
 			}
@@ -270,7 +233,7 @@ func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapter
 			if h.Note != nil && *h.Note != "" {
 				note = fmt.Sprintf(": %s", *h.Note)
 			}
-			sb.WriteString(fmt.Sprintf("- **[%s] %s**%s\n", formatTimestampSec(h.StartTime), title, note))
+			sb.WriteString(fmt.Sprintf("- **[%s] %s**%s\n", timeutil.FormatTimestamp(h.StartTime), title, note))
 		}
 		sb.WriteString("\n")
 	}
@@ -285,7 +248,7 @@ func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapter
 			if speaker == "" {
 				speaker = "Speaker"
 			}
-			timeRange := fmt.Sprintf("%s - %s", formatTimestampSec(seg.StartTime), formatTimestampSec(seg.EndTime))
+			timeRange := fmt.Sprintf("%s - %s", timeutil.FormatTimestamp(seg.StartTime), timeutil.FormatTimestamp(seg.EndTime))
 			sb.WriteString(fmt.Sprintf("**%s (%s):** %s\n\n", speaker, timeRange, seg.Text))
 		}
 	}
@@ -304,7 +267,7 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 	sb.WriteString(border + "\n\n")
 
 	sb.WriteString(fmt.Sprintf("Date:     %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
-	sb.WriteString(fmt.Sprintf("Duration: %s\n", formatTimestampSec(rec.DurationSeconds)))
+	sb.WriteString(fmt.Sprintf("Duration: %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
 	sb.WriteString(fmt.Sprintf("Status:   %s\n\n", rec.Status))
 
 	execSummary := extractExecutiveSummary(summary)
@@ -331,7 +294,7 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 		sb.WriteString("CHAPTERS\n")
 		sb.WriteString(divider + "\n")
 		for i, ch := range chapters {
-			sb.WriteString(fmt.Sprintf("%d. %s [%s - %s]\n", i+1, ch.Title, formatTimestampSec(ch.StartTime), formatTimestampSec(ch.EndTime)))
+			sb.WriteString(fmt.Sprintf("%d. %s [%s - %s]\n", i+1, ch.Title, timeutil.FormatTimestamp(ch.StartTime), timeutil.FormatTimestamp(ch.EndTime)))
 			if ch.Summary != "" {
 				sb.WriteString(fmt.Sprintf("   %s\n", ch.Summary))
 			}
@@ -352,7 +315,7 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 			if h.Note != nil && *h.Note != "" {
 				note = " - " + *h.Note
 			}
-			sb.WriteString(fmt.Sprintf("* [%s] %s%s\n", formatTimestampSec(h.StartTime), title, note))
+			sb.WriteString(fmt.Sprintf("* [%s] %s%s\n", timeutil.FormatTimestamp(h.StartTime), title, note))
 		}
 		sb.WriteString("\n")
 	}
@@ -369,49 +332,15 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 			if speaker == "" {
 				speaker = "Speaker"
 			}
-			sb.WriteString(fmt.Sprintf("[%s - %s] %s: %s\n\n", formatTimestampSec(seg.StartTime), formatTimestampSec(seg.EndTime), speaker, seg.Text))
+			sb.WriteString(fmt.Sprintf("[%s - %s] %s: %s\n\n", timeutil.FormatTimestamp(seg.StartTime), timeutil.FormatTimestamp(seg.EndTime), speaker, seg.Text))
 		}
 	}
 
 	return sb.String()
 }
 
-type jsonExportPayload struct {
-	RecordingID      string                    `json:"recording_id"`
-	Title            string                    `json:"title"`
-	DurationSeconds  float64                   `json:"duration_seconds"`
-	Status           string                    `json:"status"`
-	CreatedAt        time.Time                 `json:"created_at"`
-	ExecutiveSummary string                    `json:"executive_summary,omitempty"`
-	ActionItems      []string                  `json:"action_items,omitempty"`
-	Chapters         []jsonExportChapter       `json:"chapters,omitempty"`
-	Highlights       []jsonExportHighlight     `json:"highlights,omitempty"`
-	Transcript       []jsonExportTranscriptSeg `json:"transcript,omitempty"`
-}
-
-type jsonExportChapter struct {
-	Title     string  `json:"title"`
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Summary   string  `json:"summary"`
-}
-
-type jsonExportHighlight struct {
-	Title     string  `json:"title,omitempty"`
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Note      string  `json:"note,omitempty"`
-}
-
-type jsonExportTranscriptSeg struct {
-	Speaker   string  `json:"speaker"`
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Text      string  `json:"text"`
-}
-
 func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []models.Chapter, highlights []models.Highlight, segments []models.TranscriptSegment) ([]byte, error) {
-	payload := jsonExportPayload{
+	payload := dtos.JSONExportPayload{
 		RecordingID:      rec.ID.String(),
 		Title:            rec.Title,
 		DurationSeconds:  rec.DurationSeconds,
@@ -422,7 +351,7 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 	}
 
 	for _, ch := range chapters {
-		payload.Chapters = append(payload.Chapters, jsonExportChapter{
+		payload.Chapters = append(payload.Chapters, dtos.JSONExportChapter{
 			Title:     ch.Title,
 			StartTime: ch.StartTime,
 			EndTime:   ch.EndTime,
@@ -439,7 +368,7 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 		if h.Note != nil {
 			note = *h.Note
 		}
-		payload.Highlights = append(payload.Highlights, jsonExportHighlight{
+		payload.Highlights = append(payload.Highlights, dtos.JSONExportHighlight{
 			Title:     title,
 			StartTime: h.StartTime,
 			EndTime:   h.EndTime,
@@ -455,7 +384,7 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 		if speaker == "" {
 			speaker = "Speaker"
 		}
-		payload.Transcript = append(payload.Transcript, jsonExportTranscriptSeg{
+		payload.Transcript = append(payload.Transcript, dtos.JSONExportTranscriptSeg{
 			Speaker:   speaker,
 			StartTime: s.StartTime,
 			EndTime:   s.EndTime,

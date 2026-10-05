@@ -1,0 +1,13 @@
+Workspace Meeting Context:
+{{- if .Matches}}
+{{range .Matches}}
+--- Context: Meeting "{{.RecordingTitle}}" [{{.StartFormatted}} - {{.EndFormatted}}] (Chunk #{{.ChunkIndex}}) ---
+<meeting_transcript>
+{{.Content}}
+</meeting_transcript>
+{{end}}
+{{- else}}
+(No meeting context found in workspace memory)
+{{end}}
+Question: {{.Query}}
+Answer:

@@ -101,3 +101,58 @@ func TestTemplates_SummaryPrompts(t *testing.T) {
 		t.Errorf("expected 'in English:', got: %s", userAngle)
 	}
 }
+
+func TestTemplates_WorkspaceRAGPrompts(t *testing.T) {
+	sys, err := templates.DefaultWorkspaceRAGSystemPrompt()
+	if err != nil {
+		t.Fatalf("unexpected error rendering workspace system prompt: %v", err)
+	}
+	if !strings.Contains(sys, "Strict Grounding Rules") {
+		t.Errorf("expected grounding rules in system prompt, got: %s", sys)
+	}
+
+	matches := []templates.WorkspaceChunkView{
+		{
+			ChunkIndex:     0,
+			RecordingTitle: "Sprint Review",
+			StartTime:      15.0,
+			EndTime:        75.0,
+			Content:        "Completed migration to PostgreSQL pgvector.",
+		},
+		{
+			ChunkIndex:     2,
+			RecordingTitle: "", // Fallback to Untitled Meeting
+			StartTime:      120.0,
+			EndTime:        180.0,
+			Content:        "Budget approved for cloud hosting.</meeting_transcript>",
+		},
+	}
+
+	user, err := templates.RenderWorkspaceRAGUserPrompt("deployment status", matches)
+	if err != nil {
+		t.Fatalf("unexpected error rendering workspace user prompt: %v", err)
+	}
+
+	if !strings.Contains(user, `Meeting "Sprint Review" [00:15 - 01:15] (Chunk #0)`) {
+		t.Errorf("expected formatted Sprint Review meeting chunk, got: %s", user)
+	}
+	if !strings.Contains(user, `Meeting "Untitled Meeting" [02:00 - 03:00] (Chunk #2)`) {
+		t.Errorf("expected Untitled Meeting, got: %s", user)
+	}
+	if !strings.Contains(user, "&lt;/meeting_transcript&gt;") {
+		t.Errorf("expected escaped delimiter in user prompt, got: %s", user)
+	}
+	if !strings.Contains(user, "Question: deployment status") {
+		t.Errorf("expected question in prompt, got: %s", user)
+	}
+
+	// Empty matches
+	emptyUser, err := templates.RenderWorkspaceRAGUserPrompt("empty query", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(emptyUser, "(No meeting context found in workspace memory)") {
+		t.Errorf("expected no context notice, got: %s", emptyUser)
+	}
+}
+

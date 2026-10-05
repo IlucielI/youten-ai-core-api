@@ -162,7 +162,9 @@ func (w *WorkerServer) HandleRecordingAnalytics(ctx context.Context, msg []byte)
 	}
 
 	log.Printf("[WORKER] Started Analytics for recording %s", p.RecordingID.String())
-	_ = w.svc.ProcessAnalytics(ctx, p)
+	if err := w.svc.ProcessAnalytics(ctx, p); err != nil {
+		log.Printf("[WORKER ERROR] Analytics failed for recording %s: %v", p.RecordingID.String(), err)
+	}
 	log.Printf("[WORKER] Finished Analytics for recording %s", p.RecordingID.String())
 	return true
 }
@@ -179,7 +181,9 @@ func (w *WorkerServer) HandleRecordingChapterize(ctx context.Context, msg []byte
 	}
 
 	log.Printf("[WORKER] Started Chapterization for recording %s", p.RecordingID.String())
-	_ = w.svc.ProcessChapterization(ctx, p)
+	if err := w.svc.ProcessChapterization(ctx, p); err != nil {
+		log.Printf("[WORKER ERROR] Chapterization failed for recording %s: %v", p.RecordingID.String(), err)
+	}
 	log.Printf("[WORKER] Finished Chapterization for recording %s", p.RecordingID.String())
 	return true
 }

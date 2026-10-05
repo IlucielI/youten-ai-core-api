@@ -29,7 +29,7 @@ func (s *Service) JoinBotWaitlist(ctx context.Context, req dtos.WaitlistRequest)
 		Email:       email,
 		Platform:    platform,
 		CompanySize: companySize,
-		Status:      "PENDING",
+		Status:      constants.WaitlistStatusPending,
 	}
 
 	saved, err := s.repo.UpsertBotWaitlist(ctx, entry)

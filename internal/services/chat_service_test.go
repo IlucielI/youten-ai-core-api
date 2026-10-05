@@ -222,7 +222,7 @@ func TestService_InitiateRecordingChatStream_Success_WithCitations(t *testing.T)
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
 	mock.ExpectCommit()
 
-	asstMsg, citations, err := result.SaveAssistantMsg(ctx, fullText)
+	asstMsg, citations, err := svc.SaveAssistantChatMessage(ctx, recID, fullText, result.RetrievedChunkIDs)
 	if err != nil {
 		t.Fatalf("unexpected error saving assistant message: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestService_InitiateRecordingChatStream_Success_EmptyContextFallback(t *tes
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
 	mock.ExpectCommit()
 
-	asstMsg, citations, err := result.SaveAssistantMsg(ctx, "I have no transcript context available.")
+	asstMsg, citations, err := svc.SaveAssistantChatMessage(ctx, recID, "I have no transcript context available.", result.RetrievedChunkIDs)
 	if err != nil {
 		t.Fatalf("unexpected error saving assistant message: %v", err)
 	}

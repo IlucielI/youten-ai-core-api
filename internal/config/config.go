@@ -17,17 +17,17 @@ type Config struct {
 	GitHash  string
 
 	// Database Configuration
-	DBHost                 string
-	DBPort                 string
-	DBUser                 string
-	DBPass                 string
-	DBName                 string
-	DBSSLMode              string
-	DBPoolMaxOpenConn      int
-	DBPoolMaxIdleConn      int
-	DBPoolMaxConnLifetime  time.Duration
-	DBPoolMaxConnIdleTime  time.Duration
-	AutoMigrate            bool
+	DBHost                string
+	DBPort                string
+	DBUser                string
+	DBPass                string
+	DBName                string
+	DBSSLMode             string
+	DBPoolMaxOpenConn     int
+	DBPoolMaxIdleConn     int
+	DBPoolMaxConnLifetime time.Duration
+	DBPoolMaxConnIdleTime time.Duration
+	AutoMigrate           bool
 
 	// Redis Configuration
 	RedisHost         string
@@ -80,6 +80,9 @@ type Config struct {
 	RateLimiterLimit   float64
 	RateLimiterBurst   int
 
+	// Request Body Limit Configuration
+	MaxRequestBodySize int64
+
 	// SMTP Configuration
 	SMTPHost      string
 	SMTPPort      string
@@ -112,17 +115,17 @@ func Load() Config {
 		GitHash:  getEnv("GIT_HASH", "dev"),
 
 		// Database settings (POSTGRES_* matching official Docker image, with DB_* fallback)
-		DBHost:                 getEnvWithFallback("POSTGRES_HOST", "DB_HOST", "localhost"),
-		DBPort:                 getEnvWithFallback("POSTGRES_PORT", "DB_PORT", "5432"),
-		DBUser:                 getEnvWithFallback("POSTGRES_USER", "DB_USER", "postgres"),
-		DBPass:                 getEnvWithFallback("POSTGRES_PASSWORD", "DB_PASS", "postgres"),
-		DBName:                 getEnvWithFallback("POSTGRES_DB", "DB_NAME", "code_base_golang"),
-		DBSSLMode:              getEnvWithFallback("POSTGRES_SSLMODE", "DB_SSLMODE", "disable"),
-		DBPoolMaxOpenConn:      getEnvInt("DB_POOL_MAX_OPEN_CONN", 25),
-		DBPoolMaxIdleConn:      getEnvInt("DB_POOL_MAX_IDLE_CONN", 10),
-		DBPoolMaxConnLifetime:  getEnvDuration("DB_POOL_MAX_CONN_LIFETIME", 30*time.Minute),
-		DBPoolMaxConnIdleTime:  getEnvDuration("DB_POOL_MAX_CONN_IDLE_TIME", 10*time.Minute),
-		AutoMigrate:            getEnvWithFallbackBool("AUTO_MIGRATE", "DB_AUTO_MIGRATE", false),
+		DBHost:                getEnvWithFallback("POSTGRES_HOST", "DB_HOST", "localhost"),
+		DBPort:                getEnvWithFallback("POSTGRES_PORT", "DB_PORT", "5432"),
+		DBUser:                getEnvWithFallback("POSTGRES_USER", "DB_USER", "postgres"),
+		DBPass:                getEnvWithFallback("POSTGRES_PASSWORD", "DB_PASS", "postgres"),
+		DBName:                getEnvWithFallback("POSTGRES_DB", "DB_NAME", "code_base_golang"),
+		DBSSLMode:             getEnvWithFallback("POSTGRES_SSLMODE", "DB_SSLMODE", "disable"),
+		DBPoolMaxOpenConn:     getEnvInt("DB_POOL_MAX_OPEN_CONN", 25),
+		DBPoolMaxIdleConn:     getEnvInt("DB_POOL_MAX_IDLE_CONN", 10),
+		DBPoolMaxConnLifetime: getEnvDuration("DB_POOL_MAX_CONN_LIFETIME", 30*time.Minute),
+		DBPoolMaxConnIdleTime: getEnvDuration("DB_POOL_MAX_CONN_IDLE_TIME", 10*time.Minute),
+		AutoMigrate:           getEnvWithFallbackBool("AUTO_MIGRATE", "DB_AUTO_MIGRATE", false),
 
 		// Redis settings
 		RedisHost:         getEnv("REDIS_HOST", "localhost"),
@@ -175,6 +178,9 @@ func Load() Config {
 		RateLimiterLimit:   getEnvFloat64("RATE_LIMITER_LIMIT", 20.0),
 		RateLimiterBurst:   getEnvInt("RATE_LIMITER_BURST", 30),
 
+		// Request Body Limit settings (default 2MB)
+		MaxRequestBodySize: int64(getEnvInt("MAX_REQUEST_BODY_SIZE", 2*1024*1024)),
+
 		// SMTP settings
 		SMTPHost:      getEnv("SMTP_HOST", "localhost"),
 		SMTPPort:      getEnv("SMTP_PORT", "1025"),
@@ -191,11 +197,11 @@ func Load() Config {
 		LLMBaseURL:            getEnv("LLM_BASE_URL", "http://localhost:20128/v1"),
 		LLMModel:              getEnv("LLM_MODEL", "gpt-4o-mini"),
 		STTModel:              getEnv("STT_MODEL", "whisper-1"),
-		EmbeddingModel:         getEnv("EMBEDDING_MODEL", "cf/@cf/baai/bge-m3"),
-		EmbeddingDimension:     getEnvInt("EMBEDDING_DIMENSION", 1024),
-		RAGChunkTokens:         getEnvInt("RAG_CHUNK_TOKENS", 300),
-		RAGChunkOverlapTokens:  getEnvInt("RAG_CHUNK_OVERLAP_TOKENS", 50),
-		RAGTopK:                getEnvInt("RAG_TOP_K", 5),
+		EmbeddingModel:        getEnv("EMBEDDING_MODEL", "cf/@cf/baai/bge-m3"),
+		EmbeddingDimension:    getEnvInt("EMBEDDING_DIMENSION", 1024),
+		RAGChunkTokens:        getEnvInt("RAG_CHUNK_TOKENS", 300),
+		RAGChunkOverlapTokens: getEnvInt("RAG_CHUNK_OVERLAP_TOKENS", 50),
+		RAGTopK:               getEnvInt("RAG_TOP_K", 5),
 	}
 }
 
@@ -333,4 +339,3 @@ func getEnvSlice(key string, fallback []string) []string {
 	}
 	return res
 }
-

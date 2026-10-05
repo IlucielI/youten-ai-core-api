@@ -8,8 +8,20 @@ const (
 	// Default daily quota allocations
 	DefaultUserDailyQuota  = 5
 	DefaultGuestDailyQuota = 1
+)
 
-	// Auth token types
-	AuthTokenTypeRefresh = "REFRESH"
-	AuthTokenTypeReset   = "RESET_PASSWORD"
+// AuthTokenType defines valid token types stored in the database auth_tokens table.
+type AuthTokenType string
+
+const (
+	AuthTokenTypeRefresh AuthTokenType = "refresh"
+	AuthTokenTypeReset   AuthTokenType = "reset_password"
+)
+
+// JWTTokenType defines token types embedded in JWT claims.
+type JWTTokenType string
+
+const (
+	JWTTokenTypeAccess  JWTTokenType = "access"
+	JWTTokenTypeRefresh JWTTokenType = "refresh"
 )

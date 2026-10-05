@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,3 +59,52 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 		Timestamp: time.Now(),
 	})
 }
+
+// respondSuccess sends a standardized JSON success response envelope.
+func (c *Controllers) respondSuccess(ctx *gin.Context, httpStatus int, message string, data any) {
+	ctx.JSON(httpStatus, dtos.APIResponse[any]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   message,
+		Data:      data,
+		Timestamp: time.Now(),
+	})
+}
+
+// respondOK sends a standard HTTP 200 OK JSON success envelope.
+func (c *Controllers) respondOK(ctx *gin.Context, message string, data any) {
+	c.respondSuccess(ctx, http.StatusOK, message, data)
+}
+
+// respondCreated sends a standard HTTP 201 Created JSON success envelope.
+func (c *Controllers) respondCreated(ctx *gin.Context, message string, data any) {
+	c.respondSuccess(ctx, http.StatusCreated, message, data)
+}
+
+// respondEmpty sends a standard HTTP 200 OK JSON response without a data payload.
+func (c *Controllers) respondEmpty(ctx *gin.Context, message string) {
+	ctx.JSON(http.StatusOK, dtos.BaseResponse{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   message,
+		Timestamp: time.Now(),
+	})
+}
+
+// extractOwnershipToken extracts an ownership/share token with cascading fallback:
+// optional body token -> X-Ownership-Token header -> "token" query param -> "ownership_token" query param.
+func (c *Controllers) extractOwnershipToken(ctx *gin.Context, bodyTokens ...string) string {
+	for _, bt := range bodyTokens {
+		if t := strings.TrimSpace(bt); t != "" {
+			return t
+		}
+	}
+	if t := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token")); t != "" {
+		return t
+	}
+	if t := strings.TrimSpace(ctx.Query("token")); t != "" {
+		return t
+	}
+	return strings.TrimSpace(ctx.Query("ownership_token"))
+}
+

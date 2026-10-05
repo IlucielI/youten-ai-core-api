@@ -1,9 +1,6 @@
 package controllers
 
 import (
-	"net/http"
-	"time"
-
 	"github.com/gin-gonic/gin"
 
 	"code-base-golang/internal/constants"
@@ -30,11 +27,5 @@ func (c *Controllers) JoinBotWaitlist(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.WaitlistResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "Successfully joined meeting voice bot beta waitlist",
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Successfully joined meeting voice bot beta waitlist", resp)
 }

@@ -114,3 +114,70 @@ func TestControllers_wrapError(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_respondHelpers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls := New(config.Config{}, nil)
+
+	t.Run("respondOK formats standard 200 envelope", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		data := map[string]string{"foo": "bar"}
+
+		ctrls.respondOK(ctx, "success message", data)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+		var resp dtos.APIResponse[map[string]string]
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
+			t.Errorf("unexpected status/code: %+v", resp)
+		}
+		if resp.Message != "success message" {
+			t.Errorf("expected message 'success message', got %q", resp.Message)
+		}
+		if resp.Data["foo"] != "bar" {
+			t.Errorf("expected data foo=bar, got %v", resp.Data)
+		}
+	})
+
+	t.Run("respondCreated formats standard 201 envelope", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		data := map[string]int{"id": 42}
+
+		ctrls.respondCreated(ctx, "created successfully", data)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d", w.Code)
+		}
+		var resp dtos.APIResponse[map[string]int]
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode: %v", err)
+		}
+		if resp.Data["id"] != 42 {
+			t.Errorf("expected id 42, got %v", resp.Data)
+		}
+	})
+
+	t.Run("respondEmpty formats standard 200 base envelope", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+
+		ctrls.respondEmpty(ctx, "deleted successfully")
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+		var resp dtos.BaseResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode: %v", err)
+		}
+		if resp.Message != "deleted successfully" {
+			t.Errorf("expected message 'deleted successfully', got %q", resp.Message)
+		}
+	})
+}

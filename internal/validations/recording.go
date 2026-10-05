@@ -62,6 +62,7 @@ func ValidateUpdateSpeakersRequest(r *dtos.UpdateSpeakersRequest) error {
 	if len(r.Speakers) == 0 {
 		return validation.NewError("validation_required", "speakers mapping cannot be empty")
 	}
+	seenLabels := make(map[string]struct{}, len(r.Speakers))
 	for label, name := range r.Speakers {
 		trimmedLabel := strings.TrimSpace(label)
 		if trimmedLabel == "" {
@@ -70,6 +71,11 @@ func ValidateUpdateSpeakersRequest(r *dtos.UpdateSpeakersRequest) error {
 		if len(trimmedLabel) > 50 {
 			return validation.NewError("validation_length", "speaker label cannot exceed 50 characters")
 		}
+		if _, exists := seenLabels[trimmedLabel]; exists {
+			return validation.NewError("validation_invalid", "duplicate speaker label after trimming")
+		}
+		seenLabels[trimmedLabel] = struct{}{}
+
 		trimmedName := strings.TrimSpace(name)
 		if trimmedName == "" {
 			return validation.NewError("validation_required", "speaker name cannot be blank")

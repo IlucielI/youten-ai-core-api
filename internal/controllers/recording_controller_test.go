@@ -3048,6 +3048,234 @@ func TestControllers_ListSummaryVersions_Success_AuthenticatedOwner(t *testing.T
 	}
 }
 
+func TestControllers_ActivateSummaryVersion_NilController(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPatch, "/v1/recordings/test/summaries/1/activate", nil)
+
+	var ctrls *Controllers
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestControllers_ActivateSummaryVersion_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPatch, "/v1/recordings/test/summaries/1/activate", nil)
+
+	ctrls := &Controllers{}
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestControllers_ActivateSummaryVersion_InvalidID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: "invalid-uuid"},
+		{Key: "versionId", Value: "1"},
+	}
+	c.Request, _ = http.NewRequest(http.MethodPatch, "/v1/recordings/invalid-uuid/summaries/1/activate", nil)
+
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ActivateSummaryVersion_NotFound_Recording(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "versionId", Value: "1"},
+	}
+	c.Request, _ = http.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/summaries/1/activate", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_ActivateSummaryVersion_NotFound_Summary(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	missingSumID := uuid.New()
+	guestToken := "guest-token"
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "versionId", Value: missingSumID.String()},
+	}
+	req, _ := http.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/summaries/"+missingSumID.String()+"/activate", nil)
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, guestToken, nil))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND id = \$2.*LIMIT \$3`).
+		WithArgs(recID, missingSumID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectRollback()
+
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_ActivateSummaryVersion_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "versionId", Value: "1"},
+	}
+	req, _ := http.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/summaries/1/activate", nil)
+	req.Header.Set("X-Ownership-Token", "wrong-token")
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "valid-token", nil))
+
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+func TestControllers_ActivateSummaryVersion_Success_GuestWithHeader(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	targetSumID := uuid.New()
+	guestToken := "guest-token"
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "versionId", Value: targetSumID.String()},
+	}
+	req, _ := http.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/summaries/"+targetSumID.String()+"/activate", nil)
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, guestToken, nil))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND id = \$2.*LIMIT \$3`).
+		WithArgs(recID, targetSumID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(targetSumID, recID, 2, "GENERAL", models.JSONMap{"summary": "v2"}, "# V2", false, time.Now()))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 2))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(true, sqlmock.AnyArg(), targetSumID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.SummaryVersionResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response json: %v", err)
+	}
+
+	if resp.Data.ID != targetSumID.String() || !resp.Data.IsActive || resp.Data.Version != 2 {
+		t.Errorf("unexpected activated response data: %+v", resp.Data)
+	}
+}
+
+func TestControllers_ActivateSummaryVersion_Success_AuthenticatedOwner(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	targetSumID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "versionId", Value: "3"},
+	}
+	req, _ := http.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/summaries/3/activate", nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "token", &userID))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND version = \$2.*LIMIT \$3`).
+		WithArgs(recID, 3, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(targetSumID, recID, 3, "EXECUTIVE", models.JSONMap{"summary": "v3"}, "# V3", false, time.Now()))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 3))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE id = \$3`).
+		WithArgs(true, sqlmock.AnyArg(), targetSumID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	ctrls.ActivateSummaryVersion(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+
 
 
 

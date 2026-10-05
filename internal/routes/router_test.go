@@ -14,11 +14,15 @@ import (
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/routes"
+	"code-base-golang/internal/services"
 )
 
 func TestRouter_HealthCheck(t *testing.T) {
 	cfg := config.Load()
-	ctrls := controllers.New(cfg, nil)
+	// Build a real service with no wired adapters so the health check reports
+	// every dependency as disconnected without a backing infrastructure.
+	svc := services.New(cfg, nil, nil)
+	ctrls := controllers.New(cfg, svc)
 	router := routes.NewRouter(cfg, ctrls)
 
 	w := httptest.NewRecorder()
@@ -282,8 +286,6 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"POST", "/v1/recordings/:id/regenerate"},
 		{"POST", "/v1/waitlist/bot"},
 	}
-
-
 
 	registeredPairs := make(map[string]bool)
 	for _, route := range router.Routes() {
@@ -658,9 +660,3 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected POST /v1/waitlist/bot to be public and not return 401 Unauthorized, got %d", wWaitlist.Code)
 	}
 }
-
-
-
-
-
-

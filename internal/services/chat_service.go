@@ -16,6 +16,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/pkg/jsonutil"
 )
 
 // RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
@@ -133,8 +134,8 @@ func (s *Service) SaveAssistantChatMessage(
 		RecordingID:       recordingID,
 		SenderRole:        constants.ChatRoleAssistant,
 		Content:           content,
-		Citations:         rawStringSliceJSON(citations),
-		RetrievedChunkIDs: rawStringSliceJSON(chunkIDs),
+		Citations:         jsonutil.RawStringSlice(citations),
+		RetrievedChunkIDs: jsonutil.RawStringSlice(chunkIDs),
 		CreatedAt:         time.Now().UTC(),
 	}
 
@@ -144,14 +145,3 @@ func (s *Service) SaveAssistantChatMessage(
 	return asstMsg, citations, nil
 }
 
-// rawStringSliceJSON encodes a slice of strings to json.RawMessage, safely defaulting to "[]" without allocation on empty slices.
-func rawStringSliceJSON(items []string) json.RawMessage {
-	if len(items) == 0 {
-		return json.RawMessage("[]")
-	}
-	b, err := json.Marshal(items)
-	if err != nil {
-		return json.RawMessage("[]")
-	}
-	return json.RawMessage(b)
-}

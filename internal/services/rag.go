@@ -4,6 +4,7 @@ import (
 	"regexp"
 
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/timeutil"
 	"code-base-golang/internal/templates"
 )
 
@@ -11,7 +12,7 @@ var citationRegex = regexp.MustCompile(`\[(\d{1,2}:\d{2}(?::\d{2})?)\]`)
 
 // FormatTimestamp converts seconds into a human-readable [MM:SS] or [HH:MM:SS] string.
 func FormatTimestamp(seconds float64) string {
-	return templates.FormatTimestamp(seconds)
+	return timeutil.FormatTimestamp(seconds)
 }
 
 // BuildRAGPrompt constructs system and user prompts for grounded Q&A over transcript chunks using internal/templates.

@@ -20,6 +20,7 @@ import (
 	"code-base-golang/internal/payload"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/ssrf"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // GeneratePresignUpload generates a pre-signed S3 PUT URL for direct client-to-storage upload
@@ -338,7 +339,7 @@ func (s *Service) ImportRecordingFromURL(
 	if ext != "" && dtos.SupportedExtensions[ext] {
 		safeFilename = urlFilename
 	} else {
-		inferredExt := inferMediaExtension(contentType)
+		inferredExt := strutil.InferMediaExtension(contentType)
 		if inferredExt == "" {
 			return nil, constants.ErrUnsupportedMediaType
 		}
@@ -507,24 +508,3 @@ func (s *Service) RetryRecordingPipeline(ctx context.Context, id uuid.UUID, owne
 	}, nil
 }
 
-func inferMediaExtension(contentType string) string {
-	cleanMIME := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
-	switch cleanMIME {
-	case "audio/mpeg", "audio/mp3":
-		return ".mp3"
-	case "audio/wav", "audio/x-wav", "audio/wave":
-		return ".wav"
-	case "audio/mp4", "video/mp4":
-		return ".mp4"
-	case "audio/m4a", "audio/x-m4a":
-		return ".m4a"
-	case "audio/webm", "video/webm":
-		return ".webm"
-	case "audio/ogg":
-		return ".ogg"
-	case "video/quicktime":
-		return ".mov"
-	default:
-		return ""
-	}
-}

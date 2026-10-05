@@ -62,6 +62,24 @@ routes:
     handler: ChangePassword
     auth: true
 
+  # Recording presigned upload direct to S3
+  - method: POST
+    path: /v1/recordings/presign-upload
+    handler: PresignUpload
+    optional_auth: true
 
+  - method: POST
+    path: /v1/recordings/presign
+    handler: PresignUpload
+    optional_auth: true
 
+  # Recording confirmation & metadata ingestion endpoint
+  - method: POST
+    path: /v1/recordings/upload
+    handler: UploadRecording
+    optional_auth: true
 
+  - method: POST
+    path: /v1/recordings/confirm-upload
+    handler: UploadRecording
+    optional_auth: true

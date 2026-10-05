@@ -40,6 +40,18 @@ var (
 	// ErrTooManyRequests is returned when a client exceeds rate limits.
 	ErrTooManyRequests = apperror.New(http.StatusTooManyRequests, ResponseCodeTooManyRequests, "too many requests, please try again later")
 
+	// ErrDailyQuotaExceeded is returned when an authenticated user exceeds their daily recording quota.
+	ErrDailyQuotaExceeded = apperror.New(http.StatusTooManyRequests, ResponseCodeTooManyRequests, "daily recording quota exceeded")
+
+	// ErrGuestDailyQuotaExceeded is returned when a guest user exceeds their daily recording quota.
+	ErrGuestDailyQuotaExceeded = apperror.New(http.StatusTooManyRequests, ResponseCodeTooManyRequests, "guest daily recording quota exceeded")
+
+	// ErrPayloadTooLarge is returned when uploaded file exceeds maximum allowed size.
+	ErrPayloadTooLarge = apperror.New(http.StatusRequestEntityTooLarge, ResponseCodePayloadTooLarge, "payload too large, maximum size is 500MB")
+
+	// ErrUnsupportedMediaType is returned when uploaded file format is not supported.
+	ErrUnsupportedMediaType = apperror.New(http.StatusUnsupportedMediaType, ResponseCodeUnsupportedMediaType, "unsupported media type")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

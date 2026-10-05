@@ -18,10 +18,6 @@ import (
 )
 
 var (
-	// ErrNilRepositories is returned when repository container is not initialized.
-	ErrNilRepositories = errors.New("repositories container is nil")
-	// ErrNilStorage is returned when object storage is not initialized.
-	ErrNilStorage = errors.New("storage provider is nil")
 	// ErrRecordingNotFound is returned when recording does not exist.
 	ErrRecordingNotFound = errors.New("recording not found")
 	// ErrInvalidRetryState is returned when retry is requested for a recording that is not failed.
@@ -30,13 +26,6 @@ var (
 
 // ProcessExtraction handles the audio extraction stage of the recording pipeline.
 func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipelinePayload) error {
-	if s.repo == nil {
-		return ErrNilRepositories
-	}
-	if s.storage == nil {
-		return ErrNilStorage
-	}
-
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -48,9 +37,6 @@ func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipe
 	}
 
 	bucket := s.cfg.S3BucketName
-	if bucket == "" {
-		bucket = "youten"
-	}
 
 	sourceKey := p.SourcePath
 	if sourceKey == "" && recording.AudioURL != nil {
@@ -106,13 +92,6 @@ func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipe
 
 // ProcessTranscription handles the speech-to-text diarization stage.
 func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingPipelinePayload) error {
-	if s.repo == nil {
-		return ErrNilRepositories
-	}
-	if s.storage == nil {
-		return ErrNilStorage
-	}
-
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -123,9 +102,6 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	}
 
 	bucket := s.cfg.S3BucketName
-	if bucket == "" {
-		bucket = "youten"
-	}
 
 	audioKey := p.AudioPath
 	if audioKey == "" && recording.AudioURL != nil {
@@ -220,10 +196,6 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 
 // ProcessSummarization executes the active template prompt against transcript segments to generate structured notes.
 func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingPipelinePayload) error {
-	if s.repo == nil {
-		return ErrNilRepositories
-	}
-
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -333,10 +305,6 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 
 // ProcessIndexing chunks transcript segments and generates pgvector embeddings for RAG retrieval.
 func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipelinePayload) error {
-	if s.repo == nil {
-		return ErrNilRepositories
-	}
-
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -419,10 +387,6 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 
 // ProcessAnalytics calculates speaker talk-time distribution and speaking share metrics.
 func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipelinePayload) error {
-	if s.repo == nil {
-		return ErrNilRepositories
-	}
-
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -484,10 +448,6 @@ func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipel
 
 // ProcessChapterization generates navigational chapters and key moment highlights.
 func (s *Service) ProcessChapterization(ctx context.Context, p payload.RecordingPipelinePayload) error {
-	if s.repo == nil {
-		return ErrNilRepositories
-	}
-
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -573,10 +533,6 @@ func (s *Service) ProcessChapterization(ctx context.Context, p payload.Recording
 
 // CheckAndCompleteRecording verifies if all mandatory core tasks are done and transitions state to COMPLETED.
 func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uuid.UUID) (bool, error) {
-	if s.repo == nil {
-		return false, ErrNilRepositories
-	}
-
 	summary, _ := s.repo.FindActiveSummaryByRecordingID(ctx, recordingID)
 	chunks, _ := s.repo.ListTranscriptChunksByRecordingID(ctx, recordingID)
 
@@ -625,10 +581,6 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 
 // RetryRecording executes Smart State Recovery: resumes pipeline from failed stage without re-uploading file.
 func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*payload.RecordingPipelinePayload, error) {
-	if s.repo == nil {
-		return nil, ErrNilRepositories
-	}
-
 	recording, err := s.repo.FindRecordingByID(ctx, recordingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find recording: %w", err)
@@ -690,10 +642,6 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 
 // FailRecording marks recording state as FAILED with error code and description.
 func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errCode, errMsg string) error {
-	if s.repo == nil {
-		return ErrNilRepositories
-	}
-
 	log.Printf("[PIPELINE ERROR] Recording %s FAILED: [%s] %s", recordingID.String(), errCode, errMsg)
 
 	if err := s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusFailed, &errCode, &errMsg); err != nil {

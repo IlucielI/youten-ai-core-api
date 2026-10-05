@@ -7,9 +7,11 @@ const (
 	ResponseCodeNotFound      = "NOT_FOUND"
 	ResponseCodeBadRequest    = "BAD_REQUEST"
 	ResponseCodeUnauthorized  = "UNAUTHORIZED"
-	ResponseCodeForbidden     = "FORBIDDEN"
-	ResponseCodeConflict      = "CONFLICT"
+	ResponseCodeForbidden       = "FORBIDDEN"
+	ResponseCodeConflict        = "CONFLICT"
 	ResponseCodeTooManyRequests = "TOO_MANY_REQUESTS"
+	ResponseCodePayloadTooLarge = "PAYLOAD_TOO_LARGE"
+	ResponseCodeUnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE"
 )
 
 const (

@@ -11,4 +11,7 @@ const (
 	TopicRecordingChapterize = "recording.chapterize"
 	TopicRecordingCompleted  = "recording.completed"
 	TopicRecordingFailed     = "recording.failed"
+
+	// Domain event alias
+	DomainEventRecordingCreated = TopicRecordingUploaded
 )

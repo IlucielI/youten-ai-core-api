@@ -1,5 +1,11 @@
 package dtos
 
+import (
+	"strings"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
+)
+
 // LLMUsage captures token consumption metrics for an LLM call.
 type LLMUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
@@ -40,3 +46,28 @@ type StreamChunk struct {
 	FinishReason string `json:"finish_reason,omitempty"`
 	Err          error  `json:"-"`
 }
+
+// RecordingChatRequest represents the request payload for interactive RAG chat over a recording.
+type RecordingChatRequest struct {
+	Message             string             `json:"message"`
+	ConversationHistory []ChatMessageInput `json:"conversation_history,omitempty"`
+	OwnershipToken      string             `json:"ownership_token,omitempty"`
+}
+
+// Validate checks request constraints for RecordingChatRequest.
+func (r RecordingChatRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.Message,
+			validation.Required,
+			validation.Length(1, 4000),
+			validation.By(func(value interface{}) error {
+				s, ok := value.(string)
+				if !ok || strings.TrimSpace(s) == "" {
+					return validation.NewError("validation_required", "message cannot be empty or blank")
+				}
+				return nil
+			}),
+		),
+	)
+}
+

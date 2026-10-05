@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/sse"
 )
+
 
 // PresignUpload generates a pre-signed S3 PUT URL so that the frontend
 // can upload the media file directly to object storage without streaming through the backend.
@@ -652,3 +654,130 @@ func (c *Controllers) RetryRecording(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// StreamRecordingChat handles interactive RAG chat streaming via Server-Sent Events (SSE).
+func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	// Limit body size for chat prompt payload (64KB)
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
+
+	var req dtos.RecordingChatRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(req.OwnershipToken)
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	result, err := c.svc.InitiateRecordingChatStream(ctx.Request.Context(), id, ownershipToken, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	// Write SSE Response Headers
+	ctx.Writer.Header().Set("Content-Type", "text/event-stream")
+	ctx.Writer.Header().Set("Cache-Control", "no-cache")
+	ctx.Writer.Header().Set("Connection", "keep-alive")
+	ctx.Writer.Header().Set("Transfer-Encoding", "chunked")
+	ctx.Writer.Header().Set("X-Accel-Buffering", "no")
+	ctx.Writer.WriteHeader(http.StatusOK)
+	ctx.Writer.Flush()
+
+	pingTicker := time.NewTicker(15 * time.Second)
+	defer pingTicker.Stop()
+
+	var fullContent strings.Builder
+
+streamLoop:
+	for {
+		select {
+		case <-ctx.Request.Context().Done():
+			return
+		case <-pingTicker.C:
+			if err := sse.WritePing(ctx.Writer); err != nil {
+				return
+			}
+		case chunk, ok := <-result.StreamChannel:
+			if !ok {
+				break streamLoop
+			}
+			if chunk.Err != nil {
+				_ = sse.WriteChatError(ctx.Writer, chunk.Err.Error())
+				return
+			}
+			if chunk.Content != "" {
+				fullContent.WriteString(chunk.Content)
+				if err := sse.WriteChatToken(ctx.Writer, chunk.Content); err != nil {
+					return
+				}
+			}
+		}
+	}
+
+	saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	asstMsg, citations, err := result.SaveAssistantMsg(saveCtx, fullContent.String())
+	if err != nil {
+		_ = sse.WriteChatError(ctx.Writer, "failed to persist assistant message")
+		return
+	}
+
+	chunkIDs := result.RetrievedChunkIDs
+	if chunkIDs == nil {
+		chunkIDs = []string{}
+	}
+
+	_ = sse.WriteChatDone(ctx.Writer, sse.ChatDoneEvent{
+		MessageID:         asstMsg.ID.String(),
+		Content:           fullContent.String(),
+		Citations:         citations,
+		RetrievedChunkIDs: chunkIDs,
+	})
+}
+

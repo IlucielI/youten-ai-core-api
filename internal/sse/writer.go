@@ -37,3 +37,28 @@ func WritePing(w io.Writer) error {
 		Comment: "ping",
 	})
 }
+
+// WriteChatToken serializes and writes a ChatTokenEvent as an SSE event named "token".
+func WriteChatToken(w io.Writer, token string) error {
+	return WriteEvent(w, Event{
+		Event: "token",
+		Data:  ChatTokenEvent{Token: token},
+	})
+}
+
+// WriteChatDone serializes and writes a ChatDoneEvent as an SSE event named "done".
+func WriteChatDone(w io.Writer, event ChatDoneEvent) error {
+	return WriteEvent(w, Event{
+		Event: "done",
+		Data:  event,
+	})
+}
+
+// WriteChatError serializes and writes a ChatErrorEvent as an SSE event named "error".
+func WriteChatError(w io.Writer, errMsg string) error {
+	return WriteEvent(w, Event{
+		Event: "error",
+		Data:  ChatErrorEvent{Error: errMsg},
+	})
+}
+

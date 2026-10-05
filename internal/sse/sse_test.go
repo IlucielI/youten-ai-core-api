@@ -372,4 +372,65 @@ func TestSSE_Writer(t *testing.T) {
 			t.Errorf("expected ': ping\\n\\n', got %q", flusher.String())
 		}
 	})
+
+	t.Run("WriteChatToken with flusher", func(t *testing.T) {
+		flusher := &mockFlusher{}
+		err := WriteChatToken(flusher, "hello")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !flusher.flushed {
+			t.Error("expected flusher.Flush() to be called")
+		}
+		out := flusher.String()
+		if !strings.Contains(out, "event: token\n") {
+			t.Errorf("missing event line, got: %s", out)
+		}
+		if !strings.Contains(out, `{"token":"hello"}`) {
+			t.Errorf("expected json token payload, got: %s", out)
+		}
+	})
+
+	t.Run("WriteChatDone with flusher", func(t *testing.T) {
+		flusher := &mockFlusher{}
+		event := ChatDoneEvent{
+			MessageID:         "msg-123",
+			Content:           "Full answer with citation [00:15]",
+			Citations:         []string{"00:15"},
+			RetrievedChunkIDs: []string{"chunk-1"},
+		}
+		err := WriteChatDone(flusher, event)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !flusher.flushed {
+			t.Error("expected flusher.Flush() to be called")
+		}
+		out := flusher.String()
+		if !strings.Contains(out, "event: done\n") {
+			t.Errorf("missing event line, got: %s", out)
+		}
+		if !strings.Contains(out, `"message_id":"msg-123"`) || !strings.Contains(out, `"citations":["00:15"]`) {
+			t.Errorf("expected json done payload, got: %s", out)
+		}
+	})
+
+	t.Run("WriteChatError with flusher", func(t *testing.T) {
+		flusher := &mockFlusher{}
+		err := WriteChatError(flusher, "something went wrong")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !flusher.flushed {
+			t.Error("expected flusher.Flush() to be called")
+		}
+		out := flusher.String()
+		if !strings.Contains(out, "event: error\n") {
+			t.Errorf("missing event line, got: %s", out)
+		}
+		if !strings.Contains(out, `"error":"something went wrong"`) {
+			t.Errorf("expected json error payload, got: %s", out)
+		}
+	})
 }
+

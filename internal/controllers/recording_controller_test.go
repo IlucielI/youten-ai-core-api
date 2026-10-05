@@ -2010,3 +2010,282 @@ func TestControllers_RetryRecording_Success_HeaderToken(t *testing.T) {
 	}
 }
 
+func TestControllers_StreamRecordingChat_NilController(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+uuid.New().String()+"/chat", strings.NewReader(`{"message":"hello"}`))
+	c.Request = req
+
+	var nilCtrls *Controllers
+	nilCtrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingChat_NilService(t *testing.T) {
+	cfg := config.Config{}
+	ctrls := New(cfg, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+uuid.New().String()+"/chat", strings.NewReader(`{"message":"hello"}`))
+	c.Request = req
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingChat_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid-format"}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/invalid/chat", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingChat_InvalidJSON(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+recID.String()+"/chat", strings.NewReader(`{invalid-json`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingChat_ValidationError(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+recID.String()+"/chat", strings.NewReader(`{"message":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingChat_NotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+recID.String()+"/chat", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingChat_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	ownerID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+recID.String()+"/chat", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token"}).
+			AddRow(recID, &ownerID, "secret-token"))
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+type mockControllerLLM struct {
+	streamFunc func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error)
+}
+
+func (m *mockControllerLLM) GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+	return nil, nil
+}
+
+func (m *mockControllerLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+	return nil, nil
+}
+
+func (m *mockControllerLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+	if m.streamFunc != nil {
+		return m.streamFunc(ctx, systemPrompt, messages, opts)
+	}
+	out := make(chan dtos.StreamChunk, 2)
+	go func() {
+		defer close(out)
+		out <- dtos.StreamChunk{Content: "Hello "}
+		out <- dtos.StreamChunk{Content: "world [00:10]"}
+	}()
+	return out, nil
+}
+
+func TestControllers_StreamRecordingChat_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-ownership-token"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+recID.String()+"/chat", strings.NewReader(`{"message":"Tell me about the goals"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	mockLLM := &mockControllerLLM{
+		streamFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+			out := make(chan dtos.StreamChunk, 2)
+			go func() {
+				defer close(out)
+				out <- dtos.StreamChunk{Content: "Goal is to expand [01:23] "}
+				out <- dtos.StreamChunk{Content: "market reach."}
+			}()
+			return out, nil
+		},
+	}
+	ctrls.svc.SetLLM(mockLLM)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Errorf("expected Content-Type text/event-stream, got %s", contentType)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: token") {
+		t.Errorf("expected body to contain token events, got: %s", body)
+	}
+	if !strings.Contains(body, "event: done") {
+		t.Errorf("expected body to contain done event, got: %s", body)
+	}
+	if !strings.Contains(body, `"citations":["01:23"]`) {
+		t.Errorf("expected body to contain parsed citation, got: %s", body)
+	}
+}
+
+func TestControllers_StreamRecordingChat_StreamError(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-ownership-token"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+recID.String()+"/chat", strings.NewReader(`{"message":"Tell me about the goals"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	mockLLM := &mockControllerLLM{
+		streamFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+			out := make(chan dtos.StreamChunk, 2)
+			go func() {
+				defer close(out)
+				out <- dtos.StreamChunk{Content: "Partial "}
+				out <- dtos.StreamChunk{Err: errors.New("upstream connection reset")}
+			}()
+			return out, nil
+		},
+	}
+	ctrls.svc.SetLLM(mockLLM)
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: error") {
+		t.Errorf("expected body to contain error event, got: %s", body)
+	}
+	if !strings.Contains(body, "upstream connection reset") {
+		t.Errorf("expected body to contain error message, got: %s", body)
+	}
+}
+
+

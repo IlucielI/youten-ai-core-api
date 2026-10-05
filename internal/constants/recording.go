@@ -41,8 +41,15 @@ const (
 
 // Highlight origin sources.
 const (
-	HighlightSourceManual = "manual"
-	HighlightSourceAI     = "ai"
+	HighlightSourceManual      = "manual"
+	HighlightSourceAI          = "ai"
+	HighlightSourceAISuggested = "AI_SUGGESTED"
+)
+
+// Notification types for in-app milestone alerts and system notifications.
+const (
+	NotificationTypeRecordingCompleted = "RECORDING_COMPLETED"
+	NotificationTypeRecordingFailed    = "RECORDING_FAILED"
 )
 
 // ExportFormat enumerates the supported MOM/transcript export formats.

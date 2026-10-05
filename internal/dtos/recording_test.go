@@ -372,3 +372,28 @@ func TestRecordingDTO_CommentResponse_ThreadedStructure(t *testing.T) {
 		t.Errorf("expected parent ID %s, got %v", parentID, parent.Replies[0].ParentID)
 	}
 }
+
+func TestRecordingDTO_Analytics_Structure(t *testing.T) {
+	analytics := dtos.RecordingAnalytics{
+		TotalDurationSeconds: 150.0,
+		TotalWords:           300,
+		Speakers: []dtos.SpeakerAnalytics{
+			{
+				Name:         "Alice",
+				TotalSeconds: 100.0,
+				WordCount:    200,
+				SharePercent: 66.67,
+			},
+		},
+	}
+
+	if analytics.TotalDurationSeconds != 150.0 {
+		t.Errorf("expected TotalDurationSeconds 150.0, got %f", analytics.TotalDurationSeconds)
+	}
+	if analytics.TotalWords != 300 {
+		t.Errorf("expected TotalWords 300, got %d", analytics.TotalWords)
+	}
+	if len(analytics.Speakers) != 1 || analytics.Speakers[0].Name != "Alice" {
+		t.Errorf("unexpected speakers: %+v", analytics.Speakers)
+	}
+}

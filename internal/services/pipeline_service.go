@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
@@ -16,7 +18,6 @@ import (
 	"code-base-golang/internal/payload"
 	"code-base-golang/internal/sse"
 	"code-base-golang/internal/templates"
-	"time"
 )
 
 // publishEvent dispatches a pipeline domain event, wrapping any broker failure with
@@ -30,6 +31,13 @@ func (s *Service) publishEvent(ctx context.Context, topic string, payload any) e
 		return fmt.Errorf("failed to publish %s event: %w", topic, err)
 	}
 	return nil
+}
+
+// failAndLog marks a recording as failed and logs if the failure update encounters an error.
+func (s *Service) failAndLog(ctx context.Context, recordingID uuid.UUID, errCode, errMsg string) {
+	if failErr := s.FailRecording(ctx, recordingID, errCode, errMsg); failErr != nil {
+		log.Printf("[PIPELINE WARN] recording %s: FailRecording failed: %v", recordingID.String(), failErr)
+	}
 }
 
 // ProcessExtraction handles the audio extraction stage of the recording pipeline.
@@ -53,38 +61,38 @@ func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipe
 	}
 	if sourceKey == "" {
 		errMsg := "no source file path available for extraction"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeExtractionFailed, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeExtractionFailed, errMsg)
 		return errors.New(errMsg)
 	}
 
 	reader, err := s.storage.Download(ctx, bucket, sourceKey)
 	if err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("failed to download source media: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("failed to download source media: %v", err))
 		return fmt.Errorf("failed to download source media: %w", err)
 	}
 	defer reader.Close()
 
 	if s.audioExtractor == nil {
 		errMsg := "audio extractor is not configured"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeExtractionFailed, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeExtractionFailed, errMsg)
 		return errors.New(errMsg)
 	}
 
 	extracted, err := s.audioExtractor.ExtractMonoAudio(ctx, reader, recording.OriginalFilename)
 	if err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("audio extraction failed: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("audio extraction failed: %v", err))
 		return fmt.Errorf("audio extraction failed: %w", err)
 	}
 	defer extracted.Reader.Close()
 
 	destAudioKey := fmt.Sprintf("%s/%s/audio.mp3", constants.StoragePrefixRecordings, recording.ID.String())
 	if err := s.storage.Upload(ctx, bucket, destAudioKey, extracted.Reader, extracted.SizeBytes, "audio/mpeg"); err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("failed to upload extracted audio: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("failed to upload extracted audio: %v", err))
 		return fmt.Errorf("failed to upload extracted audio: %w", err)
 	}
 
 	if err := s.repo.UpdateRecordingAudioURL(ctx, recording.ID, destAudioKey, extracted.DurationSeconds); err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("failed to update audio url: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("failed to update audio url: %v", err))
 		return fmt.Errorf("failed to update audio url: %w", err)
 	}
 
@@ -117,20 +125,20 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	}
 	if audioKey == "" {
 		errMsg := "no audio file available for transcription"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeTranscriptionFail, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, errMsg)
 		return errors.New(errMsg)
 	}
 
 	audioReader, err := s.storage.Download(ctx, bucket, audioKey)
 	if err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to download audio: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to download audio: %v", err))
 		return fmt.Errorf("failed to download audio: %w", err)
 	}
 	defer audioReader.Close()
 
 	if s.stt == nil {
 		errMsg := "stt provider is not configured"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeTranscriptionFail, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, errMsg)
 		return errors.New(errMsg)
 	}
 
@@ -138,18 +146,22 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		Language: recording.OutputLanguage,
 	})
 	if err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("stt transcription failed: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("stt transcription failed: %v", err))
 		return fmt.Errorf("stt transcription failed: %w", err)
 	}
 
 	if sttResult == nil || (len(sttResult.Segments) == 0 && strings.TrimSpace(sttResult.Text) == "") {
 		errMsg := "No speech detected in audio recording"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeNoSpeechDetected, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeNoSpeechDetected, errMsg)
 		return errors.New(errMsg)
 	}
 
 	// Idempotent cleanup before saving segments
-	_ = s.repo.DeleteTranscriptSegmentsByRecordingID(ctx, recording.ID)
+	if err := s.repo.DeleteTranscriptSegmentsByRecordingID(ctx, recording.ID); err != nil {
+		errMsg := fmt.Sprintf("failed to clean up transcript segments: %v", err)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, errMsg)
+		return fmt.Errorf("failed to clean up transcript segments: %w", err)
+	}
 
 	var modelSegments []models.TranscriptSegment
 	for i, seg := range sttResult.Segments {
@@ -185,11 +197,13 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	}
 
 	if err := s.repo.SaveTranscriptSegments(ctx, modelSegments); err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to save transcript segments: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to save transcript segments: %v", err))
 		return fmt.Errorf("failed to save transcript segments: %w", err)
 	}
 
-	_ = s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, sttResult.Duration, sttResult.Language)
+	if err := s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, sttResult.Duration, sttResult.Language); err != nil {
+		log.Printf("[PIPELINE WARN] recording %s: failed to update duration and language: %v", recording.ID.String(), err)
+	}
 
 	// Analysis fan-out: dispatch independent downstream stages. These are best-effort
 	// because transcription (paid STT) has already succeeded here; a failed dispatch is
@@ -227,7 +241,11 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 	template, err := s.repo.FindTemplateByCategoryKey(ctx, templateKey)
 	if err != nil || template == nil {
-		template, _ = s.repo.FindTemplateByCategoryKey(ctx, constants.TemplateKeyGeneral)
+		var fallbackErr error
+		template, fallbackErr = s.repo.FindTemplateByCategoryKey(ctx, constants.TemplateKeyGeneral)
+		if fallbackErr != nil && !errors.Is(fallbackErr, gorm.ErrRecordNotFound) {
+			log.Printf("[PIPELINE WARN] recording %s: failed to load general template fallback: %v", recording.ID.String(), fallbackErr)
+		}
 	}
 
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recording.ID)
@@ -236,7 +254,7 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 	if len(segments) == 0 {
 		errMsg := "cannot summarize recording with empty transcript"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeSummarizationFail, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, errMsg)
 		return errors.New(errMsg)
 	}
 
@@ -274,21 +292,25 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 
 	if s.llm == nil {
 		errMsg := "llm provider is not configured"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeSummarizationFail, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, errMsg)
 		return errors.New(errMsg)
 	}
 
 	structuredRes, err := s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
 	if err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation failed: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation failed: %v", err))
 		return fmt.Errorf("llm generation failed: %w", err)
 	}
 
 	// Deactivate older summaries for this recording
-	_ = s.repo.DeactivatePreviousSummaries(ctx, recording.ID)
+	if err := s.repo.DeactivatePreviousSummaries(ctx, recording.ID); err != nil {
+		log.Printf("[PIPELINE WARN] recording %s: failed to deactivate previous summaries: %v", recording.ID.String(), err)
+	}
 
 	var structMap map[string]interface{}
-	_ = json.Unmarshal([]byte(structuredRes.RawJSON), &structMap)
+	if err := json.Unmarshal([]byte(structuredRes.RawJSON), &structMap); err != nil {
+		log.Printf("[PIPELINE WARN] recording %s: failed to unmarshal structured summary JSON: %v", recording.ID.String(), err)
+	}
 
 	markdownContent := ""
 	if md, ok := structMap["markdown_content"].(string); ok && md != "" {
@@ -309,12 +331,15 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 
 	if err := s.repo.CreateSummary(ctx, &summary); err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("failed to save summary: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("failed to save summary: %v", err))
 		return fmt.Errorf("failed to save summary: %w", err)
 	}
 
 	// Check if all core tasks are finished to mark COMPLETED
-	_, _ = s.CheckAndCompleteRecording(ctx, recording.ID)
+	if _, err := s.CheckAndCompleteRecording(ctx, recording.ID); err != nil {
+		log.Printf("[PIPELINE ERROR] recording %s: failed to complete recording after summary: %v", recording.ID.String(), err)
+		return fmt.Errorf("failed to check and complete recording: %w", err)
+	}
 	return nil
 }
 
@@ -336,7 +361,7 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 	}
 	if len(segments) == 0 {
 		errMsg := "cannot index recording with empty transcript"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
 		return errors.New(errMsg)
 	}
 
@@ -351,7 +376,7 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 	chunks := ChunkModelSegments(segments, chunkCfg)
 	if len(chunks) == 0 {
 		errMsg := "chunking produced 0 chunks"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
 		return errors.New(errMsg)
 	}
 
@@ -362,18 +387,22 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 
 	if s.embedding == nil {
 		errMsg := "embedding provider is not configured"
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
 		return errors.New(errMsg)
 	}
 
 	embeddings, err := s.embedding.CreateEmbeddings(ctx, chunkTexts)
 	if err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeIndexingFail, fmt.Sprintf("embedding generation failed: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, fmt.Sprintf("embedding generation failed: %v", err))
 		return fmt.Errorf("embedding generation failed: %w", err)
 	}
 
 	// Idempotent cleanup before inserting
-	_ = s.repo.DeleteTranscriptChunksByRecordingID(ctx, recording.ID)
+	if err := s.repo.DeleteTranscriptChunksByRecordingID(ctx, recording.ID); err != nil {
+		errMsg := fmt.Sprintf("failed to clean up transcript chunks: %v", err)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
+		return fmt.Errorf("failed to clean up transcript chunks: %w", err)
+	}
 
 	var modelChunks []models.TranscriptChunk
 	for i, c := range chunks {
@@ -392,12 +421,15 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 	}
 
 	if err := s.repo.SaveTranscriptChunks(ctx, modelChunks); err != nil {
-		_ = s.FailRecording(ctx, recording.ID, models.ErrCodeIndexingFail, fmt.Sprintf("failed to save transcript chunks: %v", err))
+		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, fmt.Sprintf("failed to save transcript chunks: %v", err))
 		return fmt.Errorf("failed to save transcript chunks: %w", err)
 	}
 
 	// Check if all core tasks are finished to mark COMPLETED
-	_, _ = s.CheckAndCompleteRecording(ctx, recording.ID)
+	if _, err := s.CheckAndCompleteRecording(ctx, recording.ID); err != nil {
+		log.Printf("[PIPELINE ERROR] recording %s: failed to complete recording after indexing: %v", recording.ID.String(), err)
+		return fmt.Errorf("failed to check and complete recording: %w", err)
+	}
 	return nil
 }
 
@@ -413,14 +445,7 @@ func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipel
 		return nil
 	}
 
-	type speakerStat struct {
-		Name         string  `json:"name"`
-		TotalSeconds float64 `json:"total_seconds"`
-		WordCount    int     `json:"word_count"`
-		SharePercent float64 `json:"share_percent"`
-	}
-
-	speakerMap := make(map[string]*speakerStat)
+	speakerMap := make(map[string]*dtos.SpeakerAnalytics)
 	var totalDuration float64
 	var totalWords int
 
@@ -436,14 +461,14 @@ func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipel
 
 		stat, ok := speakerMap[seg.SpeakerName]
 		if !ok {
-			stat = &speakerStat{Name: seg.SpeakerName}
+			stat = &dtos.SpeakerAnalytics{Name: seg.SpeakerName}
 			speakerMap[seg.SpeakerName] = stat
 		}
 		stat.TotalSeconds += dur
 		stat.WordCount += words
 	}
 
-	var speakers []speakerStat
+	var speakers []dtos.SpeakerAnalytics
 	for _, stat := range speakerMap {
 		if totalDuration > 0 {
 			stat.SharePercent = (stat.TotalSeconds / totalDuration) * 100.0
@@ -457,8 +482,13 @@ func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipel
 		"speakers":               speakers,
 	}
 
-	_ = s.repo.UpdateRecordingAnalytics(ctx, recording.ID, analyticsData)
-	_, _ = s.CheckAndCompleteRecording(ctx, recording.ID)
+	if err := s.repo.UpdateRecordingAnalytics(ctx, recording.ID, analyticsData); err != nil {
+		log.Printf("[PIPELINE ERROR] recording %s: failed to update analytics: %v", recording.ID.String(), err)
+		return fmt.Errorf("failed to update recording analytics: %w", err)
+	}
+	if _, err := s.CheckAndCompleteRecording(ctx, recording.ID); err != nil {
+		log.Printf("[PIPELINE WARN] recording %s: failed to complete recording after analytics: %v", recording.ID.String(), err)
+	}
 	return nil
 }
 
@@ -516,8 +546,13 @@ func (s *Service) ProcessChapterization(ctx context.Context, p payload.Recording
 	}
 
 	if len(chapters) > 0 {
-		_ = s.repo.DeleteChaptersByRecordingID(ctx, recording.ID)
-		_ = s.repo.SaveChapters(ctx, chapters)
+		if err := s.repo.DeleteChaptersByRecordingID(ctx, recording.ID); err != nil {
+			log.Printf("[PIPELINE WARN] recording %s: failed to clean up chapters: %v", recording.ID.String(), err)
+		}
+		if err := s.repo.SaveChapters(ctx, chapters); err != nil {
+			log.Printf("[PIPELINE ERROR] recording %s: failed to save chapters: %v", recording.ID.String(), err)
+			return fmt.Errorf("failed to save chapters: %w", err)
+		}
 	}
 
 	// Generate candidate highlights from first and key segments
@@ -533,24 +568,37 @@ func (s *Service) ProcessChapterization(ctx context.Context, p payload.Recording
 				StartTime:   seg.StartTime,
 				EndTime:     seg.EndTime,
 				Title:       &title,
-				Source:      "AI_SUGGESTED",
+				Source:      constants.HighlightSourceAISuggested,
 			})
 		}
 	}
 
 	if len(highlights) > 0 {
-		_ = s.repo.DeleteHighlightsByRecordingID(ctx, recording.ID)
-		_ = s.repo.SaveHighlights(ctx, highlights)
+		if err := s.repo.DeleteHighlightsByRecordingID(ctx, recording.ID); err != nil {
+			log.Printf("[PIPELINE WARN] recording %s: failed to clean up highlights: %v", recording.ID.String(), err)
+		}
+		if err := s.repo.SaveHighlights(ctx, highlights); err != nil {
+			log.Printf("[PIPELINE ERROR] recording %s: failed to save highlights: %v", recording.ID.String(), err)
+			return fmt.Errorf("failed to save highlights: %w", err)
+		}
 	}
 
-	_, _ = s.CheckAndCompleteRecording(ctx, recording.ID)
+	if _, err := s.CheckAndCompleteRecording(ctx, recording.ID); err != nil {
+		log.Printf("[PIPELINE WARN] recording %s: failed to complete recording after chapterization: %v", recording.ID.String(), err)
+	}
 	return nil
 }
 
 // CheckAndCompleteRecording verifies if all mandatory core tasks are done and transitions state to COMPLETED.
 func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uuid.UUID) (bool, error) {
-	summary, _ := s.repo.FindActiveSummaryByRecordingID(ctx, recordingID)
-	chunks, _ := s.repo.ListTranscriptChunksByRecordingID(ctx, recordingID)
+	summary, err := s.repo.FindActiveSummaryByRecordingID(ctx, recordingID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fmt.Errorf("failed to check active summary: %w", err)
+	}
+	chunks, err := s.repo.ListTranscriptChunksByRecordingID(ctx, recordingID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fmt.Errorf("failed to check transcript chunks: %w", err)
+	}
 
 	// Both summary and vector indexing are mandatory for completion
 	if summary == nil || len(chunks) == 0 {
@@ -578,10 +626,12 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 			RecordingID: &recordingID,
 			Title:       "Recording Processed",
 			Message:     fmt.Sprintf("Your recording '%s' has been transcribed and summarized successfully.", recording.Title),
-			Type:        "RECORDING_COMPLETED",
+			Type:        constants.NotificationTypeRecordingCompleted,
 			IsRead:      false,
 		}
-		_ = s.repo.CreateNotification(ctx, &notif)
+		if err := s.repo.CreateNotification(ctx, &notif); err != nil {
+			log.Printf("[PIPELINE WARN] recording %s: failed to create completion notification: %v", recordingID.String(), err)
+		}
 	}
 
 	// Publish completed domain event (best-effort terminal notification).
@@ -613,9 +663,18 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 	}
 
 	// Check existing assets to resume at exact failing point
-	segments, _ := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recording.ID)
-	summary, _ := s.repo.FindActiveSummaryByRecordingID(ctx, recording.ID)
-	chunks, _ := s.repo.ListTranscriptChunksByRecordingID(ctx, recording.ID)
+	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recording.ID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to check existing transcript segments: %w", err)
+	}
+	summary, err := s.repo.FindActiveSummaryByRecordingID(ctx, recording.ID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to check existing active summary: %w", err)
+	}
+	chunks, err := s.repo.ListTranscriptChunksByRecordingID(ctx, recording.ID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to check existing transcript chunks: %w", err)
+	}
 
 	p := payload.RecordingPipelinePayload{
 		RecordingID: recording.ID,
@@ -627,7 +686,9 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 	if recording.AudioURL == nil || *recording.AudioURL == "" {
 		p.Stage = models.RecordingStatusExtracting
 		p.Status = models.RecordingStatusQueued
-		_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil)
+		if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil); err != nil {
+			return nil, fmt.Errorf("failed to update recording status to queued: %w", err)
+		}
 		s.publishProgress(recording.ID, models.RecordingStatusQueued, nil, nil)
 		if err := s.publishEvent(ctx, constants.TopicRecordingUploaded, p); err != nil {
 			log.Printf("[PIPELINE ERROR] recording %s: %v", recording.ID.String(), err)
@@ -641,7 +702,9 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 	if len(segments) == 0 {
 		p.Stage = models.RecordingStatusTranscribing
 		p.Status = models.RecordingStatusQueued
-		_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil)
+		if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil); err != nil {
+			return nil, fmt.Errorf("failed to update recording status to queued: %w", err)
+		}
 		s.publishProgress(recording.ID, models.RecordingStatusQueued, nil, nil)
 		if err := s.publishEvent(ctx, constants.TopicRecordingTranscribe, p); err != nil {
 			log.Printf("[PIPELINE ERROR] recording %s: %v", recording.ID.String(), err)
@@ -652,7 +715,9 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 	// 3. If transcripts exist, run fan-out for missing summary or indexing
 	p.Stage = models.RecordingStatusTranscribing
 	p.Status = models.RecordingStatusTranscribing
-	_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusTranscribing, nil, nil)
+	if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusTranscribing, nil, nil); err != nil {
+		return nil, fmt.Errorf("failed to update recording status to transcribing: %w", err)
+	}
 	s.publishProgress(recording.ID, models.RecordingStatusTranscribing, nil, nil)
 
 	if summary == nil {
@@ -667,7 +732,9 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 	}
 
 	if summary != nil && len(chunks) > 0 {
-		_, _ = s.CheckAndCompleteRecording(ctx, recording.ID)
+		if _, err := s.CheckAndCompleteRecording(ctx, recording.ID); err != nil {
+			log.Printf("[PIPELINE WARN] recording %s: failed to complete recording on resume: %v", recording.ID.String(), err)
+		}
 	}
 
 	return &p, nil
@@ -678,6 +745,7 @@ func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errC
 	log.Printf("[PIPELINE ERROR] Recording %s FAILED: [%s] %s", recordingID.String(), errCode, errMsg)
 
 	if err := s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusFailed, &errCode, &errMsg); err != nil {
+		log.Printf("[PIPELINE ERROR] recording %s: failed to update status to FAILED in DB: %v", recordingID.String(), err)
 		return err
 	}
 	s.publishProgress(recordingID, models.RecordingStatusFailed, &errCode, &errMsg)

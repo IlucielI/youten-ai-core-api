@@ -157,4 +157,12 @@ routes:
     handler: StreamRecordingChat
     optional_auth: true
 
+  # Update transcript speaker labels endpoint
+  -
+    method: PUT
+    path: /v1/recordings/:id/speakers
+    handler: UpdateTranscriptSpeakers
+    optional_auth: true
+
+
 

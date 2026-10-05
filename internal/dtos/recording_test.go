@@ -1,11 +1,13 @@
 package dtos_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"code-base-golang/internal/dtos"
 )
+
 
 func TestRecordingDTO_IsValidMediaMIME(t *testing.T) {
 	testCases := []struct {
@@ -423,3 +425,96 @@ func TestRecordingDTO_RetryRecordingResponse_Structure(t *testing.T) {
 		t.Errorf("expected Stage 'EXTRACTING', got %s", resp.Stage)
 	}
 }
+
+func TestRecordingDTO_UpdateSpeakersRequest_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.UpdateSpeakersRequest
+		wantErr bool
+	}{
+		{
+			name: "valid request",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: map[string]string{
+					"SPEAKER_00": "Bayu",
+					"SPEAKER_01": "Alice",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty speakers map",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: map[string]string{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "nil speakers map",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: nil,
+			},
+			wantErr: true,
+		},
+		{
+			name: "blank speaker label",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: map[string]string{
+					"   ": "Bayu",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "too long speaker label (>50 chars)",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: map[string]string{
+					strings.Repeat("s", 51): "Bayu",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "blank speaker name",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: map[string]string{
+					"SPEAKER_00": "   ",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "too long speaker name (>100 chars)",
+			req: dtos.UpdateSpeakersRequest{
+				Speakers: map[string]string{
+					"SPEAKER_00": strings.Repeat("n", 101),
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRecordingDTO_UpdateSpeakersResponse_Structure(t *testing.T) {
+	speakers := map[string]string{"SPEAKER_00": "Bayu"}
+	resp := dtos.UpdateSpeakersResponse{
+		UpdatedCount: 5,
+		Speakers:     speakers,
+	}
+	if resp.UpdatedCount != 5 {
+		t.Errorf("expected UpdatedCount 5, got %d", resp.UpdatedCount)
+	}
+	if resp.Speakers["SPEAKER_00"] != "Bayu" {
+		t.Errorf("expected speaker name Bayu, got %s", resp.Speakers["SPEAKER_00"])
+	}
+}
+

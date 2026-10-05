@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"code-base-golang/internal/models"
@@ -37,6 +38,31 @@ func (r *Repositories) UpdateTranscriptSpeakerName(ctx context.Context, recordin
 		Where("recording_id = ? AND speaker_label = ?", recordingID, speakerLabel).
 		Update("speaker_name", newName).Error
 }
+
+// UpdateTranscriptSpeakerNames batch-renames speaker labels across matching segments within a transaction.
+func (r *Repositories) UpdateTranscriptSpeakerNames(ctx context.Context, recordingID uuid.UUID, speakers map[string]string) (int64, error) {
+	if len(speakers) == 0 {
+		return 0, nil
+	}
+	var totalUpdated int64
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for label, newName := range speakers {
+			res := tx.Model(&models.TranscriptSegment{}).
+				Where("recording_id = ? AND speaker_label = ?", recordingID, label).
+				Update("speaker_name", newName)
+			if res.Error != nil {
+				return res.Error
+			}
+			totalUpdated += res.RowsAffected
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return totalUpdated, nil
+}
+
 
 // SaveTranscriptChunks batch-inserts semantic text chunks with vector embeddings.
 func (r *Repositories) SaveTranscriptChunks(ctx context.Context, chunks []models.TranscriptChunk) error {

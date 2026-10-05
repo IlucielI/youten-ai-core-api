@@ -1123,3 +1123,46 @@ func inferMediaExtension(contentType string) string {
 	}
 }
 
+// UpdateTranscriptSpeakers verifies recording ownership and batch-updates speaker names
+// across matching transcript segments.
+func (s *Service) UpdateTranscriptSpeakers(ctx context.Context, id uuid.UUID, ownershipToken string, req dtos.UpdateSpeakersRequest) (*dtos.UpdateSpeakersResponse, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Ownership verification: only recording owner (authenticated user or guest with ownership token)
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, constants.ErrForbidden
+	}
+
+	cleanedSpeakers := make(map[string]string, len(req.Speakers))
+	for label, name := range req.Speakers {
+		cleanedSpeakers[strings.TrimSpace(label)] = strings.TrimSpace(name)
+	}
+
+	updatedCount, err := s.repo.UpdateTranscriptSpeakerNames(ctx, rec.ID, cleanedSpeakers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update transcript speaker names: %w", err)
+	}
+
+	return &dtos.UpdateSpeakersResponse{
+		UpdatedCount: int(updatedCount),
+		Speakers:     cleanedSpeakers,
+	}, nil
+}
+
+

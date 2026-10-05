@@ -277,7 +277,9 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"GET", "/v1/recordings/:id/progress"},
 		{"POST", "/v1/recordings/:id/retry"},
 		{"POST", "/v1/recordings/:id/chat"},
+		{"PUT", "/v1/recordings/:id/speakers"},
 	}
+
 
 
 	registeredPairs := make(map[string]bool)
@@ -460,5 +462,18 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wChat.Code == http.StatusUnauthorized {
 		t.Fatalf("expected POST /v1/recordings/:id/chat not to return 401 Unauthorized without header (optional_auth), got %d", wChat.Code)
 	}
+
+	// Verify PUT /v1/recordings/:id/speakers is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wSpeakers := httptest.NewRecorder()
+	reqSpeakers, err := http.NewRequest(http.MethodPut, "/v1/recordings/00000000-0000-0000-0000-000000000001/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Alice"}}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqSpeakers.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wSpeakers, reqSpeakers)
+	if wSpeakers.Code == http.StatusUnauthorized {
+		t.Fatalf("expected PUT /v1/recordings/:id/speakers not to return 401 Unauthorized without header (optional_auth), got %d", wSpeakers.Code)
+	}
 }
+
 

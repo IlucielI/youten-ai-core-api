@@ -781,3 +781,74 @@ streamLoop:
 	})
 }
 
+// UpdateTranscriptSpeakers handles batch updating speaker names on a recording's transcript segments.
+func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	var req dtos.UpdateSpeakersRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(req.OwnershipToken)
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	resp, err := c.svc.UpdateTranscriptSpeakers(ctx.Request.Context(), id, ownershipToken, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.UpdateSpeakersResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "transcript speaker labels updated successfully",
+		Data:      *resp,
+		Timestamp: time.Now(),
+	})
+}
+
+

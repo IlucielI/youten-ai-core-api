@@ -2288,4 +2288,223 @@ func TestControllers_StreamRecordingChat_StreamError(t *testing.T) {
 	}
 }
 
+func TestControllers_UpdateTranscriptSpeakers_NilController(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+uuid.New().String()+"/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Bayu"}}`))
+	c.Request = req
+
+	var nilCtrls *Controllers
+	nilCtrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_NilService(t *testing.T) {
+	cfg := config.Config{}
+	ctrls := New(cfg, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+uuid.New().String()+"/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Bayu"}}`))
+	c.Request = req
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/invalid/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Bayu"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_InvalidJSON(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+recID.String()+"/speakers", strings.NewReader(`{invalid-json`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_ValidationError(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+recID.String()+"/speakers", strings.NewReader(`{"speakers":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_NotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+recID.String()+"/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Bayu"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	ownerID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+recID.String()+"/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Bayu"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token"}).
+			AddRow(recID, &ownerID, "secret-token"))
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_Success_TokenInBody(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-ownership-token"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+recID.String()+"/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Bayu"},"ownership_token":"`+guestToken+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "speaker_name"=\$1,"updated_at"=\$2 WHERE recording_id = \$3 AND speaker_label = \$4`).
+		WithArgs("Bayu", sqlmock.AnyArg(), recID, "SPEAKER_00").
+		WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectCommit()
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.UpdateSpeakersResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse json response: %v", err)
+	}
+	if resp.Data.UpdatedCount != 3 {
+		t.Errorf("expected UpdatedCount 3, got %d", resp.Data.UpdatedCount)
+	}
+	if resp.Data.Speakers["SPEAKER_00"] != "Bayu" {
+		t.Errorf("expected speaker name Bayu, got %s", resp.Data.Speakers["SPEAKER_00"])
+	}
+}
+
+func TestControllers_UpdateTranscriptSpeakers_Success_HeaderToken(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-ownership-token"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+recID.String()+"/speakers", strings.NewReader(`{"speakers":{"SPEAKER_01":"Alice"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "speaker_name"=\$1,"updated_at"=\$2 WHERE recording_id = \$3 AND speaker_label = \$4`).
+		WithArgs("Alice", sqlmock.AnyArg(), recID, "SPEAKER_01").
+		WillReturnResult(sqlmock.NewResult(0, 5))
+	mock.ExpectCommit()
+
+	ctrls.UpdateTranscriptSpeakers(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.UpdateSpeakersResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse json response: %v", err)
+	}
+	if resp.Data.UpdatedCount != 5 {
+		t.Errorf("expected UpdatedCount 5, got %d", resp.Data.UpdatedCount)
+	}
+}
+
+
 

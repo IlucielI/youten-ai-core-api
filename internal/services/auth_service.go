@@ -21,15 +21,8 @@ import (
 	"code-base-golang/internal/pkg/jwt"
 )
 
-
 // Register creates a new user account with a hashed password and default daily quota.
 func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dtos.UserResponse, error) {
-	if s == nil || s.repo == nil {
-		return nil, constants.ErrInternalServerError
-	}
-	if req == nil {
-		return nil, constants.ErrBadRequest.WithMessage("registration payload is required")
-	}
 
 	email := strings.TrimSpace(strings.ToLower(req.Email))
 
@@ -79,12 +72,6 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 
 // Login authenticates a user by email and password, returning an access and refresh token pair.
 func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.AuthResponse, error) {
-	if s == nil || s.repo == nil {
-		return nil, constants.ErrInternalServerError
-	}
-	if req == nil {
-		return nil, constants.ErrBadRequest.WithMessage("login payload is required")
-	}
 
 	email := strings.TrimSpace(strings.ToLower(req.Email))
 
@@ -153,12 +140,6 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 
 // RefreshToken rotates session tokens by validating the active refresh token, revoking it, and issuing a new token pair.
 func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenRequest) (*dtos.AuthResponse, error) {
-	if s == nil || s.repo == nil {
-		return nil, constants.ErrInternalServerError
-	}
-	if req == nil {
-		return nil, constants.ErrBadRequest.WithMessage("refresh token payload is required")
-	}
 
 	rawToken := strings.TrimSpace(req.RefreshToken)
 	if rawToken == "" {
@@ -248,12 +229,6 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 // Revocation is implemented idempotently: if the token is non-existent, expired, or already revoked,
 // the method returns nil so that callers can safely terminate sessions without error.
 func (s *Service) Logout(ctx context.Context, req *dtos.LogoutRequest) error {
-	if s == nil || s.repo == nil {
-		return constants.ErrInternalServerError
-	}
-	if req == nil {
-		return constants.ErrBadRequest.WithMessage("logout payload is required")
-	}
 
 	refreshToken := strings.TrimSpace(req.RefreshToken)
 	if refreshToken == "" {
@@ -286,12 +261,6 @@ func (s *Service) Logout(ctx context.Context, req *dtos.LogoutRequest) error {
 // and dispatching a transactional reset email. To prevent email enumeration attacks, this method
 // always succeeds silently (returns nil) even if the email does not exist in the system.
 func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRequest) error {
-	if s == nil || s.repo == nil {
-		return constants.ErrInternalServerError
-	}
-	if req == nil {
-		return constants.ErrBadRequest.WithMessage("forgot password payload is required")
-	}
 
 	email := strings.TrimSpace(strings.ToLower(req.Email))
 	if email == "" {
@@ -362,12 +331,6 @@ func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRe
 // Upon successful reset, the user's password is updated with bcrypt hash, the reset token
 // is marked as revoked, and all other active user sessions (refresh tokens) are revoked.
 func (s *Service) ResetPassword(ctx context.Context, req *dtos.ResetPasswordRequest) error {
-	if s == nil || s.repo == nil {
-		return constants.ErrInternalServerError
-	}
-	if req == nil {
-		return constants.ErrBadRequest.WithMessage("reset password payload is required")
-	}
 
 	token := strings.TrimSpace(req.Token)
 	if token == "" {
@@ -430,9 +393,6 @@ func (s *Service) ResetPassword(ctx context.Context, req *dtos.ResetPasswordRequ
 
 // Authenticate validates a JWT access token, checks its validity and claims, and returns the AuthUser context metadata.
 func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
-	if s == nil {
-		return nil, constants.ErrInternalServerError
-	}
 	claims, err := jwt.ValidateToken(s.cfg, tokenStr)
 	if err != nil || claims == nil {
 		return nil, constants.ErrInvalidToken
@@ -450,9 +410,6 @@ func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.A
 
 // GetProfile retrieves the profile and dynamic daily quota calculation for an authenticated user.
 func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserProfileResponse, error) {
-	if s == nil || s.repo == nil {
-		return nil, constants.ErrInternalServerError
-	}
 	if userID == uuid.Nil {
 		return nil, constants.ErrUnauthorized
 	}
@@ -496,14 +453,8 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 
 // UpdateProfile updates mutable profile attributes for the authenticated user and returns the refreshed profile.
 func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req *dtos.UpdateProfileRequest) (*dtos.UserProfileResponse, error) {
-	if s == nil || s.repo == nil {
-		return nil, constants.ErrInternalServerError
-	}
 	if userID == uuid.Nil {
 		return nil, constants.ErrUnauthorized
-	}
-	if req == nil {
-		return nil, constants.ErrBadRequest.WithMessage("update profile payload is required")
 	}
 
 	fullName := strings.TrimSpace(req.FullName)
@@ -524,14 +475,8 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req *dtos
 // ChangePassword verifies the user's current password and securely updates it with a new hashed password.
 // All other active refresh sessions for the user are revoked upon successful password change.
 func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, req *dtos.ChangePasswordRequest) error {
-	if s == nil || s.repo == nil {
-		return constants.ErrInternalServerError
-	}
 	if userID == uuid.Nil {
 		return constants.ErrUnauthorized
-	}
-	if req == nil {
-		return constants.ErrBadRequest.WithMessage("change password payload is required")
 	}
 
 	user, err := s.repo.FindUserByID(ctx, userID)
@@ -573,7 +518,3 @@ func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, req *dto
 
 	return nil
 }
-
-
-
-

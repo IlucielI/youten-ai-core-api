@@ -183,30 +183,6 @@ func TestService_Register_DBError(t *testing.T) {
 	}
 }
 
-func TestService_Register_NilService(t *testing.T) {
-	var svc *services.Service
-	resp, err := svc.Register(context.Background(), &dtos.RegisterRequest{})
-	if err == nil {
-		t.Fatal("expected error on nil service, got nil")
-	}
-	if resp != nil {
-		t.Errorf("expected nil response, got %v", resp)
-	}
-}
-
-func TestService_Register_NilRequest(t *testing.T) {
-	svc, _, cleanup := setupAuthServiceMock(t)
-	defer cleanup()
-
-	resp, err := svc.Register(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error on nil request, got nil")
-	}
-	if resp != nil {
-		t.Errorf("expected nil response, got %v", resp)
-	}
-}
-
 func TestService_Login_Success(t *testing.T) {
 	svc, mock, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
@@ -387,30 +363,6 @@ func TestService_Login_NilUserNoError(t *testing.T) {
 	}
 	if !errors.Is(err, constants.ErrInvalidCredentials) {
 		t.Errorf("expected ErrInvalidCredentials, got %v", err)
-	}
-	if resp != nil {
-		t.Errorf("expected nil response, got %v", resp)
-	}
-}
-
-func TestService_Login_NilService(t *testing.T) {
-	var svc *services.Service
-	resp, err := svc.Login(context.Background(), &dtos.LoginRequest{Email: "a@b.com", Password: "p"})
-	if err == nil {
-		t.Fatal("expected error on nil service, got nil")
-	}
-	if resp != nil {
-		t.Errorf("expected nil response, got %v", resp)
-	}
-}
-
-func TestService_Login_NilRequest(t *testing.T) {
-	svc, _, cleanup := setupAuthServiceMock(t)
-	defer cleanup()
-
-	resp, err := svc.Login(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error on nil request, got nil")
 	}
 	if resp != nil {
 		t.Errorf("expected nil response, got %v", resp)
@@ -698,28 +650,6 @@ func TestService_RefreshToken_InactiveUser_RevokeError(t *testing.T) {
 	}
 }
 
-func TestService_RefreshToken_NilChecks(t *testing.T) {
-	var nilSvc *services.Service
-	resp, err := nilSvc.RefreshToken(context.Background(), &dtos.RefreshTokenRequest{RefreshToken: "t"})
-	if err == nil {
-		t.Fatal("expected error on nil service, got nil")
-	}
-	if resp != nil {
-		t.Errorf("expected nil response, got %v", resp)
-	}
-
-	svc, _, cleanup := setupAuthServiceMock(t)
-	defer cleanup()
-
-	resp, err = svc.RefreshToken(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error on nil request, got nil")
-	}
-	if resp != nil {
-		t.Errorf("expected nil response, got %v", resp)
-	}
-}
-
 func TestService_Logout_Success(t *testing.T) {
 	svc, mock, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
@@ -880,22 +810,11 @@ func TestService_Logout_RevokeDatabaseError(t *testing.T) {
 	}
 }
 
-func TestService_Logout_NilReceiverAndPayload(t *testing.T) {
-	var nilSvc *services.Service
-	err := nilSvc.Logout(context.Background(), &dtos.LogoutRequest{RefreshToken: "token"})
-	if err == nil {
-		t.Fatal("expected error on nil service receiver, got nil")
-	}
-
+func TestService_Logout_EmptyRefreshToken(t *testing.T) {
 	svc, _, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
 
-	err = svc.Logout(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error on nil logout request, got nil")
-	}
-
-	err = svc.Logout(context.Background(), &dtos.LogoutRequest{RefreshToken: "   "})
+	err := svc.Logout(context.Background(), &dtos.LogoutRequest{RefreshToken: "   "})
 	if err == nil {
 		t.Fatal("expected error on empty refresh token, got nil")
 	}
@@ -1164,22 +1083,11 @@ func TestService_ForgotPassword_MailerError(t *testing.T) {
 	}
 }
 
-func TestService_ForgotPassword_NilReceiverAndPayload(t *testing.T) {
-	var nilSvc *services.Service
-	err := nilSvc.ForgotPassword(context.Background(), &dtos.ForgotPasswordRequest{Email: "test@example.com"})
-	if err == nil {
-		t.Fatal("expected error on nil service receiver, got nil")
-	}
-
+func TestService_ForgotPassword_EmptyEmail(t *testing.T) {
 	svc, _, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
 
-	err = svc.ForgotPassword(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error on nil forgot password request, got nil")
-	}
-
-	err = svc.ForgotPassword(context.Background(), &dtos.ForgotPasswordRequest{Email: "   "})
+	err := svc.ForgotPassword(context.Background(), &dtos.ForgotPasswordRequest{Email: "   "})
 	if err == nil {
 		t.Fatal("expected error on empty email, got nil")
 	}
@@ -1426,22 +1334,11 @@ func TestService_ResetPassword_RevokeTokenError(t *testing.T) {
 	}
 }
 
-func TestService_ResetPassword_NilReceiverAndPayload(t *testing.T) {
-	var nilSvc *services.Service
-	err := nilSvc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "tok", NewPassword: "newPassword123"})
-	if err == nil {
-		t.Fatal("expected error on nil service receiver, got nil")
-	}
-
+func TestService_ResetPassword_InvalidPayload(t *testing.T) {
 	svc, _, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
 
-	err = svc.ResetPassword(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error on nil reset password request, got nil")
-	}
-
-	err = svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "   ", NewPassword: "newPassword123"})
+	err := svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "   ", NewPassword: "newPassword123"})
 	if err == nil {
 		t.Fatal("expected error on empty token, got nil")
 	}
@@ -1496,13 +1393,6 @@ func TestService_Authenticate(t *testing.T) {
 	_, err = svc.Authenticate(context.Background(), "invalid-token-string")
 	if !errors.Is(err, constants.ErrInvalidToken) {
 		t.Fatalf("expected ErrInvalidToken on malformed token, got: %v", err)
-	}
-
-	// 4. Nil service receiver
-	var nilSvc *services.Service
-	_, err = nilSvc.Authenticate(context.Background(), tokenPair.AccessToken)
-	if !errors.Is(err, constants.ErrInternalServerError) {
-		t.Fatalf("expected ErrInternalServerError on nil service, got: %v", err)
 	}
 }
 
@@ -1590,20 +1480,13 @@ func TestService_GetProfile_Errors(t *testing.T) {
 	svc, mock, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
 
-	// 1. Nil service receiver
-	var nilSvc *services.Service
-	_, err := nilSvc.GetProfile(context.Background(), uuid.New())
-	if !errors.Is(err, constants.ErrInternalServerError) {
-		t.Fatalf("expected ErrInternalServerError on nil receiver, got: %v", err)
-	}
-
-	// 2. Nil user ID
-	_, err = svc.GetProfile(context.Background(), uuid.Nil)
+	// 1. Nil user ID
+	_, err := svc.GetProfile(context.Background(), uuid.Nil)
 	if !errors.Is(err, constants.ErrUnauthorized) {
 		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
 	}
 
-	// 3. User not found
+	// 2. User not found
 	unknownID := uuid.New()
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(unknownID, 1).
@@ -1614,7 +1497,7 @@ func TestService_GetProfile_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound, got: %v", err)
 	}
 
-	// 4. DB error on count
+	// 3. DB error on count
 	existingID := uuid.New()
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(existingID, 1).
@@ -1683,32 +1566,19 @@ func TestService_UpdateProfile_Errors(t *testing.T) {
 
 	userID := uuid.New()
 
-	// 1. Nil service receiver
-	var nilSvc *services.Service
-	_, err := nilSvc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "Valid Name"})
-	if !errors.Is(err, constants.ErrInternalServerError) {
-		t.Fatalf("expected ErrInternalServerError on nil receiver, got: %v", err)
-	}
-
-	// 2. Nil user ID
-	_, err = svc.UpdateProfile(context.Background(), uuid.Nil, &dtos.UpdateProfileRequest{FullName: "Valid Name"})
+	// 1. Nil user ID
+	_, err := svc.UpdateProfile(context.Background(), uuid.Nil, &dtos.UpdateProfileRequest{FullName: "Valid Name"})
 	if !errors.Is(err, constants.ErrUnauthorized) {
 		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
 	}
 
-	// 3. Nil request payload
-	_, err = svc.UpdateProfile(context.Background(), userID, nil)
-	if err == nil {
-		t.Fatal("expected error on nil request payload, got nil")
-	}
-
-	// 4. Empty full name
+	// 2. Empty full name
 	_, err = svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "   "})
 	if err == nil {
 		t.Fatal("expected error on empty full name, got nil")
 	}
 
-	// 5. User not found (0 rows affected)
+	// 3. User not found (0 rows affected)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
 		WithArgs("Ghost", sqlmock.AnyArg(), userID).
@@ -1720,7 +1590,7 @@ func TestService_UpdateProfile_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound on 0 rows affected, got: %v", err)
 	}
 
-	// 6. DB error
+	// 4. DB error
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
 		WithArgs("Failure", sqlmock.AnyArg(), userID).
@@ -1792,18 +1662,8 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 	correctPassword := "CorrectPassword123"
 	correctHash, _ := hasher.HashPassword(correctPassword)
 
-	// 1. Nil service receiver
-	var nilSvc *services.Service
-	err := nilSvc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
-		OldPassword: correctPassword,
-		NewPassword: "NewPassword123",
-	})
-	if !errors.Is(err, constants.ErrInternalServerError) {
-		t.Fatalf("expected ErrInternalServerError on nil receiver, got: %v", err)
-	}
-
-	// 2. Nil user ID
-	err = svc.ChangePassword(context.Background(), uuid.Nil, &dtos.ChangePasswordRequest{
+	// 1. Nil user ID
+	err := svc.ChangePassword(context.Background(), uuid.Nil, &dtos.ChangePasswordRequest{
 		OldPassword: correctPassword,
 		NewPassword: "NewPassword123",
 	})
@@ -1811,13 +1671,7 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
 	}
 
-	// 3. Nil request payload
-	err = svc.ChangePassword(context.Background(), userID, nil)
-	if err == nil {
-		t.Fatal("expected error on nil request, got nil")
-	}
-
-	// 4. User not found
+	// 2. User not found
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnError(gorm.ErrRecordNotFound)
@@ -1830,7 +1684,7 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound, got: %v", err)
 	}
 
-	// 5. Inactive/Suspended user
+	// 3. Inactive/Suspended user
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
@@ -1844,7 +1698,7 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUserInactive, got: %v", err)
 	}
 
-	// 6. Incorrect old password
+	// 4. Incorrect old password
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
@@ -1858,7 +1712,7 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Fatal("expected error on incorrect old password, got nil")
 	}
 
-	// 7. New password same as old password
+	// 5. New password same as old password
 	mock.ExpectQuery(`SELECT \* FROM "users"`).
 		WithArgs(userID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
@@ -1876,7 +1730,3 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Errorf("unfulfilled expectations: %s", err)
 	}
 }
-
-
-
-

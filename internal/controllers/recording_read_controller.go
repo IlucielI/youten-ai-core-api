@@ -34,13 +34,7 @@ func (c *Controllers) GetRecordingDetail(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.RecordingDetailResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recording detail retrieved successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "recording detail retrieved successfully", resp)
 }
 
 // ListRecordings handles retrieving paginated and filtered recordings owned by the authenticated user.
@@ -58,13 +52,7 @@ func (c *Controllers) ListRecordings(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.RecordingListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recordings retrieved successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "recordings retrieved successfully", resp)
 }
 
 // StreamRecordingProgress handles real-time SSE progress streaming for a recording pipeline.
@@ -170,11 +158,5 @@ func (c *Controllers) SearchRecordings(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SemanticSearchResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "search results retrieved successfully",
-		Data:      *res,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "search results retrieved successfully", res)
 }

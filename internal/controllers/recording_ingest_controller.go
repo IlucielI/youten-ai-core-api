@@ -48,13 +48,7 @@ func (c *Controllers) PresignUpload(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.PresignUploadResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "presigned upload url generated",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "presigned upload url generated", resp)
 }
 
 // UploadRecording confirms media file upload after the frontend uploaded directly to S3.
@@ -87,13 +81,7 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dtos.APIResponse[dtos.RecordingUploadResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recording uploaded successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondCreated(ctx, "recording uploaded successfully", resp)
 }
 
 // ImportURL handles media ingestion from a remote URL with Anti-SSRF protection.
@@ -125,13 +113,7 @@ func (c *Controllers) ImportURL(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dtos.APIResponse[dtos.RecordingUploadResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recording imported successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondCreated(ctx, "recording imported successfully", resp)
 }
 
 // RetryRecording handles POST /v1/recordings/:id/retry to initiate a smart retry of a failed pipeline.
@@ -159,11 +141,5 @@ func (c *Controllers) RetryRecording(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.RetryRecordingResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "pipeline retry initiated successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "pipeline retry initiated successfully", resp)
 }

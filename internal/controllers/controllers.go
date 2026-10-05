@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"net/http"
 	"strings"
 	"time"
 
@@ -55,6 +56,37 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 		Status:    status,
 		Code:      appErr.Code,
 		Message:   appErr.Message,
+		Timestamp: time.Now(),
+	})
+}
+
+// respondSuccess sends a standardized JSON success response envelope.
+func (c *Controllers) respondSuccess(ctx *gin.Context, httpStatus int, message string, data any) {
+	ctx.JSON(httpStatus, dtos.APIResponse[any]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   message,
+		Data:      data,
+		Timestamp: time.Now(),
+	})
+}
+
+// respondOK sends a standard HTTP 200 OK JSON success envelope.
+func (c *Controllers) respondOK(ctx *gin.Context, message string, data any) {
+	c.respondSuccess(ctx, http.StatusOK, message, data)
+}
+
+// respondCreated sends a standard HTTP 201 Created JSON success envelope.
+func (c *Controllers) respondCreated(ctx *gin.Context, message string, data any) {
+	c.respondSuccess(ctx, http.StatusCreated, message, data)
+}
+
+// respondEmpty sends a standard HTTP 200 OK JSON response without a data payload.
+func (c *Controllers) respondEmpty(ctx *gin.Context, message string) {
+	ctx.JSON(http.StatusOK, dtos.BaseResponse{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   message,
 		Timestamp: time.Now(),
 	})
 }

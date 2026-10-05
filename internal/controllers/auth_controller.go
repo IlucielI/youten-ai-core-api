@@ -1,9 +1,6 @@
 package controllers
 
 import (
-	"net/http"
-	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -32,13 +29,7 @@ func (c *Controllers) Register(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.UserResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "User registered successfully",
-		Data:      user,
-		Timestamp: time.Now(),
-	})
+	c.respondCreated(ctx, "User registered successfully", user)
 }
 
 // Login handles user authentication and JWT session token generation.
@@ -60,13 +51,7 @@ func (c *Controllers) Login(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AuthResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "Login successful",
-		Data:      authResp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Login successful", authResp)
 }
 
 // RefreshToken handles session token rotation request.
@@ -88,13 +73,7 @@ func (c *Controllers) RefreshToken(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AuthResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "Token refreshed successfully",
-		Data:      authResp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Token refreshed successfully", authResp)
 }
 
 // Logout handles session termination and refresh token revocation.
@@ -115,12 +94,7 @@ func (c *Controllers) Logout(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "Logout successful",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "Logout successful")
 }
 
 // ForgotPassword handles requesting a password reset email.
@@ -142,12 +116,7 @@ func (c *Controllers) ForgotPassword(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "If your email is registered, you will receive a password reset link shortly",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "If your email is registered, you will receive a password reset link shortly")
 }
 
 // ResetPassword handles resetting the user password using a valid reset token.
@@ -168,12 +137,7 @@ func (c *Controllers) ResetPassword(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "Password reset successfully",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "Password reset successfully")
 }
 
 // GetMe retrieves the authenticated user's profile and dynamic daily quota.
@@ -190,13 +154,7 @@ func (c *Controllers) GetMe(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.UserProfileResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "User profile retrieved successfully",
-		Data:      profile,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "User profile retrieved successfully", profile)
 }
 
 // UpdateProfile handles updating the authenticated user's profile information.
@@ -224,13 +182,7 @@ func (c *Controllers) UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.UserProfileResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "User profile updated successfully",
-		Data:      profile,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "User profile updated successfully", profile)
 }
 
 // ChangePassword handles password update for the authenticated user.
@@ -257,10 +209,5 @@ func (c *Controllers) ChangePassword(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "Password changed successfully",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "Password changed successfully")
 }

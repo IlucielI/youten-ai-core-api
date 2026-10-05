@@ -54,13 +54,7 @@ func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.UpdateSpeakersResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "transcript speaker labels updated successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "transcript speaker labels updated successfully", resp)
 }
 
 // RegenerateSummary handles generating a new summary version with optional template and custom angle.
@@ -104,13 +98,7 @@ func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SummaryVersionResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "summary regenerated successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "summary regenerated successfully", resp)
 }
 
 // ListSummaryVersions handles listing all summary versions for a recording.
@@ -131,13 +119,7 @@ func (c *Controllers) ListSummaryVersions(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[[]dtos.SummaryVersionResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "summary versions retrieved successfully",
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "summary versions retrieved successfully", resp)
 }
 
 // ActivateSummaryVersion handles switching the active summary version of a recording.
@@ -164,13 +146,7 @@ func (c *Controllers) ActivateSummaryVersion(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SummaryVersionResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "summary version activated successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "summary version activated successfully", resp)
 }
 
 // ExportRecording handles downloading meeting MOM and transcript in multiple formats (markdown, txt, json, pdf).
@@ -210,11 +186,5 @@ func (c *Controllers) GetWorkspaceSpeakers(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.SpeakerDirectoryResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "workspace speakers retrieved successfully",
-		Data:      *res,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "workspace speakers retrieved successfully", res)
 }

@@ -73,12 +73,7 @@ func (c *Controllers) ClaimRecording(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recording claimed successfully",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "recording claimed successfully")
 }
 
 // ClaimBulkRecordings handles claiming multiple guest recording sessions to the authenticated user.
@@ -111,13 +106,7 @@ func (c *Controllers) ClaimBulkRecordings(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.BulkClaimResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recordings claimed successfully",
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "recordings claimed successfully", resp)
 }
 
 // ToggleRecordingShare handles toggling public sharing on or off for a recording.
@@ -157,13 +146,7 @@ func (c *Controllers) ToggleRecordingShare(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ShareToggleResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recording share settings updated successfully",
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "recording share settings updated successfully", resp)
 }
 
 // GetSharedRecording handles public retrieval of a shared recording by its share token.
@@ -181,11 +164,5 @@ func (c *Controllers) GetSharedRecording(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SharedRecordingResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "shared recording retrieved successfully",
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "shared recording retrieved successfully", resp)
 }

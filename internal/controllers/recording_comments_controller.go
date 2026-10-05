@@ -55,13 +55,7 @@ func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dtos.APIResponse[dtos.CommentResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "comment created successfully",
-		Data:      *resp,
-		Timestamp: time.Now(),
-	})
+	c.respondCreated(ctx, "comment created successfully", resp)
 }
 
 // ListInlineComments handles retrieving all timestamped inline comments for a recording.
@@ -82,13 +76,7 @@ func (c *Controllers) ListInlineComments(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[[]dtos.CommentResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "comments retrieved successfully",
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "comments retrieved successfully", resp)
 }
 
 // DeleteInlineComment handles deleting an inline comment for a recording.
@@ -115,12 +103,7 @@ func (c *Controllers) DeleteInlineComment(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "comment deleted successfully",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "comment deleted successfully")
 }
 
 // StreamRecordingChat handles interactive RAG chat streaming via Server-Sent Events (SSE).
@@ -245,11 +228,5 @@ func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.WorkspaceAskResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "workspace memory response generated successfully",
-		Data:      *res,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "workspace memory response generated successfully", res)
 }

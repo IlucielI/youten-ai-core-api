@@ -2,23 +2,29 @@ package services
 
 import (
 	"context"
+	"net/http"
+	"time"
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/repositories"
 )
 
+// MediaFetcher defines a function signature to safely stream external media.
+type MediaFetcher func(ctx context.Context, targetURL string, timeout time.Duration) (*http.Response, error)
+
 // Service is the unified application service container.
 type Service struct {
-	cfg       config.Config
-	storage   FileStorage
-	repo      *repositories.Repositories
-	publisher EventPublisher
-	mailer    EmailSender
+	cfg            config.Config
+	storage        FileStorage
+	repo           *repositories.Repositories
+	publisher      EventPublisher
+	mailer         EmailSender
 	stt            STTProvider
 	llm            LLMProvider
 	embedding      EmbeddingProvider
 	audioExtractor AudioExtractor
+	mediaFetcher   MediaFetcher
 }
 
 // New creates a new unified service container.
@@ -167,6 +173,17 @@ func (s *Service) AudioExtractor() AudioExtractor {
 		return nil
 	}
 	return s.audioExtractor
+}
+
+// SetMediaFetcher allows injecting or overriding external media streaming fetcher (used in testing).
+func (s *Service) SetMediaFetcher(fetcher MediaFetcher) {
+	s.mediaFetcher = fetcher
+}
+
+// WithMediaFetcher fluently sets the external media streaming fetcher.
+func (s *Service) WithMediaFetcher(fetcher MediaFetcher) *Service {
+	s.mediaFetcher = fetcher
+	return s
 }
 
 // wrapError wraps unknown or system errors into structured AppError.

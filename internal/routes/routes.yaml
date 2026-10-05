@@ -83,3 +83,10 @@ routes:
     path: /v1/recordings/confirm-upload
     handler: UploadRecording
     optional_auth: true
+
+  # Recording link import ingestion with anti-SSRF defense
+  - method: POST
+    path: /v1/recordings/import-url
+    handler: ImportURL
+    optional_auth: true
+

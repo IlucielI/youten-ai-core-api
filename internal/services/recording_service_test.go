@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -367,5 +368,225 @@ func TestService_CleanupExpiredRecordings(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("expected 1 cleaned recording, got %d", count)
+	}
+}
+
+func TestService_ImportRecordingFromURL_SSRFBlocked(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+
+	// Loopback IP
+	_, err := svc.ImportRecordingFromURL(context.Background(), dtos.ImportURLRequest{
+		URL: "http://127.0.0.1:8080/audio.mp3",
+	})
+	if !errors.Is(err, constants.ErrSSRFBlocked) {
+		t.Fatalf("expected ErrSSRFBlocked for loopback, got %v", err)
+	}
+
+	// Private IP RFC 1918
+	_, err = svc.ImportRecordingFromURL(context.Background(), dtos.ImportURLRequest{
+		URL: "http://192.168.1.100/recording.wav",
+	})
+	if !errors.Is(err, constants.ErrSSRFBlocked) {
+		t.Fatalf("expected ErrSSRFBlocked for private IP, got %v", err)
+	}
+
+	// AWS Cloud Metadata IP
+	_, err = svc.ImportRecordingFromURL(context.Background(), dtos.ImportURLRequest{
+		URL: "http://169.254.169.254/latest/meta-data/",
+	})
+	if !errors.Is(err, constants.ErrSSRFBlocked) {
+		t.Fatalf("expected ErrSSRFBlocked for metadata IP, got %v", err)
+	}
+}
+
+func TestService_ImportRecordingFromURL_InvalidScheme(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+
+	_, err := svc.ImportRecordingFromURL(context.Background(), dtos.ImportURLRequest{
+		URL: "ftp://example.com/audio.mp3",
+	})
+	if !errors.Is(err, constants.ErrInvalidImportURL) {
+		t.Fatalf("expected ErrInvalidImportURL, got %v", err)
+	}
+}
+
+func TestService_ImportRecordingFromURL_GuestQuotaExceeded(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(is_guest = TRUE AND guest_ip = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("198.51.100.99", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(constants.DefaultGuestDailyQuota))
+
+	ctx := ctxmeta.WithClientMeta(context.Background(), "198.51.100.99", "")
+	_, err := svc.ImportRecordingFromURL(ctx, dtos.ImportURLRequest{
+		URL: "https://8.8.8.8/podcast.mp3",
+	})
+	if !errors.Is(err, constants.ErrGuestDailyQuotaExceeded) {
+		t.Fatalf("expected ErrGuestDailyQuotaExceeded, got %v", err)
+	}
+}
+
+func TestService_ImportRecordingFromURL_AuthQuotaExceeded(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "daily_quota_override"}).AddRow(userID, constants.UserStatusActive, nil))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(user_id = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(constants.DefaultUserDailyQuota))
+
+	_, err := svc.ImportRecordingFromURL(ctx, dtos.ImportURLRequest{
+		URL: "https://8.8.8.8/podcast.mp3",
+	})
+	if !errors.Is(err, constants.ErrDailyQuotaExceeded) {
+		t.Fatalf("expected ErrDailyQuotaExceeded, got %v", err)
+	}
+}
+
+func TestService_ImportRecordingFromURL_FetchFailed(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(is_guest = TRUE AND guest_ip = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	svc.SetMediaFetcher(func(ctx context.Context, targetURL string, timeout time.Duration) (*http.Response, error) {
+		return nil, errors.New("upstream connection timed out")
+	})
+
+	_, err := svc.ImportRecordingFromURL(context.Background(), dtos.ImportURLRequest{
+		URL: "https://8.8.8.8/podcast.mp3",
+	})
+	if err == nil || !strings.Contains(err.Error(), "upstream connection timed out") {
+		t.Fatalf("expected fetch error, got %v", err)
+	}
+}
+
+func TestService_ImportRecordingFromURL_UnsupportedMediaType(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(is_guest = TRUE AND guest_ip = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	svc.SetMediaFetcher(func(ctx context.Context, targetURL string, timeout time.Duration) (*http.Response, error) {
+		resp := &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(strings.NewReader("<html>Not audio</html>")),
+			ContentLength: 20,
+		}
+		resp.Header.Set("Content-Type", "text/html")
+		return resp, nil
+	})
+
+	_, err := svc.ImportRecordingFromURL(context.Background(), dtos.ImportURLRequest{
+		URL: "https://8.8.8.8/document.html",
+	})
+	if !errors.Is(err, constants.ErrUnsupportedMediaType) {
+		t.Fatalf("expected ErrUnsupportedMediaType, got %v", err)
+	}
+}
+
+func TestService_ImportRecordingFromURL_Success_Auth(t *testing.T) {
+	svc, mock, _, pub := setupRecordingTestService(t)
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow(userID, constants.UserStatusActive))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(user_id = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	svc.SetMediaFetcher(func(ctx context.Context, targetURL string, timeout time.Duration) (*http.Response, error) {
+		resp := &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(strings.NewReader("dummy audio bytes")),
+			ContentLength: 17,
+		}
+		resp.Header.Set("Content-Type", "audio/mpeg")
+		return resp, nil
+	})
+
+	recID := uuid.New()
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "recordings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(recID, now, now))
+	mock.ExpectCommit()
+
+	resp, err := svc.ImportRecordingFromURL(ctx, dtos.ImportURLRequest{
+		URL:      "https://8.8.8.8/audio.mp3",
+		Title:    "Custom Title",
+		Template: "MOM",
+		Language: "en",
+	})
+	if err != nil {
+		t.Fatalf("unexpected import error: %v", err)
+	}
+
+	if resp.Title != "Custom Title" {
+		t.Errorf("expected Title Custom Title, got %s", resp.Title)
+	}
+	if resp.IsGuest {
+		t.Error("expected IsGuest false for authenticated user")
+	}
+	if resp.Status != "PENDING" {
+		t.Errorf("expected status PENDING, got %s", resp.Status)
+	}
+	if len(pub.publishedTopics) == 0 || pub.publishedTopics[0] != constants.TopicRecordingUploaded {
+		t.Errorf("expected event published to %s, got %v", constants.TopicRecordingUploaded, pub.publishedTopics)
+	}
+}
+
+func TestService_ImportRecordingFromURL_Success_Guest(t *testing.T) {
+	svc, mock, _, pub := setupRecordingTestService(t)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(is_guest = TRUE AND guest_ip = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("203.0.113.5", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	svc.SetMediaFetcher(func(ctx context.Context, targetURL string, timeout time.Duration) (*http.Response, error) {
+		resp := &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(strings.NewReader("wav audio stream")),
+			ContentLength: 16,
+		}
+		resp.Header.Set("Content-Type", "audio/wav")
+		return resp, nil
+	})
+
+	recID := uuid.New()
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "recordings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(recID, now, now))
+	mock.ExpectCommit()
+
+	ctx := ctxmeta.WithClientMeta(context.Background(), "203.0.113.5", "")
+	resp, err := svc.ImportRecordingFromURL(ctx, dtos.ImportURLRequest{
+		URL: "https://8.8.8.8/sample.wav",
+	})
+	if err != nil {
+		t.Fatalf("unexpected import error: %v", err)
+	}
+
+	if !resp.IsGuest {
+		t.Error("expected IsGuest true for unauthenticated client")
+	}
+	if resp.OwnershipToken == nil || *resp.OwnershipToken == "" {
+		t.Error("expected ownership token for guest")
+	}
+	if len(pub.publishedTopics) == 0 {
+		t.Error("expected publication to background queue")
 	}
 }

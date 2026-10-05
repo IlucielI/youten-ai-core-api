@@ -118,3 +118,55 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// ImportURL handles media ingestion from a remote URL with Anti-SSRF protection.
+func (c *Controllers) ImportURL(ctx *gin.Context) {
+	if c == nil || c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	// Restrict JSON request body size (64KB)
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 64*1024)
+
+	var req dtos.ImportURLRequest
+	if err := ctx.ShouldBind(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	resp, err := c.svc.ImportRecordingFromURL(ctx.Request.Context(), req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	if resp == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, dtos.APIResponse[dtos.RecordingUploadResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "recording imported successfully",
+		Data:      *resp,
+		Timestamp: time.Now(),
+	})
+}
+

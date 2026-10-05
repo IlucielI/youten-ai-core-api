@@ -52,6 +52,15 @@ var (
 	// ErrUnsupportedMediaType is returned when uploaded file format is not supported.
 	ErrUnsupportedMediaType = apperror.New(http.StatusUnsupportedMediaType, ResponseCodeUnsupportedMediaType, "unsupported media type")
 
+	// ErrSSRFBlocked is returned when an imported URL resolves to a forbidden, private, or internal network address.
+	ErrSSRFBlocked = apperror.New(http.StatusBadRequest, "ERR_SSRF_BLOCKED", "import URL resolves to a forbidden, private, or internal network address")
+
+	// ErrInvalidImportURL is returned when an imported URL has an invalid scheme or format.
+	ErrInvalidImportURL = apperror.New(http.StatusBadRequest, "ERR_INVALID_IMPORT_URL", "invalid or unsupported import URL scheme, only http and https are allowed")
+
+	// ErrImportFetchFailed is returned when downloading media from the imported URL fails.
+	ErrImportFetchFailed = apperror.New(http.StatusBadRequest, "ERR_IMPORT_FETCH_FAILED", "failed to download media from import URL")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

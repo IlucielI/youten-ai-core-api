@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
 	"code-base-golang/internal/repositories"
@@ -964,3 +965,124 @@ func TestControllers_ResetPassword_ServiceError(t *testing.T) {
 		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 }
+
+func TestControllers_GetMe_Success(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "me@example.com"
+	now := time.Now()
+
+	// 1. FindUserByID
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "daily_quota_override", "email_verified", "created_at"}).
+			AddRow(userID, email, "Me User", constants.UserStatusActive, nil, true, now))
+
+	// 2. CountUserRecordingsToday
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	ctx.Request = ctx.Request.WithContext(ctxmeta.WithAuthUser(ctx.Request.Context(), ctxmeta.AuthUser{
+		UserID: userID,
+		Email:  email,
+	}))
+
+	ctrls.GetMe(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.UserProfileResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp.Data == nil {
+		t.Fatal("expected non-nil user profile response")
+	}
+	if resp.Data.ID != userID || resp.Data.Email != email {
+		t.Errorf("expected user id %s, email %s, got id %s, email %s", userID, email, resp.Data.ID, resp.Data.Email)
+	}
+	if resp.Data.DailyQuota != constants.DefaultUserDailyQuota {
+		t.Errorf("expected daily quota %d, got %d", constants.DefaultUserDailyQuota, resp.Data.DailyQuota)
+	}
+	if resp.Data.QuotaUsedToday != 1 {
+		t.Errorf("expected quota used today 1, got %d", resp.Data.QuotaUsedToday)
+	}
+	if resp.Data.QuotaRemaining != constants.DefaultUserDailyQuota-1 {
+		t.Errorf("expected quota remaining %d, got %d", constants.DefaultUserDailyQuota-1, resp.Data.QuotaRemaining)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_GetMe_Unauthorized(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	// 1. Missing context auth user
+	{
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+
+		ctrls.GetMe(ctx)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401 when no auth user in context, got %d", w.Code)
+		}
+	}
+
+	// 2. Guest user in context
+	{
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+		ctx.Request = ctx.Request.WithContext(ctxmeta.WithGuestUser(ctx.Request.Context()))
+
+		ctrls.GetMe(ctx)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401 when guest user in context, got %d", w.Code)
+		}
+	}
+}
+
+func TestControllers_GetMe_UserNotFound(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	ctx.Request = ctx.Request.WithContext(ctxmeta.WithAuthUser(ctx.Request.Context(), ctxmeta.AuthUser{
+		UserID: userID,
+		Email:  "unknown@example.com",
+	}))
+
+	ctrls.GetMe(ctx)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 when user not found, got %d", w.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+

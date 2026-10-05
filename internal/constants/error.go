@@ -25,6 +25,9 @@ var (
 	// ErrNotFound is returned when a requested resource is not found.
 	ErrNotFound = apperror.New(http.StatusNotFound, ResponseCodeNotFound, "resource not found")
 
+	// ErrUserNotFound is returned when a specified user does not exist.
+	ErrUserNotFound = apperror.New(http.StatusNotFound, "ERR_USER_NOT_FOUND", "user not found")
+
 	// ErrConflict is returned when an action conflicts with current state.
 	ErrConflict = apperror.New(http.StatusConflict, ResponseCodeConflict, "resource conflict")
 

@@ -259,6 +259,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		"/v1/auth/logout":          "POST",
 		"/v1/auth/forgot-password": "POST",
 		"/v1/auth/reset-password":  "POST",
+		"/v1/auth/me":              "GET",
 	}
 
 	registered := make(map[string]string)
@@ -270,6 +271,14 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		if gotMethod, exists := registered[path]; !exists || gotMethod != method {
 			t.Errorf("expected route %s %s to be registered in Gin, found method %s (exists=%v)", method, path, gotMethod, exists)
 		}
+	}
+
+	// Verify /v1/auth/me is protected by auth middleware (returns 401 Unauthorized without header)
+	wMe := httptest.NewRecorder()
+	reqMe, _ := http.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	router.ServeHTTP(wMe, reqMe)
+	if wMe.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for /v1/auth/me without token, got %d", wMe.Code)
 	}
 }
 

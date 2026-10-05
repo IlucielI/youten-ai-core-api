@@ -1506,3 +1506,133 @@ func TestService_Authenticate(t *testing.T) {
 	}
 }
 
+func TestService_GetProfile_Success_DefaultQuota(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "profile@example.com"
+	now := time.Now()
+
+	// 1. FindUserByID
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "daily_quota_override", "email_verified", "created_at"}).
+			AddRow(userID, email, "Jane Doe", constants.UserStatusActive, nil, true, now))
+
+	// 2. CountUserRecordingsToday
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+	resp, err := svc.GetProfile(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("expected successful profile retrieval, got: %v", err)
+	}
+	if resp.ID != userID || resp.Email != email || resp.FullName != "Jane Doe" {
+		t.Fatalf("unexpected user info: %+v", resp)
+	}
+	if resp.DailyQuota != constants.DefaultUserDailyQuota {
+		t.Errorf("expected daily quota %d, got %d", constants.DefaultUserDailyQuota, resp.DailyQuota)
+	}
+	if resp.QuotaUsedToday != 2 {
+		t.Errorf("expected quota used today 2, got %d", resp.QuotaUsedToday)
+	}
+	if resp.QuotaRemaining != constants.DefaultUserDailyQuota-2 {
+		t.Errorf("expected quota remaining %d, got %d", constants.DefaultUserDailyQuota-2, resp.QuotaRemaining)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_GetProfile_Success_QuotaOverride_Exceeded(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "power@example.com"
+	now := time.Now()
+	override := 10
+
+	// 1. FindUserByID with override = 10
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "daily_quota_override", "email_verified", "created_at"}).
+			AddRow(userID, email, "Power User", constants.UserStatusActive, override, false, now))
+
+	// 2. CountUserRecordingsToday returns 12 (exceeded)
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(12))
+
+	resp, err := svc.GetProfile(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("expected successful profile retrieval, got: %v", err)
+	}
+	if resp.DailyQuota != 10 {
+		t.Errorf("expected daily quota 10, got %d", resp.DailyQuota)
+	}
+	if resp.QuotaUsedToday != 12 {
+		t.Errorf("expected quota used today 12, got %d", resp.QuotaUsedToday)
+	}
+	if resp.QuotaRemaining != 0 {
+		t.Errorf("expected quota remaining 0 when exceeded, got %d", resp.QuotaRemaining)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_GetProfile_Errors(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	// 1. Nil service receiver
+	var nilSvc *services.Service
+	_, err := nilSvc.GetProfile(context.Background(), uuid.New())
+	if !errors.Is(err, constants.ErrInternalServerError) {
+		t.Fatalf("expected ErrInternalServerError on nil receiver, got: %v", err)
+	}
+
+	// 2. Nil user ID
+	_, err = svc.GetProfile(context.Background(), uuid.Nil)
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
+	}
+
+	// 3. User not found
+	unknownID := uuid.New()
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(unknownID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err = svc.GetProfile(context.Background(), unknownID)
+	if !errors.Is(err, constants.ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound, got: %v", err)
+	}
+
+	// 4. DB error on count
+	existingID := uuid.New()
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(existingID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "created_at"}).
+			AddRow(existingID, "user@example.com", "User", constants.UserStatusActive, time.Now()))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WithArgs(existingID, sqlmock.AnyArg()).
+		WillReturnError(errors.New("db connection failure"))
+
+	_, err = svc.GetProfile(context.Background(), existingID)
+	if err == nil {
+		t.Fatal("expected error on count failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+

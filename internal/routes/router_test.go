@@ -271,6 +271,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"GET", "/v1/recordings"},
 		{"DELETE", "/v1/recordings/:id"},
 		{"POST", "/v1/recordings/:id/claim"},
+		{"POST", "/v1/recordings/claim"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -383,6 +384,18 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router.ServeHTTP(wClaim, reqClaim)
 	if wClaim.Code != http.StatusUnauthorized {
 		t.Fatalf("expected POST /v1/recordings/:id/claim to return 401 Unauthorized without header (auth: true), got %d", wClaim.Code)
+	}
+
+	// Verify POST /v1/recordings/claim is configured with auth: true (returns 401 Unauthorized without header)
+	wBulkClaim := httptest.NewRecorder()
+	reqBulkClaim, err := http.NewRequest(http.MethodPost, "/v1/recordings/claim", strings.NewReader(`{"tokens":["tok1","tok2"]}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqBulkClaim.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wBulkClaim, reqBulkClaim)
+	if wBulkClaim.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/claim to return 401 Unauthorized without header (auth: true), got %d", wBulkClaim.Code)
 	}
 }
 

@@ -549,6 +549,46 @@ func (s *Service) ClaimRecording(ctx context.Context, id uuid.UUID, req dtos.Cla
 	return nil
 }
 
+// ClaimBulkRecordings transfers ownership of multiple guest recording sessions to the authenticated user.
+func (s *Service) ClaimBulkRecordings(ctx context.Context, req dtos.BulkClaimRequest) (*dtos.BulkClaimResponse, error) {
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	if !isAuth || !hasUserID {
+		return nil, constants.ErrUnauthorized
+	}
+
+	// Filter and deduplicate tokens
+	tokenMap := make(map[string]bool)
+	var tokens []string
+	for _, t := range req.Tokens {
+		trimmed := strings.TrimSpace(t)
+		if trimmed != "" && !tokenMap[trimmed] {
+			tokenMap[trimmed] = true
+			tokens = append(tokens, trimmed)
+		}
+	}
+
+	if len(tokens) == 0 {
+		return nil, constants.ErrBadRequest
+	}
+
+	claimedIDs, err := s.repo.ClaimRecordingsByTokens(ctx, tokens, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk claim recordings: %w", err)
+	}
+
+	idStrings := make([]string, 0, len(claimedIDs))
+	for _, id := range claimedIDs {
+		idStrings = append(idStrings, id.String())
+	}
+
+	return &dtos.BulkClaimResponse{
+		ClaimedCount: len(idStrings),
+		RecordingIDs: idStrings,
+	}, nil
+}
+
+
 // ImportRecordingFromURL validates target link against SSRF defense policies, streams media into S3,
 // records the new recording entry, and emits the background pipeline extraction event.
 func (s *Service) ImportRecordingFromURL(

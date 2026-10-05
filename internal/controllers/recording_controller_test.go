@@ -1143,6 +1143,133 @@ func TestControllers_ClaimRecording_Success(t *testing.T) {
 	}
 }
 
+func TestControllers_ClaimBulkRecordings_NilReceiver(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/claim", nil)
+
+	var ctrls *Controllers
+	ctrls.ClaimBulkRecordings(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ClaimBulkRecordings_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/claim", nil)
+
+	ctrls := &Controllers{}
+	ctrls.ClaimBulkRecordings(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ClaimBulkRecordings_InvalidJSON(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/claim", strings.NewReader(`{invalid}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.ClaimBulkRecordings(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ClaimBulkRecordings_ValidationError(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/claim", strings.NewReader(`{"tokens":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.ClaimBulkRecordings(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ClaimBulkRecordings_ServiceError(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/claim", strings.NewReader(`{"tokens":["tok-1"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req // No auth user
+
+	ctrls.ClaimBulkRecordings(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_ClaimBulkRecordings_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	recID1 := uuid.New()
+	recID2 := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/claim", strings.NewReader(`{"tokens":["tok-1","tok-2"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID})
+	c.Request = req.WithContext(ctx)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1,\$2\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("tok-1", "tok-2").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+			AddRow(recID1, "tok-1", true).
+			AddRow(recID2, "tok-2", true))
+
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE id IN \(\$4,\$5\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recID1, recID2).
+		WillReturnResult(sqlmock.NewResult(1, 2))
+	mock.ExpectCommit()
+
+	ctrls.ClaimBulkRecordings(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.BulkClaimResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if resp.Data.ClaimedCount != 2 {
+		t.Errorf("expected ClaimedCount 2, got %d", resp.Data.ClaimedCount)
+	}
+	if len(resp.Data.RecordingIDs) != 2 {
+		t.Errorf("expected 2 RecordingIDs, got %d", len(resp.Data.RecordingIDs))
+	}
+}
+
+
 
 
 

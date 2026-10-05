@@ -283,4 +283,23 @@ func (r *ClaimRecordingRequest) Validate() error {
 	)
 }
 
+// BulkClaimRequest encapsulates the list of guest ownership tokens to be claimed to the authenticated user account.
+type BulkClaimRequest struct {
+	Tokens []string `json:"tokens"`
+}
+
+// Validate validates BulkClaimRequest fields using ozzo-validation.
+func (r *BulkClaimRequest) Validate() error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Tokens, validation.Required, validation.Length(1, 100)),
+	)
+}
+
+// BulkClaimResponse encapsulates the summary result of a bulk claim operation.
+type BulkClaimResponse struct {
+	ClaimedCount int      `json:"claimed_count"`
+	RecordingIDs []string `json:"recording_ids"`
+}
+
+
 

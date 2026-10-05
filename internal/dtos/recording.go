@@ -6,6 +6,7 @@ import (
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/go-ozzo/ozzo-validation/v4/is"
 )
 
 // SupportedMIMETypes enumerates the allowed audio and video MIME formats.
@@ -102,4 +103,22 @@ type RecordingUploadResponse struct {
 	IsGuest          bool      `json:"is_guest"`
 	OwnershipToken   *string   `json:"ownership_token,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
+}
+
+// ImportURLRequest carries target URL and parameters for link import media ingestion.
+type ImportURLRequest struct {
+	URL      string `form:"url" json:"url"`
+	Title    string `form:"title" json:"title"`
+	Template string `form:"template" json:"template"`
+	Language string `form:"language" json:"language"`
+}
+
+// Validate checks request constraints for URL import.
+func (r ImportURLRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.URL, validation.Required, is.URL),
+		validation.Field(&r.Title, validation.Length(0, 255)),
+		validation.Field(&r.Template, validation.Length(0, 100)),
+		validation.Field(&r.Language, validation.Length(0, 50)),
+	)
 }

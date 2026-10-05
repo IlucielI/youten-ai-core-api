@@ -376,3 +376,152 @@ func TestControllers_UploadRecording_ServiceError(t *testing.T) {
 		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
+
+func TestControllers_ImportURL_NilService(t *testing.T) {
+	ctrls := &Controllers{}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, err := createJSONRequest(http.MethodPost, "/v1/recordings/import-url", dtos.ImportURLRequest{
+		URL: "https://8.8.8.8/audio.mp3",
+	})
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	c.Request = req
+
+	ctrls.ImportURL(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ImportURL_InvalidPayload(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, err := createJSONRequest(http.MethodPost, "/v1/recordings/import-url", dtos.ImportURLRequest{
+		URL: "", // missing URL
+	})
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	c.Request = req
+
+	ctrls.ImportURL(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ImportURL_SSRFBlocked(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, err := createJSONRequest(http.MethodPost, "/v1/recordings/import-url", dtos.ImportURLRequest{
+		URL: "http://127.0.0.1:8080/audio.mp3",
+	})
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	c.Request = req
+
+	ctrls.ImportURL(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for SSRF blocked target, got %d", w.Code)
+	}
+}
+
+func TestControllers_ImportURL_ServiceError(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, err := createJSONRequest(http.MethodPost, "/v1/recordings/import-url", dtos.ImportURLRequest{
+		URL: "https://8.8.8.8/audio.mp3",
+	})
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WillReturnError(errors.New("db error"))
+
+	ctrls.ImportURL(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ImportURL_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	ctrls.svc.SetMediaFetcher(func(ctx context.Context, targetURL string, timeout time.Duration) (*http.Response, error) {
+		resp := &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(strings.NewReader("audio stream")),
+			ContentLength: 12,
+		}
+		resp.Header.Set("Content-Type", "audio/mpeg")
+		return resp, nil
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, err := createJSONRequest(http.MethodPost, "/v1/recordings/import-url", dtos.ImportURLRequest{
+		URL:   "https://8.8.8.8/audio.mp3",
+		Title: "Imported Audio",
+	})
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	recID := uuid.New()
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "recordings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(recID, now, now))
+	mock.ExpectCommit()
+
+	ctrls.ImportURL(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.RecordingUploadResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON response: %v", err)
+	}
+	if resp.Data.Title != "Imported Audio" {
+		t.Errorf("expected Title 'Imported Audio', got %s", resp.Data.Title)
+	}
+	if !resp.Data.IsGuest {
+		t.Error("expected IsGuest true")
+	}
+	if resp.Data.OwnershipToken == nil {
+		t.Error("expected ownership token for guest")
+	}
+}
+

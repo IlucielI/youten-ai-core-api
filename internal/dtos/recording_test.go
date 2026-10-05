@@ -95,3 +95,38 @@ func TestRecordingDTO_UploadRecordingRequest_Validate(t *testing.T) {
 		t.Error("expected error for title exceeding 255 chars, got nil")
 	}
 }
+
+func TestRecordingDTO_ImportURLRequest_Validate(t *testing.T) {
+	validReq := dtos.ImportURLRequest{
+		URL:      "https://example.com/audio.mp3",
+		Title:    "Podcast Episode",
+		Template: "GENERAL",
+		Language: "id",
+	}
+	if err := validReq.Validate(); err != nil {
+		t.Errorf("expected valid request, got %v", err)
+	}
+
+	missingURL := dtos.ImportURLRequest{
+		Title: "No URL",
+	}
+	if err := missingURL.Validate(); err == nil {
+		t.Error("expected error for missing URL, got nil")
+	}
+
+	invalidURL := dtos.ImportURLRequest{
+		URL: "not-a-valid-url",
+	}
+	if err := invalidURL.Validate(); err == nil {
+		t.Error("expected error for invalid URL format, got nil")
+	}
+
+	longTitle := dtos.ImportURLRequest{
+		URL:   "https://example.com/stream.wav",
+		Title: string(make([]byte, 300)),
+	}
+	if err := longTitle.Validate(); err == nil {
+		t.Error("expected error for title exceeding 255 chars, got nil")
+	}
+}
+

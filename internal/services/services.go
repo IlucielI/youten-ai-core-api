@@ -51,9 +51,6 @@ func (s *Service) SetStorage(storage FileStorage) {
 
 // Storage returns the underlying file storage provider.
 func (s *Service) Storage() FileStorage {
-	if s == nil {
-		return nil
-	}
 	return s.storage
 }
 
@@ -64,9 +61,6 @@ func (s *Service) SetRepositories(repo *repositories.Repositories) {
 
 // Repositories returns the underlying repositories container.
 func (s *Service) Repositories() *repositories.Repositories {
-	if s == nil {
-		return nil
-	}
 	return s.repo
 }
 
@@ -77,9 +71,6 @@ func (s *Service) SetPublisher(pub EventPublisher) {
 
 // Publisher returns the underlying event publisher adapter.
 func (s *Service) Publisher() EventPublisher {
-	if s == nil {
-		return nil
-	}
 	return s.publisher
 }
 
@@ -96,9 +87,6 @@ func (s *Service) WithMailer(mailer EmailSender) *Service {
 
 // Mailer returns the underlying email sender adapter.
 func (s *Service) Mailer() EmailSender {
-	if s == nil {
-		return nil
-	}
 	return s.mailer
 }
 
@@ -115,9 +103,6 @@ func (s *Service) WithSTT(stt STTProvider) *Service {
 
 // STT returns the underlying STT provider adapter.
 func (s *Service) STT() STTProvider {
-	if s == nil {
-		return nil
-	}
 	return s.stt
 }
 
@@ -134,9 +119,6 @@ func (s *Service) WithLLM(llm LLMProvider) *Service {
 
 // LLM returns the underlying LLM provider adapter.
 func (s *Service) LLM() LLMProvider {
-	if s == nil {
-		return nil
-	}
 	return s.llm
 }
 
@@ -153,9 +135,6 @@ func (s *Service) WithEmbedding(emb EmbeddingProvider) *Service {
 
 // Embedding returns the underlying Embedding provider adapter.
 func (s *Service) Embedding() EmbeddingProvider {
-	if s == nil {
-		return nil
-	}
 	return s.embedding
 }
 
@@ -172,9 +151,6 @@ func (s *Service) WithAudioExtractor(ext AudioExtractor) *Service {
 
 // AudioExtractor returns the underlying AudioExtractor adapter.
 func (s *Service) AudioExtractor() AudioExtractor {
-	if s == nil {
-		return nil
-	}
 	return s.audioExtractor
 }
 
@@ -202,9 +178,6 @@ func (s *Service) WithSSEHub(hub sse.Hub) *Service {
 
 // SSEHub returns the underlying SSE hub.
 func (s *Service) SSEHub() sse.Hub {
-	if s == nil {
-		return nil
-	}
 	return s.sseHub
 }
 

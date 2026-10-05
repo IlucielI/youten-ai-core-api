@@ -419,6 +419,14 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "new password same as old password",
+			req: dtos.ChangePasswordRequest{
+				OldPassword: "samePassword123",
+				NewPassword: "samePassword123",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -430,5 +438,3 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 		})
 	}
 }
-
-

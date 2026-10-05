@@ -101,11 +101,15 @@ func (r *ChangePasswordRequest) Validate() error {
 			validation.Required.Error("new password is required"),
 			validation.Length(8, 72).Error("new password must be between 8 and 72 characters"),
 			validation.Match(digitRegex).Error("new password must contain at least one digit"),
+			validation.By(func(value interface{}) error {
+				if newPassword, ok := value.(string); ok && newPassword == r.OldPassword {
+					return validation.NewError("validation_password_unchanged", "new password cannot be the same as current password")
+				}
+				return nil
+			}),
 		),
 	)
 }
-
-
 
 // LoginRequest defines the input payload for user authentication.
 type LoginRequest struct {

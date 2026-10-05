@@ -135,11 +135,7 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 
 // RefreshToken rotates session tokens by validating the active refresh token, revoking it, and issuing a new token pair.
 func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenRequest) (*dtos.AuthResponse, error) {
-
 	rawToken := strings.TrimSpace(req.RefreshToken)
-	if rawToken == "" {
-		return nil, constants.ErrInvalidToken
-	}
 
 	// 1. Validate JWT structure and signature
 	claims, err := jwt.ValidateToken(s.cfg, rawToken)
@@ -210,11 +206,7 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 // Revocation is implemented idempotently: if the token is non-existent, expired, or already revoked,
 // the method returns nil so that callers can safely terminate sessions without error.
 func (s *Service) Logout(ctx context.Context, req *dtos.LogoutRequest) error {
-
 	refreshToken := strings.TrimSpace(req.RefreshToken)
-	if refreshToken == "" {
-		return constants.ErrBadRequest.WithMessage("refresh_token is required")
-	}
 
 	tokenHash := hasher.HashToken(refreshToken)
 	authToken, err := s.repo.FindAuthTokenByHashAndType(ctx, tokenHash, constants.AuthTokenTypeRefresh)
@@ -242,11 +234,7 @@ func (s *Service) Logout(ctx context.Context, req *dtos.LogoutRequest) error {
 // and dispatching a transactional reset email. To prevent email enumeration attacks, this method
 // always succeeds silently (returns nil) even if the email does not exist in the system.
 func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRequest) error {
-
 	email := strings.TrimSpace(strings.ToLower(req.Email))
-	if email == "" {
-		return constants.ErrBadRequest.WithMessage("email is required")
-	}
 
 	// Look up user by email
 	user, err := s.repo.FindUserByEmail(ctx, email)
@@ -312,14 +300,7 @@ func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRe
 // Upon successful reset, the user's password is updated with bcrypt hash, the reset token
 // is marked as revoked, and all other active user sessions (refresh tokens) are revoked.
 func (s *Service) ResetPassword(ctx context.Context, req *dtos.ResetPasswordRequest) error {
-
 	token := strings.TrimSpace(req.Token)
-	if token == "" {
-		return constants.ErrBadRequest.WithMessage("token is required")
-	}
-	if len(req.NewPassword) < 8 || len(req.NewPassword) > 72 {
-		return constants.ErrBadRequest.WithMessage("password must be between 8 and 72 characters")
-	}
 
 	// Hash raw token with SHA256 to query database
 	tokenHash := hasher.HashToken(token)
@@ -436,9 +417,6 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req *dtos
 	}
 
 	fullName := strings.TrimSpace(req.FullName)
-	if fullName == "" {
-		return nil, constants.ErrBadRequest.WithMessage("full name is required")
-	}
 
 	if err := s.repo.UpdateUserFullName(ctx, userID, fullName); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -471,11 +449,6 @@ func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, req *dto
 	// Verify old password against stored hash
 	if !hasher.VerifyPassword(user.PasswordHash, req.OldPassword) {
 		return constants.ErrBadRequest.WithMessage("current password is incorrect")
-	}
-
-	// Ensure new password differs from old password
-	if req.OldPassword == req.NewPassword {
-		return constants.ErrBadRequest.WithMessage("new password cannot be the same as current password")
 	}
 
 	// Hash new password using bcrypt

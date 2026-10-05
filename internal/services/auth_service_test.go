@@ -810,16 +810,6 @@ func TestService_Logout_RevokeDatabaseError(t *testing.T) {
 	}
 }
 
-func TestService_Logout_EmptyRefreshToken(t *testing.T) {
-	svc, _, cleanup := setupAuthServiceMock(t)
-	defer cleanup()
-
-	err := svc.Logout(context.Background(), &dtos.LogoutRequest{RefreshToken: "   "})
-	if err == nil {
-		t.Fatal("expected error on empty refresh token, got nil")
-	}
-}
-
 func TestService_ForgotPassword_Success(t *testing.T) {
 	svc, mock, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
@@ -1083,16 +1073,6 @@ func TestService_ForgotPassword_MailerError(t *testing.T) {
 	}
 }
 
-func TestService_ForgotPassword_EmptyEmail(t *testing.T) {
-	svc, _, cleanup := setupAuthServiceMock(t)
-	defer cleanup()
-
-	err := svc.ForgotPassword(context.Background(), &dtos.ForgotPasswordRequest{Email: "   "})
-	if err == nil {
-		t.Fatal("expected error on empty email, got nil")
-	}
-}
-
 func TestService_ResetPassword_Success(t *testing.T) {
 	svc, mock, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
@@ -1334,26 +1314,6 @@ func TestService_ResetPassword_RevokeTokenError(t *testing.T) {
 	}
 }
 
-func TestService_ResetPassword_InvalidPayload(t *testing.T) {
-	svc, _, cleanup := setupAuthServiceMock(t)
-	defer cleanup()
-
-	err := svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "   ", NewPassword: "newPassword123"})
-	if err == nil {
-		t.Fatal("expected error on empty token, got nil")
-	}
-
-	err = svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "valid-tok", NewPassword: "short"})
-	if err == nil {
-		t.Fatal("expected error on short password, got nil")
-	}
-
-	err = svc.ResetPassword(context.Background(), &dtos.ResetPasswordRequest{Token: "valid-tok", NewPassword: strings.Repeat("a", 73)})
-	if err == nil {
-		t.Fatal("expected error on password > 72 chars, got nil")
-	}
-}
-
 func TestService_Authenticate(t *testing.T) {
 	svc, _, cleanup := setupAuthServiceMock(t)
 	defer cleanup()
@@ -1572,13 +1532,7 @@ func TestService_UpdateProfile_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
 	}
 
-	// 2. Empty full name
-	_, err = svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "   "})
-	if err == nil {
-		t.Fatal("expected error on empty full name, got nil")
-	}
-
-	// 3. User not found (0 rows affected)
+	// 2. User not found (0 rows affected)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
 		WithArgs("Ghost", sqlmock.AnyArg(), userID).
@@ -1590,7 +1544,7 @@ func TestService_UpdateProfile_Errors(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound on 0 rows affected, got: %v", err)
 	}
 
-	// 4. DB error
+	// 3. DB error
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
 		WithArgs("Failure", sqlmock.AnyArg(), userID).
@@ -1710,20 +1664,6 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error on incorrect old password, got nil")
-	}
-
-	// 5. New password same as old password
-	mock.ExpectQuery(`SELECT \* FROM "users"`).
-		WithArgs(userID, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "created_at"}).
-			AddRow(userID, "user@example.com", correctHash, constants.UserStatusActive, now))
-
-	err = svc.ChangePassword(context.Background(), userID, &dtos.ChangePasswordRequest{
-		OldPassword: correctPassword,
-		NewPassword: correctPassword,
-	})
-	if err == nil {
-		t.Fatal("expected error when new password matches old password, got nil")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

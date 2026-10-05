@@ -47,3 +47,40 @@ type SemanticSearchResponse struct {
 	Count   int                `json:"count"`
 	Results []SearchResultItem `json:"results"`
 }
+
+// WorkspaceAskRequest defines the input payload for cross-meeting workspace memory chat.
+type WorkspaceAskRequest struct {
+	Question string             `json:"question"`
+	History  []ChatMessageInput `json:"history,omitempty"`
+}
+
+// Validate validates the WorkspaceAskRequest fields.
+func (r WorkspaceAskRequest) Validate() error {
+	trimmed := strings.TrimSpace(r.Question)
+	if trimmed == "" {
+		return validation.Errors{
+			"question": validation.NewError("validation_required", "question is required and cannot be blank"),
+		}
+	}
+
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.Question, validation.Required, validation.Length(1, 4000)),
+	)
+}
+
+// MeetingSourceCitation represents a citation reference to a specific meeting and timestamp segment.
+type MeetingSourceCitation struct {
+	RecordingID    uuid.UUID `json:"recording_id"`
+	RecordingTitle string    `json:"recording_title"`
+	ChunkIndex     int       `json:"chunk_index"`
+	Snippet        string    `json:"snippet"`
+	StartTime      float64   `json:"start_time"`
+	EndTime        float64   `json:"end_time"`
+}
+
+// WorkspaceAskResponse represents the response containing synthesized answer and meeting citations.
+type WorkspaceAskResponse struct {
+	Answer  string                  `json:"answer"`
+	Sources []MeetingSourceCitation `json:"sources"`
+}
+

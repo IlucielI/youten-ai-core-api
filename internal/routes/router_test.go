@@ -598,6 +598,29 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wSearch.Code != http.StatusUnauthorized {
 		t.Fatalf("expected GET /v1/recordings/search to return 401 Unauthorized without auth header, got %d", wSearch.Code)
 	}
+
+	foundAskRoute := false
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodPost && route.Path == "/v1/recordings/ask" {
+			foundAskRoute = true
+			break
+		}
+	}
+	if !foundAskRoute {
+		t.Fatalf("expected POST /v1/recordings/ask route to be registered")
+	}
+
+	// Verify POST /v1/recordings/ask is protected by auth (returns 401 Unauthorized without header)
+	wAsk := httptest.NewRecorder()
+	reqAsk, err := http.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"test"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqAsk.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wAsk, reqAsk)
+	if wAsk.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/ask to return 401 Unauthorized without auth header, got %d", wAsk.Code)
+	}
 }
 
 

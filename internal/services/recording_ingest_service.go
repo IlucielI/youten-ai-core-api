@@ -37,39 +37,8 @@ func (s *Service) GeneratePresignUpload(ctx context.Context, req dtos.PresignUpl
 	}
 
 	// Quota validation
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-	clientIP := ctxmeta.GetClientIP(ctx)
-
-	if isAuth && hasUserID {
-		user, err := s.repo.FindUserByID(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to lookup user for quota check: %w", err)
-		}
-		if user.Status != constants.UserStatusActive {
-			return nil, constants.ErrUserInactive
-		}
-
-		dailyQuota := constants.DefaultUserDailyQuota
-		if user.DailyQuotaOverride != nil {
-			dailyQuota = *user.DailyQuotaOverride
-		}
-
-		countToday, err := s.repo.CountUserRecordingsToday(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count user daily recordings: %w", err)
-		}
-		if countToday >= int64(dailyQuota) {
-			return nil, constants.ErrDailyQuotaExceeded
-		}
-	} else {
-		countToday, err := s.repo.CountGuestRecordingsToday(ctx, clientIP)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count guest daily recordings: %w", err)
-		}
-		if countToday >= int64(constants.DefaultGuestDailyQuota) {
-			return nil, constants.ErrGuestDailyQuotaExceeded
-		}
+	if err := s.checkDailyQuota(ctx); err != nil {
+		return nil, err
 	}
 
 	// Generate unique object key: recordings/<uuid>/<original_filename>
@@ -99,40 +68,9 @@ func (s *Service) UploadRecording(
 		return nil, constants.ErrBadRequest
 	}
 
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-	clientIP := ctxmeta.GetClientIP(ctx)
-
 	// Validate daily quota
-	if isAuth && hasUserID {
-		user, err := s.repo.FindUserByID(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to lookup user for quota check: %w", err)
-		}
-		if user.Status != constants.UserStatusActive {
-			return nil, constants.ErrUserInactive
-		}
-
-		dailyQuota := constants.DefaultUserDailyQuota
-		if user.DailyQuotaOverride != nil {
-			dailyQuota = *user.DailyQuotaOverride
-		}
-
-		countToday, err := s.repo.CountUserRecordingsToday(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count user daily recordings: %w", err)
-		}
-		if countToday >= int64(dailyQuota) {
-			return nil, constants.ErrDailyQuotaExceeded
-		}
-	} else {
-		countToday, err := s.repo.CountGuestRecordingsToday(ctx, clientIP)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count guest daily recordings: %w", err)
-		}
-		if countToday >= int64(constants.DefaultGuestDailyQuota) {
-			return nil, constants.ErrGuestDailyQuotaExceeded
-		}
+	if err := s.checkDailyQuota(ctx); err != nil {
+		return nil, err
 	}
 
 	objectKey := strings.TrimSpace(req.ObjectKey)
@@ -180,17 +118,7 @@ func (s *Service) UploadRecording(
 		ConsentAt:        &now,
 	}
 
-	if isAuth && hasUserID {
-		rec.UserID = &userID
-		rec.IsGuest = false
-	} else {
-		rec.IsGuest = true
-		if clientIP != "" {
-			rec.GuestIP = &clientIP
-		}
-		expiresAt := now.Add(24 * time.Hour)
-		rec.ExpiresAt = &expiresAt
-	}
+	applyRecordingOwnership(ctx, &rec, now)
 
 	if err := s.repo.CreateRecording(ctx, &rec); err != nil {
 		return nil, fmt.Errorf("failed to persist recording: %w", err)
@@ -277,39 +205,8 @@ func (s *Service) ImportRecordingFromURL(
 	}
 
 	// 2. Validate daily quota (identical policy to direct upload)
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-	clientIP := ctxmeta.GetClientIP(ctx)
-
-	if isAuth && hasUserID {
-		user, err := s.repo.FindUserByID(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to lookup user for quota check: %w", err)
-		}
-		if user.Status != constants.UserStatusActive {
-			return nil, constants.ErrUserInactive
-		}
-
-		dailyQuota := constants.DefaultUserDailyQuota
-		if user.DailyQuotaOverride != nil {
-			dailyQuota = *user.DailyQuotaOverride
-		}
-
-		countToday, err := s.repo.CountUserRecordingsToday(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count user daily recordings: %w", err)
-		}
-		if countToday >= int64(dailyQuota) {
-			return nil, constants.ErrDailyQuotaExceeded
-		}
-	} else {
-		countToday, err := s.repo.CountGuestRecordingsToday(ctx, clientIP)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count guest daily recordings: %w", err)
-		}
-		if countToday >= int64(constants.DefaultGuestDailyQuota) {
-			return nil, constants.ErrGuestDailyQuotaExceeded
-		}
+	if err := s.checkDailyQuota(ctx); err != nil {
+		return nil, err
 	}
 
 	// 3. Securely fetch media stream via SSRF-safe HTTP client
@@ -404,17 +301,7 @@ func (s *Service) ImportRecordingFromURL(
 		ConsentAt:        &now,
 	}
 
-	if isAuth && hasUserID {
-		rec.UserID = &userID
-		rec.IsGuest = false
-	} else {
-		rec.IsGuest = true
-		if clientIP != "" {
-			rec.GuestIP = &clientIP
-		}
-		expiresAt := now.Add(24 * time.Hour)
-		rec.ExpiresAt = &expiresAt
-	}
+	applyRecordingOwnership(ctx, &rec, now)
 
 	if err := s.repo.CreateRecording(ctx, &rec); err != nil {
 		return nil, fmt.Errorf("failed to persist recording: %w", err)
@@ -507,4 +394,64 @@ func (s *Service) RetryRecordingPipeline(ctx context.Context, id uuid.UUID, owne
 		UpdatedAt: time.Now().UTC(),
 	}, nil
 }
+
+// checkDailyQuota verifies that the authenticated user or guest has not exceeded their daily ingestion quota.
+func (s *Service) checkDailyQuota(ctx context.Context) error {
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	clientIP := ctxmeta.GetClientIP(ctx)
+
+	if isAuth && hasUserID {
+		user, err := s.repo.FindUserByID(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to lookup user for quota check: %w", err)
+		}
+		if user.Status != constants.UserStatusActive {
+			return constants.ErrUserInactive
+		}
+
+		dailyQuota := constants.DefaultUserDailyQuota
+		if user.DailyQuotaOverride != nil {
+			dailyQuota = *user.DailyQuotaOverride
+		}
+
+		countToday, err := s.repo.CountUserRecordingsToday(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to count user daily recordings: %w", err)
+		}
+		if countToday >= int64(dailyQuota) {
+			return constants.ErrDailyQuotaExceeded
+		}
+	} else {
+		countToday, err := s.repo.CountGuestRecordingsToday(ctx, clientIP)
+		if err != nil {
+			return fmt.Errorf("failed to count guest daily recordings: %w", err)
+		}
+		if countToday >= int64(constants.DefaultGuestDailyQuota) {
+			return constants.ErrGuestDailyQuotaExceeded
+		}
+	}
+
+	return nil
+}
+
+// applyRecordingOwnership sets user or guest ownership and expiration on a recording.
+func applyRecordingOwnership(ctx context.Context, rec *models.Recording, now time.Time) {
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	clientIP := ctxmeta.GetClientIP(ctx)
+
+	if isAuth && hasUserID {
+		rec.UserID = &userID
+		rec.IsGuest = false
+	} else {
+		rec.IsGuest = true
+		if clientIP != "" {
+			rec.GuestIP = &clientIP
+		}
+		expiresAt := now.Add(24 * time.Hour)
+		rec.ExpiresAt = &expiresAt
+	}
+}
+
 

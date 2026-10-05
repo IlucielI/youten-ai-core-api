@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-redis/redismock/v9"
+	"github.com/google/uuid"
 	gormPostgres "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/adapters/redis"
+	"code-base-golang/internal/models"
 )
 
 func TestRepositories_Accessors(t *testing.T) {
@@ -112,3 +115,104 @@ func TestRepositories_PingRedis(t *testing.T) {
 		t.Fatal("expected error on redis timeout, got nil")
 	}
 }
+
+func TestRepositories_SummaryVersionOperations(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	recID := uuid.New()
+
+	// 1. CountSummaryVersions
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+	count, err := repo.CountSummaryVersions(context.Background(), recID)
+	if err != nil {
+		t.Fatalf("unexpected error counting summaries: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected count 2, got %d", count)
+	}
+
+	// 2. GetLatestSummaryVersion
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(2))
+
+	maxVer, err := repo.GetLatestSummaryVersion(context.Background(), recID)
+	if err != nil {
+		t.Fatalf("unexpected error getting max version: %v", err)
+	}
+	if maxVer != 2 {
+		t.Errorf("expected maxVer 2, got %d", maxVer)
+	}
+
+	// 3. SaveNewSummaryVersion - Success (incrementing to version 3)
+	summary := models.Summary{
+		ID:               uuid.New(),
+		RecordingID:      recID,
+		TemplateCategory: "GENERAL",
+		StructuredData:   models.JSONMap{"summary": "test"},
+		MarkdownContent:  "# Summary",
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(2))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 2))
+	mock.ExpectQuery(`INSERT INTO "summaries"`).
+		WithArgs(recID, "GENERAL", nil, 3, true, sqlmock.AnyArg(), "# Summary", summary.ID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(summary.ID, time.Now(), time.Now()))
+	mock.ExpectCommit()
+
+	if err := repo.SaveNewSummaryVersion(context.Background(), &summary); err != nil {
+		t.Fatalf("unexpected error saving new summary version: %v", err)
+	}
+	if summary.Version != 3 {
+		t.Errorf("expected version 3, got %d", summary.Version)
+	}
+	if !summary.IsActive {
+		t.Errorf("expected is_active true, got %v", summary.IsActive)
+	}
+
+	// 4. SaveNewSummaryVersion - Version Cap Reached (count >= 5)
+	summaryOverLimit := models.Summary{
+		ID:               uuid.New(),
+		RecordingID:      recID,
+		TemplateCategory: "GENERAL",
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+	mock.ExpectRollback()
+
+	err = repo.SaveNewSummaryVersion(context.Background(), &summaryOverLimit)
+	if err == nil {
+		t.Fatal("expected error when limit reached, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+

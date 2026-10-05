@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/models"
 )
 
@@ -30,7 +32,8 @@ func (r *Repositories) FindActiveSummaryByRecordingID(ctx context.Context, recor
 func (r *Repositories) FindSummaryByRecordingAndVersion(ctx context.Context, recordingID uuid.UUID, version int) (*models.Summary, error) {
 	var summary models.Summary
 	err := r.db.WithContext(ctx).
-		Where("recording_id = ? AND version = ?", recordingID, version).
+		Where("recording_id = ?", recordingID).
+		Where("version = ?", version).
 		First(&summary).Error
 	if err != nil {
 		return nil, err
@@ -57,4 +60,59 @@ func (r *Repositories) DeactivatePreviousSummaries(ctx context.Context, recordin
 		Model(&models.Summary{}).
 		Where("recording_id = ?", recordingID).
 		Update("is_active", false).Error
+}
+
+// CountSummaryVersions returns the total number of summary versions for a recording.
+func (r *Repositories) CountSummaryVersions(ctx context.Context, recordingID uuid.UUID) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&models.Summary{}).
+		Where("recording_id = ?", recordingID).
+		Count(&count).Error
+	return count, err
+}
+
+// GetLatestSummaryVersion returns the highest version number for a recording, or 0 if none exist.
+func (r *Repositories) GetLatestSummaryVersion(ctx context.Context, recordingID uuid.UUID) (int, error) {
+	var maxVer int
+	row := r.db.WithContext(ctx).
+		Model(&models.Summary{}).
+		Where("recording_id = ?", recordingID).
+		Select("COALESCE(MAX(version), 0)").
+		Row()
+	err := row.Scan(&maxVer)
+	return maxVer, err
+}
+
+// SaveNewSummaryVersion saves a new summary version for a recording within an atomic database transaction,
+// enforcing the maximum version cap (5), deactivating previous versions, and setting the new one as active.
+func (r *Repositories) SaveNewSummaryVersion(ctx context.Context, summary *models.Summary) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&models.Summary{}).Where("recording_id = ?", summary.RecordingID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count >= 5 {
+			return constants.ErrSummaryVersionLimit
+		}
+
+		var maxVer int
+		row := tx.Model(&models.Summary{}).
+			Where("recording_id = ?", summary.RecordingID).
+			Select("COALESCE(MAX(version), 0)").
+			Row()
+		if err := row.Scan(&maxVer); err != nil {
+			return err
+		}
+
+		if err := tx.Model(&models.Summary{}).
+			Where("recording_id = ?", summary.RecordingID).
+			Update("is_active", false).Error; err != nil {
+			return err
+		}
+
+		summary.Version = maxVer + 1
+		summary.IsActive = true
+		return tx.Create(summary).Error
+	})
 }

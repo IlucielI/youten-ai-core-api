@@ -33,6 +33,7 @@ type RAGUserData struct {
 type SummaryUserData struct {
 	Language       string
 	TranscriptBody string
+	CustomAngle    string
 }
 
 // FormatTimestamp converts seconds into a human-readable [MM:SS] or [HH:MM:SS] string.
@@ -108,10 +109,17 @@ func DefaultSummarySystemPrompt() (string, error) {
 
 // RenderSummaryUserPrompt renders the user prompt containing the transcript body to be summarized.
 // targetLanguage specifies the requested output language (e.g. "Indonesian", "English", "id", "en"), or empty for speaker's primary language.
-func RenderSummaryUserPrompt(transcriptBody string, targetLanguage string) (string, error) {
+// customAngle optionally specifies a particular analytical lens or focus area (e.g. "Focus on technical architecture and blockers").
+func RenderSummaryUserPrompt(transcriptBody string, targetLanguage string, customAngle ...string) (string, error) {
+	var angle string
+	if len(customAngle) > 0 {
+		angle = strings.TrimSpace(customAngle[0])
+	}
+
 	data := SummaryUserData{
 		Language:       strings.TrimSpace(targetLanguage),
 		TranscriptBody: strings.TrimSpace(transcriptBody),
+		CustomAngle:    angle,
 	}
 	var buf bytes.Buffer
 	if err := parsedTemplates.ExecuteTemplate(&buf, "summary_user.tmpl", data); err != nil {

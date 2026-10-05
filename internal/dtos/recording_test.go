@@ -518,3 +518,83 @@ func TestRecordingDTO_UpdateSpeakersResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_RegenerateSummaryRequest_Validation(t *testing.T) {
+	validAngle := "Focus on technical architecture and blockers"
+	tooLongAngle := strings.Repeat("a", 2001)
+	tooLongCategory := strings.Repeat("c", 101)
+
+	tests := []struct {
+		name    string
+		req     dtos.RegenerateSummaryRequest
+		wantErr bool
+	}{
+		{
+			name: "valid empty request (defaults)",
+			req:  dtos.RegenerateSummaryRequest{},
+		},
+		{
+			name: "valid request with template and custom angle",
+			req: dtos.RegenerateSummaryRequest{
+				TemplateCategory: "MOM",
+				CustomAngle:      &validAngle,
+				OwnershipToken:   "token-123",
+			},
+			wantErr: false,
+		},
+		{
+			name: "template category exceeds 100 chars",
+			req: dtos.RegenerateSummaryRequest{
+				TemplateCategory: tooLongCategory,
+			},
+			wantErr: true,
+		},
+		{
+			name: "custom angle exceeds 2000 chars",
+			req: dtos.RegenerateSummaryRequest{
+				CustomAngle: &tooLongAngle,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRecordingDTO_SummaryVersionResponse_Structure(t *testing.T) {
+	angle := "Focus on key metrics"
+	now := time.Now()
+	resp := dtos.SummaryVersionResponse{
+		ID:               "summary-123",
+		Version:          2,
+		TemplateCategory: "GENERAL",
+		CustomAngle:      &angle,
+		StructuredData:   map[string]interface{}{"key": "value"},
+		MarkdownContent:  "# Executive Summary",
+		IsActive:         true,
+		CreatedAt:        now,
+	}
+
+	if resp.ID != "summary-123" {
+		t.Errorf("expected ID summary-123, got %s", resp.ID)
+	}
+	if resp.Version != 2 {
+		t.Errorf("expected Version 2, got %d", resp.Version)
+	}
+	if resp.TemplateCategory != "GENERAL" {
+		t.Errorf("expected TemplateCategory GENERAL, got %s", resp.TemplateCategory)
+	}
+	if resp.CustomAngle == nil || *resp.CustomAngle != angle {
+		t.Errorf("expected CustomAngle %s, got %v", angle, resp.CustomAngle)
+	}
+	if !resp.IsActive {
+		t.Errorf("expected IsActive true, got %v", resp.IsActive)
+	}
+}
+

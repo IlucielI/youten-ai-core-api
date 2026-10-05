@@ -387,3 +387,30 @@ type UpdateSpeakersResponse struct {
 	Speakers     map[string]string `json:"speakers"`
 }
 
+// RegenerateSummaryRequest defines payload for regenerating a recording's summary with an optional template category and custom angle.
+type RegenerateSummaryRequest struct {
+	TemplateCategory string  `json:"template_category,omitempty"`
+	CustomAngle      *string `json:"custom_angle,omitempty"`
+	OwnershipToken   string  `json:"ownership_token,omitempty"`
+}
+
+// Validate checks constraints for RegenerateSummaryRequest.
+func (r RegenerateSummaryRequest) Validate() error {
+	return validation.ValidateStruct(&r,
+		validation.Field(&r.TemplateCategory, validation.Length(0, 100)),
+		validation.Field(&r.CustomAngle, validation.NilOrNotEmpty, validation.Length(0, 2000)),
+	)
+}
+
+// SummaryVersionResponse represents a summary version returned after generation or listing.
+type SummaryVersionResponse struct {
+	ID               string                 `json:"id"`
+	Version          int                    `json:"version"`
+	TemplateCategory string                 `json:"template_category"`
+	CustomAngle      *string                `json:"custom_angle,omitempty"`
+	StructuredData   map[string]interface{} `json:"structured_data"`
+	MarkdownContent  string                 `json:"markdown_content"`
+	IsActive         bool                   `json:"is_active"`
+	CreatedAt        time.Time              `json:"created_at"`
+}
+

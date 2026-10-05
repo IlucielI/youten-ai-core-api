@@ -87,4 +87,17 @@ func TestTemplates_SummaryPrompts(t *testing.T) {
 	if !strings.Contains(userJa, "in Japanese:") {
 		t.Errorf("expected 'in Japanese:', got: %s", userJa)
 	}
+
+	// Custom angle specified
+	customAngle := "Focus on technical architecture decisions and blockers"
+	userAngle, err := templates.RenderSummaryUserPrompt("Meeting transcript goes here.", "English", customAngle)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(userAngle, "Focus Angle: Focus on technical architecture decisions and blockers") {
+		t.Errorf("expected custom angle in prompt, got: %s", userAngle)
+	}
+	if !strings.Contains(userAngle, "in English:") {
+		t.Errorf("expected 'in English:', got: %s", userAngle)
+	}
 }

@@ -40,6 +40,9 @@ var (
 	// ErrRecordingAlreadyCompleted is returned when attempting to retry a recording that has already completed.
 	ErrRecordingAlreadyCompleted = apperror.New(http.StatusConflict, "ERR_ALREADY_COMPLETED", "recording has already completed")
 
+	// ErrSummaryVersionLimit is returned when attempting to generate more summary versions than allowed (cap of 5).
+	ErrSummaryVersionLimit = apperror.New(http.StatusConflict, "SUMMARY_VERSION_LIMIT", "summary version limit reached, maximum allowed versions is 5")
+
 	// ErrEmailAlreadyExists is returned when attempting to register with an email that is already registered.
 	ErrEmailAlreadyExists = apperror.New(http.StatusConflict, "ERR_EMAIL_ALREADY_EXISTS", "email is already registered")
 

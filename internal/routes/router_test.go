@@ -278,6 +278,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"POST", "/v1/recordings/:id/retry"},
 		{"POST", "/v1/recordings/:id/chat"},
 		{"PUT", "/v1/recordings/:id/speakers"},
+		{"POST", "/v1/recordings/:id/regenerate"},
 	}
 
 
@@ -473,6 +474,18 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router.ServeHTTP(wSpeakers, reqSpeakers)
 	if wSpeakers.Code == http.StatusUnauthorized {
 		t.Fatalf("expected PUT /v1/recordings/:id/speakers not to return 401 Unauthorized without header (optional_auth), got %d", wSpeakers.Code)
+	}
+
+	// Verify POST /v1/recordings/:id/regenerate is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wRegen := httptest.NewRecorder()
+	reqRegen, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/regenerate", strings.NewReader(`{"template_category":"MOM"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqRegen.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wRegen, reqRegen)
+	if wRegen.Code == http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/regenerate not to return 401 Unauthorized without header (optional_auth), got %d", wRegen.Code)
 	}
 }
 

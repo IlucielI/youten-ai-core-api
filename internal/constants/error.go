@@ -28,6 +28,9 @@ var (
 	// ErrUserNotFound is returned when a specified user does not exist.
 	ErrUserNotFound = apperror.New(http.StatusNotFound, "ERR_USER_NOT_FOUND", "user not found")
 
+	// ErrRecordingNotFound is returned when a specified recording is not found or has been deleted.
+	ErrRecordingNotFound = apperror.New(http.StatusNotFound, "ERR_RECORDING_NOT_FOUND", "recording not found")
+
 	// ErrConflict is returned when an action conflicts with current state.
 	ErrConflict = apperror.New(http.StatusConflict, ResponseCodeConflict, "resource conflict")
 

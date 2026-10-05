@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
@@ -253,6 +254,167 @@ func (s *Service) CleanupExpiredRecordings(ctx context.Context, batchSize int) (
 	}
 
 	return deletedCount, nil
+}
+
+// GetRecordingDetail retrieves complete metadata, segments, active summary, chapters, highlights,
+// and presigned playback URL for a recording, with ownership verification.
+func (s *Service) GetRecordingDetail(ctx context.Context, id uuid.UUID, ownershipToken string) (*dtos.RecordingDetailResponse, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Ownership verification:
+	// 1. Authenticated user matching recording.user_id
+	// 2. Ownership token matching recording.ownership_token
+	// 3. Share token matching recording.share_token (if sharing enabled)
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && ownershipToken == rec.OwnershipToken {
+		hasAccess = true
+	} else if ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil && ownershipToken == *rec.ShareToken {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, constants.ErrForbidden
+	}
+
+	// Generate pre-signed audio playback URL if stored in object storage
+	var playbackURL *string
+	if rec.AudioURL != nil && *rec.AudioURL != "" {
+		if strings.HasPrefix(*rec.AudioURL, "http://") || strings.HasPrefix(*rec.AudioURL, "https://") {
+			playbackURL = rec.AudioURL
+		} else if s.storage != nil {
+			presigned, err := s.storage.PresignGetObject(ctx, s.cfg.S3BucketName, *rec.AudioURL, 1*time.Hour)
+			if err == nil {
+				playbackURL = &presigned
+			} else {
+				playbackURL = rec.AudioURL
+			}
+		} else {
+			playbackURL = rec.AudioURL
+		}
+	}
+
+	// Fetch related child entities
+	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch transcript segments: %w", err)
+	}
+
+	activeSummary, err := s.repo.FindActiveSummaryByRecordingID(ctx, id)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to fetch active summary: %w", err)
+	}
+
+	chapters, err := s.repo.ListChaptersByRecordingID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch chapters: %w", err)
+	}
+
+	highlights, err := s.repo.ListHighlightsByRecordingID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch highlights: %w", err)
+	}
+
+	segmentDTOs := make([]dtos.TranscriptSegmentDTO, len(segments))
+	for i, seg := range segments {
+		segmentDTOs[i] = dtos.TranscriptSegmentDTO{
+			ID:            seg.ID.String(),
+			SpeakerLabel:  seg.SpeakerLabel,
+			SpeakerName:   seg.SpeakerName,
+			StartTime:     seg.StartTime,
+			EndTime:       seg.EndTime,
+			Text:          seg.Text,
+			WordsData:     seg.WordsData,
+			SequenceOrder: seg.SequenceOrder,
+		}
+	}
+
+	var summaryDTO *dtos.SummaryDTO
+	if activeSummary != nil {
+		summaryDTO = &dtos.SummaryDTO{
+			ID:               activeSummary.ID.String(),
+			TemplateCategory: activeSummary.TemplateCategory,
+			CustomAngle:      activeSummary.CustomAngle,
+			Version:          activeSummary.Version,
+			IsActive:         activeSummary.IsActive,
+			StructuredData:   activeSummary.StructuredData,
+			MarkdownContent:  activeSummary.MarkdownContent,
+			CreatedAt:        activeSummary.CreatedAt,
+			UpdatedAt:        activeSummary.UpdatedAt,
+		}
+	}
+
+	chapterDTOs := make([]dtos.ChapterDTO, len(chapters))
+	for i, chap := range chapters {
+		chapterDTOs[i] = dtos.ChapterDTO{
+			ID:            chap.ID.String(),
+			Title:         chap.Title,
+			StartTime:     chap.StartTime,
+			EndTime:       chap.EndTime,
+			Summary:       chap.Summary,
+			SequenceOrder: chap.SequenceOrder,
+			CreatedAt:     chap.CreatedAt,
+		}
+	}
+
+	highlightDTOs := make([]dtos.HighlightDTO, len(highlights))
+	for i, hl := range highlights {
+		highlightDTOs[i] = dtos.HighlightDTO{
+			ID:        hl.ID.String(),
+			StartTime: hl.StartTime,
+			EndTime:   hl.EndTime,
+			Title:     hl.Title,
+			Note:      hl.Note,
+			Source:    hl.Source,
+			ClipURL:   hl.ClipURL,
+			CreatedAt: hl.CreatedAt,
+		}
+	}
+
+	var userIDStr *string
+	if rec.UserID != nil {
+		str := rec.UserID.String()
+		userIDStr = &str
+	}
+
+	return &dtos.RecordingDetailResponse{
+		ID:               rec.ID.String(),
+		UserID:           userIDStr,
+		Title:            rec.Title,
+		OriginalFilename: rec.OriginalFilename,
+		FileSizeBytes:    rec.FileSizeBytes,
+		DurationSeconds:  rec.DurationSeconds,
+		AudioURL:         playbackURL,
+		PlaybackURL:      playbackURL,
+		SourceType:       rec.SourceType,
+		Status:           rec.Status,
+		ErrorMessage:     rec.ErrorMessage,
+		ErrorCode:        rec.ErrorCode,
+		SelectedTemplate: rec.SelectedTemplate,
+		DetectedLanguage: rec.DetectedLanguage,
+		OutputLanguage:   rec.OutputLanguage,
+		IsGuest:          rec.IsGuest,
+		ConsentGiven:     rec.ConsentGiven,
+		ConsentVersion:   rec.ConsentVersion,
+		ExpiresAt:        rec.ExpiresAt,
+		AnalyticsData:    rec.AnalyticsData,
+		Segments:         segmentDTOs,
+		ActiveSummary:    summaryDTO,
+		Chapters:         chapterDTOs,
+		Highlights:       highlightDTOs,
+		CreatedAt:        rec.CreatedAt,
+		UpdatedAt:        rec.UpdatedAt,
+	}, nil
 }
 
 // ImportRecordingFromURL validates target link against SSRF defense policies, streams media into S3,

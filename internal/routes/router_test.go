@@ -335,6 +335,17 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wImport.Code == http.StatusUnauthorized {
 		t.Fatalf("expected /v1/recordings/import-url not to return 401 Unauthorized without header (optional_auth), got %d", wImport.Code)
 	}
+
+	// Verify /v1/recordings/:id is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wDetail := httptest.NewRecorder()
+	reqDetail, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wDetail, reqDetail)
+	if wDetail.Code == http.StatusUnauthorized {
+		t.Fatalf("expected /v1/recordings/:id not to return 401 Unauthorized without header (optional_auth), got %d", wDetail.Code)
+	}
 }
 
 

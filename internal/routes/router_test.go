@@ -487,6 +487,17 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wRegen.Code == http.StatusUnauthorized {
 		t.Fatalf("expected POST /v1/recordings/:id/regenerate not to return 401 Unauthorized without header (optional_auth), got %d", wRegen.Code)
 	}
+
+	// Verify GET /v1/recordings/:id/summaries is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wSummaries := httptest.NewRecorder()
+	reqSummaries, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001/summaries", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wSummaries, reqSummaries)
+	if wSummaries.Code == http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/:id/summaries not to return 401 Unauthorized without header (optional_auth), got %d", wSummaries.Code)
+	}
 }
 
 

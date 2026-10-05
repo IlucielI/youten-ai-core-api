@@ -2849,6 +2849,206 @@ func TestControllers_RegenerateSummary_Success_HeaderToken(t *testing.T) {
 	}
 }
 
+func TestControllers_ListSummaryVersions_NilController(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/v1/recordings/test/summaries", nil)
+
+	var ctrls *Controllers
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListSummaryVersions_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/v1/recordings/test/summaries", nil)
+
+	ctrls := &Controllers{}
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListSummaryVersions_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+	c.Request, _ = http.NewRequest(http.MethodGet, "/v1/recordings/invalid-uuid/summaries", nil)
+
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListSummaryVersions_NotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request, _ = http.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/summaries", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListSummaryVersions_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request, _ = http.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/summaries", nil)
+	c.Request.Header.Set("X-Ownership-Token", "wrong-token")
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "valid-token", nil))
+
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListSummaryVersions_Success_GuestWithHeader(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-token-123"
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req, _ := http.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/summaries", nil)
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, guestToken, nil))
+
+	sum1ID := uuid.New()
+	sum2ID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 ORDER BY version ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(sum1ID, recID, 1, "GENERAL", models.JSONMap{"summary": "v1"}, "# V1", false, now.Add(-10*time.Minute)).
+			AddRow(sum2ID, recID, 2, "MOM", models.JSONMap{"summary": "v2"}, "# V2", true, now))
+
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[[]dtos.SummaryVersionResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode json response: %v", err)
+	}
+
+	if len(resp.Data) != 2 {
+		t.Fatalf("expected 2 summary versions, got %d", len(resp.Data))
+	}
+	if resp.Data[0].Version != 1 || resp.Data[0].IsActive {
+		t.Errorf("unexpected version 1 data: %+v", resp.Data[0])
+	}
+	if resp.Data[1].Version != 2 || !resp.Data[1].IsActive {
+		t.Errorf("unexpected version 2 data: %+v", resp.Data[1])
+	}
+}
+
+func TestControllers_ListSummaryVersions_Success_GuestWithQuery(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-token-123"
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req, _ := http.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/summaries?token="+guestToken, nil)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, guestToken, nil))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 ORDER BY version ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(uuid.New(), recID, 1, "GENERAL", models.JSONMap{"summary": "v1"}, "# V1", true, time.Now()))
+
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_ListSummaryVersions_Success_AuthenticatedOwner(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req, _ := http.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/summaries", nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "token", &userID))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 ORDER BY version ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(uuid.New(), recID, 1, "GENERAL", models.JSONMap{"summary": "v1"}, "# V1", true, time.Now()))
+
+	ctrls.ListSummaryVersions(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+
 
 
 

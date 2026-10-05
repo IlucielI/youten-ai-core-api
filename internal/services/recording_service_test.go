@@ -2569,6 +2569,154 @@ func TestService_RegenerateSummary_Success_AuthenticatedOwner(t *testing.T) {
 	}
 }
 
+func TestService_ListSummaryVersions_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.ListSummaryVersions(ctx, recID, "some-token")
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_ListSummaryVersions_Forbidden_Unauthorized(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "valid-token-123", nil))
+
+	_, err := svc.ListSummaryVersions(ctx, recID, "wrong-token")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_ListSummaryVersions_Forbidden_WrongUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	differentUserID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: differentUserID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "valid-token", &ownerID))
+
+	_, err := svc.ListSummaryVersions(ctx, recID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_ListSummaryVersions_Success_Guest(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "valid-guest-secret-token"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, guestToken, nil))
+
+	sum1ID := uuid.New()
+	sum2ID := uuid.New()
+	now := time.Now()
+	angle := "Focus on action items"
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 ORDER BY version ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "custom_angle", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(sum1ID, recID, 1, "GENERAL", nil, models.JSONMap{"summary": "v1"}, "# Summary v1", false, now.Add(-10*time.Minute)).
+			AddRow(sum2ID, recID, 2, "EXECUTIVE", &angle, models.JSONMap{"summary": "v2"}, "# Summary v2", true, now))
+
+	resps, err := svc.ListSummaryVersions(ctx, recID, guestToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resps) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(resps))
+	}
+
+	// Verify ordering and field values
+	if resps[0].Version != 1 || resps[0].IsActive || resps[0].TemplateCategory != "GENERAL" || resps[0].CustomAngle != nil {
+		t.Errorf("version 1 response mismatch: %+v", resps[0])
+	}
+	if resps[1].Version != 2 || !resps[1].IsActive || resps[1].TemplateCategory != "EXECUTIVE" || resps[1].CustomAngle == nil || *resps[1].CustomAngle != angle {
+		t.Errorf("version 2 response mismatch: %+v", resps[1])
+	}
+}
+
+func TestService_ListSummaryVersions_Success_AuthenticatedOwner(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "token", &userID))
+
+	sumID := uuid.New()
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 ORDER BY version ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}).
+			AddRow(sumID, recID, 1, "GENERAL", models.JSONMap{"summary": "v1"}, "# Summary v1", true, time.Now()))
+
+	resps, err := svc.ListSummaryVersions(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resps) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(resps))
+	}
+	if resps[0].ID != sumID.String() || resps[0].Version != 1 || !resps[0].IsActive {
+		t.Errorf("unexpected version response: %+v", resps[0])
+	}
+}
+
+func TestService_ListSummaryVersions_EmptyList(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id"}).
+			AddRow(recID, "token", &userID))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 ORDER BY version ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "structured_data", "markdown_content", "is_active", "created_at"}))
+
+	resps, err := svc.ListSummaryVersions(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resps == nil {
+		t.Fatal("expected non-nil empty slice, got nil")
+	}
+	if len(resps) != 0 {
+		t.Fatalf("expected 0 versions, got %d", len(resps))
+	}
+}
+
+
 
 
 

@@ -923,5 +923,52 @@ func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 	})
 }
 
+// ListSummaryVersions handles listing all summary versions for a recording.
+func (c *Controllers) ListSummaryVersions(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("token"))
+	}
+	if ownershipToken == "" {
+		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
+	}
+
+	resp, err := c.svc.ListSummaryVersions(ctx.Request.Context(), id, ownershipToken)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[[]dtos.SummaryVersionResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "summary versions retrieved successfully",
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 

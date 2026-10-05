@@ -211,6 +211,24 @@ func TestRepositories_SummaryVersionOperations(t *testing.T) {
 		t.Fatal("expected error when limit reached, got nil")
 	}
 
+	// 5. ListSummaryVersions - ordered by version ASC
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 ORDER BY version ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "is_active"}).
+			AddRow(uuid.New(), recID, 1, false).
+			AddRow(uuid.New(), recID, 2, true))
+
+	versions, err := repo.ListSummaryVersions(context.Background(), recID)
+	if err != nil {
+		t.Fatalf("unexpected error listing summary versions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(versions))
+	}
+	if versions[0].Version != 1 || versions[1].Version != 2 {
+		t.Errorf("expected versions in ASC order (1, 2), got (%d, %d)", versions[0].Version, versions[1].Version)
+	}
+
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}

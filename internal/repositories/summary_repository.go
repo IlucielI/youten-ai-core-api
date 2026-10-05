@@ -41,12 +41,12 @@ func (r *Repositories) FindSummaryByRecordingAndVersion(ctx context.Context, rec
 	return &summary, nil
 }
 
-// ListSummaryVersions returns all summary versions for a recording.
+// ListSummaryVersions returns all summary versions for a recording ordered by version ASC.
 func (r *Repositories) ListSummaryVersions(ctx context.Context, recordingID uuid.UUID) ([]models.Summary, error) {
 	var list []models.Summary
 	err := r.db.WithContext(ctx).
 		Where("recording_id = ?", recordingID).
-		Order("version DESC").
+		Order("version ASC").
 		Find(&list).Error
 	if err != nil {
 		return nil, err

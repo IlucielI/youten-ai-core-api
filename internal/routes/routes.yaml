@@ -171,6 +171,14 @@ routes:
     handler: RegenerateSummary
     optional_auth: true
 
+  # List summary versions endpoint
+  -
+    method: GET
+    path: /v1/recordings/:id/summaries
+    handler: ListSummaryVersions
+    optional_auth: true
+
+
 
 
 

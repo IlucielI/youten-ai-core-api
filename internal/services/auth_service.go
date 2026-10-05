@@ -494,4 +494,32 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 	}, nil
 }
 
+// UpdateProfile updates mutable profile attributes for the authenticated user and returns the refreshed profile.
+func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req *dtos.UpdateProfileRequest) (*dtos.UserProfileResponse, error) {
+	if s == nil || s.repo == nil {
+		return nil, constants.ErrInternalServerError
+	}
+	if userID == uuid.Nil {
+		return nil, constants.ErrUnauthorized
+	}
+	if req == nil {
+		return nil, constants.ErrBadRequest.WithMessage("update profile payload is required")
+	}
+
+	fullName := strings.TrimSpace(req.FullName)
+	if fullName == "" {
+		return nil, constants.ErrBadRequest.WithMessage("full name is required")
+	}
+
+	if err := s.repo.UpdateUserFullName(ctx, userID, fullName); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrUserNotFound
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return s.GetProfile(ctx, userID)
+}
+
+
 

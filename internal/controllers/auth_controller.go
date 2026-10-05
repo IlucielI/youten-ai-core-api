@@ -199,3 +199,38 @@ func (c *Controllers) GetMe(ctx *gin.Context) {
 	})
 }
 
+// UpdateProfile handles updating the authenticated user's profile information.
+func (c *Controllers) UpdateProfile(ctx *gin.Context) {
+	userID, ok := ctxmeta.GetAuthUserID(ctx.Request.Context())
+	if !ok || userID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized)
+		return
+	}
+
+	var req dtos.UpdateProfileRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.Validate(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	profile, err := c.svc.UpdateProfile(ctx.Request.Context(), userID, &req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.UserProfileResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "User profile updated successfully",
+		Data:      profile,
+		Timestamp: time.Now(),
+	})
+}
+
+

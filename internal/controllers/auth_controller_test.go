@@ -1086,3 +1086,124 @@ func TestControllers_GetMe_UserNotFound(t *testing.T) {
 	}
 }
 
+func TestControllers_UpdateProfile_Success(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "updated@example.com"
+	now := time.Now()
+
+	// 1. UpdateUserFullName
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs("Bruce Wayne", sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 2. FindUserByID
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "daily_quota_override", "email_verified", "created_at"}).
+			AddRow(userID, email, "Bruce Wayne", constants.UserStatusActive, nil, true, now))
+
+	// 3. CountUserRecordingsToday
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	reqPayload := dtos.UpdateProfileRequest{
+		FullName: "Bruce Wayne",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/v1/auth/me", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request = ctx.Request.WithContext(ctxmeta.WithAuthUser(ctx.Request.Context(), ctxmeta.AuthUser{
+		UserID: userID,
+		Email:  email,
+	}))
+
+	ctrls.UpdateProfile(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.UserProfileResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp.Data == nil || resp.Data.FullName != "Bruce Wayne" {
+		t.Fatalf("unexpected profile response: %+v", resp.Data)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_UpdateProfile_Unauthorized(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	reqPayload := dtos.UpdateProfileRequest{FullName: "Bruce Wayne"}
+	body, _ := json.Marshal(reqPayload)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/v1/auth/me", bytes.NewBuffer(body))
+
+	ctrls.UpdateProfile(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 when no auth user in context, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateProfile_ValidationErrors(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+
+	// 1. Invalid JSON
+	{
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = httptest.NewRequest(http.MethodPut, "/v1/auth/me", bytes.NewBufferString("{invalid-json"))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		ctx.Request = ctx.Request.WithContext(ctxmeta.WithAuthUser(ctx.Request.Context(), ctxmeta.AuthUser{
+			UserID: userID,
+		}))
+
+		ctrls.UpdateProfile(ctx)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400 on invalid json, got %d", w.Code)
+		}
+	}
+
+	// 2. Empty full name
+	{
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		reqPayload := dtos.UpdateProfileRequest{FullName: " "}
+		body, _ := json.Marshal(reqPayload)
+		ctx.Request = httptest.NewRequest(http.MethodPut, "/v1/auth/me", bytes.NewBuffer(body))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		ctx.Request = ctx.Request.WithContext(ctxmeta.WithAuthUser(ctx.Request.Context(), ctxmeta.AuthUser{
+			UserID: userID,
+		}))
+
+		ctrls.UpdateProfile(ctx)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400 on empty full name, got %d", w.Code)
+		}
+	}
+}
+
+

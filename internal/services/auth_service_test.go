@@ -1635,4 +1635,107 @@ func TestService_GetProfile_Errors(t *testing.T) {
 	}
 }
 
+func TestService_UpdateProfile_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "updated@example.com"
+	now := time.Now()
+
+	// 1. UpdateUserFullName
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs("John Wick", sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 2. GetProfile -> FindUserByID
+	mock.ExpectQuery(`SELECT \* FROM "users"`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "daily_quota_override", "email_verified", "created_at"}).
+			AddRow(userID, email, "John Wick", constants.UserStatusActive, nil, true, now))
+
+	// 3. GetProfile -> CountUserRecordingsToday
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	resp, err := svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{
+		FullName: "  John Wick  ",
+	})
+	if err != nil {
+		t.Fatalf("expected successful profile update, got error: %v", err)
+	}
+
+	if resp.FullName != "John Wick" {
+		t.Errorf("expected updated full name 'John Wick', got %q", resp.FullName)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_UpdateProfile_Errors(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+
+	// 1. Nil service receiver
+	var nilSvc *services.Service
+	_, err := nilSvc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "Valid Name"})
+	if !errors.Is(err, constants.ErrInternalServerError) {
+		t.Fatalf("expected ErrInternalServerError on nil receiver, got: %v", err)
+	}
+
+	// 2. Nil user ID
+	_, err = svc.UpdateProfile(context.Background(), uuid.Nil, &dtos.UpdateProfileRequest{FullName: "Valid Name"})
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized on uuid.Nil, got: %v", err)
+	}
+
+	// 3. Nil request payload
+	_, err = svc.UpdateProfile(context.Background(), userID, nil)
+	if err == nil {
+		t.Fatal("expected error on nil request payload, got nil")
+	}
+
+	// 4. Empty full name
+	_, err = svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "   "})
+	if err == nil {
+		t.Fatal("expected error on empty full name, got nil")
+	}
+
+	// 5. User not found (0 rows affected)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs("Ghost", sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	_, err = svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "Ghost"})
+	if !errors.Is(err, constants.ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound on 0 rows affected, got: %v", err)
+	}
+
+	// 6. DB error
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "full_name"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+		WithArgs("Failure", sqlmock.AnyArg(), userID).
+		WillReturnError(errors.New("db update error"))
+	mock.ExpectRollback()
+
+	_, err = svc.UpdateProfile(context.Background(), userID, &dtos.UpdateProfileRequest{FullName: "Failure"})
+	if err == nil {
+		t.Fatal("expected DB error on update failure, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+
 

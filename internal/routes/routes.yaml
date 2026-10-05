@@ -50,4 +50,11 @@ routes:
     handler: GetMe
     auth: true
 
+  # Update current user profile endpoint
+  - method: PUT
+    path: /v1/auth/me
+    handler: UpdateProfile
+    auth: true
+
+
 

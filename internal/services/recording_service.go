@@ -1469,9 +1469,15 @@ func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownersh
 		}
 	}
 
+	var commentUserID *uuid.UUID
+	if isAuth && hasUserID {
+		commentUserID = &userID
+	}
+
 	comment := models.InlineComment{
 		ID:           uuid.New(),
 		RecordingID:  rec.ID,
+		UserID:       commentUserID,
 		SegmentID:    req.SegmentID,
 		TimestampSec: req.TimestampSec,
 		SelectedText: req.SelectedText,
@@ -1496,9 +1502,16 @@ func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownersh
 		parentIDStr = &p
 	}
 
+	var userIDStr *string
+	if comment.UserID != nil {
+		u := comment.UserID.String()
+		userIDStr = &u
+	}
+
 	return &dtos.CommentResponse{
 		ID:           comment.ID.String(),
 		RecordingID:  comment.RecordingID.String(),
+		UserID:       userIDStr,
 		SegmentID:    segIDStr,
 		TimestampSec: comment.TimestampSec,
 		SelectedText: comment.SelectedText,
@@ -1556,6 +1569,12 @@ func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershi
 			parentIDStr = &str
 		}
 
+		var userIDStr *string
+		if c.UserID != nil {
+			str := c.UserID.String()
+			userIDStr = &str
+		}
+
 		replies := make([]dtos.CommentResponse, 0, len(c.Replies))
 		for _, r := range c.Replies {
 			var rSegIDStr *string
@@ -1570,9 +1589,16 @@ func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershi
 				rParentIDStr = &str
 			}
 
+			var rUserIDStr *string
+			if r.UserID != nil {
+				str := r.UserID.String()
+				rUserIDStr = &str
+			}
+
 			replies = append(replies, dtos.CommentResponse{
 				ID:           r.ID.String(),
 				RecordingID:  r.RecordingID.String(),
+				UserID:       rUserIDStr,
 				SegmentID:    rSegIDStr,
 				TimestampSec: r.TimestampSec,
 				SelectedText: r.SelectedText,
@@ -1587,6 +1613,7 @@ func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershi
 		res = append(res, dtos.CommentResponse{
 			ID:           c.ID.String(),
 			RecordingID:  c.RecordingID.String(),
+			UserID:       userIDStr,
 			SegmentID:    segIDStr,
 			TimestampSec: c.TimestampSec,
 			SelectedText: c.SelectedText,
@@ -1601,6 +1628,53 @@ func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershi
 
 	return res, nil
 }
+
+// DeleteInlineComment removes an inline comment if requested by the recording owner or comment author.
+func (s *Service) DeleteInlineComment(ctx context.Context, recordingID uuid.UUID, commentID uuid.UUID, ownershipToken string) error {
+	rec, err := s.repo.FindRecordingByID(ctx, recordingID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrRecordingNotFound
+		}
+		return fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	comment, err := s.repo.FindInlineCommentByID(ctx, commentID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound
+		}
+		return fmt.Errorf("failed to find comment: %w", err)
+	}
+
+	if comment.RecordingID != rec.ID {
+		return constants.ErrBadRequest
+	}
+
+	// Verify permission: comment author or recording owner
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	canDelete := false
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		canDelete = true
+	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+		canDelete = true
+	} else if isAuth && hasUserID && comment.UserID != nil && *comment.UserID == userID {
+		canDelete = true
+	}
+
+	if !canDelete {
+		return constants.ErrForbidden
+	}
+
+	if err := s.repo.DeleteInlineComment(ctx, comment.ID); err != nil {
+		return fmt.Errorf("failed to delete inline comment: %w", err)
+	}
+
+	return nil
+}
+
 
 
 

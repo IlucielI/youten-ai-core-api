@@ -532,7 +532,30 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wListComments.Code == http.StatusUnauthorized {
 		t.Fatalf("expected GET /v1/recordings/:id/comments not to return 401 Unauthorized without header (optional_auth), got %d", wListComments.Code)
 	}
+
+	foundDeleteCommentRoute := false
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodDelete && route.Path == "/v1/recordings/:id/comments/:commentId" {
+			foundDeleteCommentRoute = true
+			break
+		}
+	}
+	if !foundDeleteCommentRoute {
+		t.Fatalf("expected DELETE /v1/recordings/:id/comments/:commentId route to be registered")
+	}
+
+	// Verify DELETE /v1/recordings/:id/comments/:commentId is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wDelComment := httptest.NewRecorder()
+	reqDelComment, err := http.NewRequest(http.MethodDelete, "/v1/recordings/00000000-0000-0000-0000-000000000001/comments/00000000-0000-0000-0000-000000000002", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wDelComment, reqDelComment)
+	if wDelComment.Code == http.StatusUnauthorized {
+		t.Fatalf("expected DELETE /v1/recordings/:id/comments/:commentId not to return 401 Unauthorized without header (optional_auth), got %d", wDelComment.Code)
+	}
 }
+
 
 
 

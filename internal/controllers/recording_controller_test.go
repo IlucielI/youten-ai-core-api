@@ -3423,7 +3423,7 @@ func TestControllers_CreateInlineComment_Success_GuestWithHeader(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
-		WithArgs(recID, nil, 12.5, nil, "Alice", "Great explanation here!", nil, sqlmock.AnyArg()).
+		WithArgs(recID, nil, nil, 12.5, nil, "Alice", "Great explanation here!", nil, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
 			AddRow(uuid.New(), time.Now(), time.Now()))
 	mock.ExpectCommit()
@@ -3472,7 +3472,7 @@ func TestControllers_CreateInlineComment_Success_ReplyToParent(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
-		WithArgs(recID, nil, 0.0, nil, "Anonymous", "I agree with this", parentID, sqlmock.AnyArg()).
+		WithArgs(recID, nil, nil, 0.0, nil, "Anonymous", "I agree with this", parentID, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
 			AddRow(uuid.New(), time.Now(), time.Now()))
 	mock.ExpectCommit()
@@ -3668,6 +3668,248 @@ func TestControllers_ListInlineComments_Success_AuthenticatedOwner(t *testing.T)
 		t.Fatalf("expected 0 comments, got %d", len(resp.Data))
 	}
 }
+
+func TestControllers_DeleteInlineComment_NilReceiver(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/test/comments/test", nil)
+
+	var ctrls *Controllers
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_DeleteInlineComment_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/test/comments/test", nil)
+
+	ctrls := &Controllers{}
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_DeleteInlineComment_InvalidRecordingUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: "invalid-uuid"},
+		{Key: "commentId", Value: uuid.New().String()},
+	}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/invalid-uuid/comments/test", nil)
+
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_DeleteInlineComment_InvalidCommentUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: uuid.New().String()},
+		{Key: "commentId", Value: "invalid-comment-uuid"},
+	}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/test/comments/invalid", nil)
+
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_DeleteInlineComment_RecordingNotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	commID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "commentId", Value: commID.String()},
+	}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/"+recID.String()+"/comments/"+commID.String(), nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_DeleteInlineComment_CommentNotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	commID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "commentId", Value: commID.String()},
+	}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/"+recID.String()+"/comments/"+commID.String(), nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_DeleteInlineComment_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	commID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "commentId", Value: commID.String()},
+	}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/"+recID.String()+"/comments/"+commID.String(), nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "secret-token", nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, "Alice", "Test comment"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+func TestControllers_DeleteInlineComment_Success_RecordingOwner(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	commID := uuid.New()
+	guestToken := "guest-token-123"
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "commentId", Value: commID.String()},
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/recordings/"+recID.String()+"/comments/"+commID.String(), nil)
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, guestToken, nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, "Someone", "Comment text"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "inline_comments" WHERE id = \$1`).
+		WithArgs(commID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_DeleteInlineComment_Success_CommentAuthor(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	commID := uuid.New()
+	ownerID := uuid.New()
+	authorID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "commentId", Value: commID.String()},
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/recordings/"+recID.String()+"/comments/"+commID.String(), nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: authorID}))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", &ownerID, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE id = \$1.*LIMIT \$2`).
+		WithArgs(commID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "user_id", "author_name", "comment_text"}).
+			AddRow(commID, recID, &authorID, "Author Name", "My comment"))
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "inline_comments" WHERE id = \$1`).
+		WithArgs(commID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	ctrls.DeleteInlineComment(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
 
 
 

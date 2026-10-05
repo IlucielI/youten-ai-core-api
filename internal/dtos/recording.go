@@ -439,6 +439,7 @@ func (r CreateCommentRequest) Validate() error {
 type CommentResponse struct {
 	ID           string            `json:"id"`
 	RecordingID  string            `json:"recording_id,omitempty"`
+	UserID       *string           `json:"user_id,omitempty"`
 	SegmentID    *string           `json:"segment_id,omitempty"`
 	TimestampSec float64           `json:"timestamp_sec"`
 	SelectedText *string           `json:"selected_text,omitempty"`

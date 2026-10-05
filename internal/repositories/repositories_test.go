@@ -312,4 +312,53 @@ func TestRepositories_InlineCommentOperations(t *testing.T) {
 	}
 }
 
+func TestRepositories_ListInlineCommentsByRecordingID(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open gorm db: %v", err)
+	}
+
+	repo := New(gormDB, nil)
+	recID := uuid.New()
+	commID := uuid.New()
+	replyID := uuid.New()
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE recording_id = \$1 AND parent_id IS NULL ORDER BY timestamp_sec ASC, created_at ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "comment_text", "parent_id"}).
+			AddRow(commID, recID, 12.0, "Top level comment", nil))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "comment_text", "parent_id"}).
+			AddRow(replyID, recID, 12.0, "Child reply", commID))
+
+	comments, err := repo.ListInlineCommentsByRecordingID(context.Background(), recID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(comments) != 1 {
+		t.Fatalf("expected 1 top-level comment, got %d", len(comments))
+	}
+	if len(comments[0].Replies) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(comments[0].Replies))
+	}
+	if comments[0].Replies[0].ID != replyID {
+		t.Errorf("expected reply ID %v, got %v", replyID, comments[0].Replies[0].ID)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+
 

@@ -3054,6 +3054,166 @@ func TestService_CreateInlineComment_ParentDifferentRecording(t *testing.T) {
 	}
 }
 
+func TestService_ListInlineComments_RecordingNotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.ListInlineComments(ctx, recID, "token")
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_ListInlineComments_Forbidden(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "valid-token", nil, false))
+
+	_, err := svc.ListInlineComments(ctx, recID, "invalid-token")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_ListInlineComments_Success_Empty(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, guestToken, nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE recording_id = \$1 AND parent_id IS NULL ORDER BY timestamp_sec ASC, created_at ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "comment_text", "parent_id"}))
+
+	comments, err := svc.ListInlineComments(ctx, recID, guestToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if comments == nil {
+		t.Fatal("expected non-nil empty slice")
+	}
+	if len(comments) != 0 {
+		t.Fatalf("expected 0 comments, got %d", len(comments))
+	}
+}
+
+func TestService_ListInlineComments_Success_AuthenticatedOwner(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	commID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", &userID, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE recording_id = \$1 AND parent_id IS NULL ORDER BY timestamp_sec ASC, created_at ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
+			AddRow(commID, recID, 5.5, "Owner", "Note on start", nil, time.Now(), time.Now()))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
+
+	comments, err := svc.ListInlineComments(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(comments) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(comments))
+	}
+	if comments[0].ID != commID.String() {
+		t.Errorf("expected ID %s, got %s", commID.String(), comments[0].ID)
+	}
+	if comments[0].TimestampSec != 5.5 {
+		t.Errorf("expected TimestampSec 5.5, got %f", comments[0].TimestampSec)
+	}
+}
+
+func TestService_ListInlineComments_Success_GuestWithToken_Threaded(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	ctx := context.Background()
+	parentID := uuid.New()
+	replyID := uuid.New()
+	segID := uuid.New()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, guestToken, nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE recording_id = \$1 AND parent_id IS NULL ORDER BY timestamp_sec ASC, created_at ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "segment_id", "timestamp_sec", "selected_text", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
+			AddRow(parentID, recID, &segID, 10.0, "Selected quote", "Alice", "Top question", nil, time.Now(), time.Now()))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(parentID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "segment_id", "timestamp_sec", "selected_text", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
+			AddRow(replyID, recID, nil, 10.0, nil, "Bob", "Reply answer", parentID, time.Now(), time.Now()))
+
+	comments, err := svc.ListInlineComments(ctx, recID, guestToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(comments) != 1 {
+		t.Fatalf("expected 1 top comment, got %d", len(comments))
+	}
+	if len(comments[0].Replies) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(comments[0].Replies))
+	}
+	if comments[0].Replies[0].ID != replyID.String() {
+		t.Errorf("expected reply ID %s, got %s", replyID.String(), comments[0].Replies[0].ID)
+	}
+	if comments[0].Replies[0].ParentID == nil || *comments[0].Replies[0].ParentID != parentID.String() {
+		t.Errorf("expected parent ID %s, got %v", parentID.String(), comments[0].Replies[0].ParentID)
+	}
+}
+
+func TestService_ListInlineComments_Success_PubliclyShared(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", nil, true))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE recording_id = \$1 AND parent_id IS NULL ORDER BY timestamp_sec ASC, created_at ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "comment_text", "parent_id"}))
+
+	comments, err := svc.ListInlineComments(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if comments == nil {
+		t.Fatal("expected empty slice")
+	}
+}
+
+
 
 
 

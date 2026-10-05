@@ -192,6 +192,14 @@ routes:
     handler: CreateInlineComment
     optional_auth: true
 
+  # List recording inline comments endpoint
+  -
+    method: GET
+    path: /v1/recordings/:id/comments
+    handler: ListInlineComments
+    optional_auth: true
+
+
 
 
 

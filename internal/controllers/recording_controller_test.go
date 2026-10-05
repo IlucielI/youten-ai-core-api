@@ -3492,6 +3492,184 @@ func TestControllers_CreateInlineComment_Success_ReplyToParent(t *testing.T) {
 	}
 }
 
+func TestControllers_ListInlineComments_NilReceiver(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/test/comments", nil)
+
+	var ctrls *Controllers
+	ctrls.ListInlineComments(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListInlineComments_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/test/comments", nil)
+
+	ctrls := &Controllers{}
+	ctrls.ListInlineComments(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListInlineComments_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/invalid-uuid/comments", nil)
+
+	ctrls.ListInlineComments(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListInlineComments_RecordingNotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/comments", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.ListInlineComments(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListInlineComments_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/comments", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "secret-token", nil, false))
+
+	ctrls.ListInlineComments(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+func TestControllers_ListInlineComments_Success_GuestWithHeader(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	commID := uuid.New()
+	replyID := uuid.New()
+	guestToken := "guest-token-123"
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/comments", nil)
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, guestToken, nil, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE recording_id = \$1 AND parent_id IS NULL ORDER BY timestamp_sec ASC, created_at ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
+			AddRow(commID, recID, 14.0, "Alice", "Top question", nil, time.Now(), time.Now()))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
+			AddRow(replyID, recID, 14.0, "Bob", "Reply here", commID, time.Now(), time.Now()))
+
+	ctrls.ListInlineComments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[[]dtos.CommentResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(resp.Data))
+	}
+	if resp.Data[0].ID != commID.String() {
+		t.Errorf("expected ID %s, got %s", commID.String(), resp.Data[0].ID)
+	}
+	if len(resp.Data[0].Replies) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(resp.Data[0].Replies))
+	}
+	if resp.Data[0].Replies[0].ID != replyID.String() {
+		t.Errorf("expected reply ID %s, got %s", replyID.String(), resp.Data[0].Replies[0].ID)
+	}
+}
+
+func TestControllers_ListInlineComments_Success_AuthenticatedOwner(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/comments", nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID}))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
+			AddRow(recID, "token", &userID, false))
+
+	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE recording_id = \$1 AND parent_id IS NULL ORDER BY timestamp_sec ASC, created_at ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "comment_text", "parent_id"}))
+
+	ctrls.ListInlineComments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[[]dtos.CommentResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+	if len(resp.Data) != 0 {
+		t.Fatalf("expected 0 comments, got %d", len(resp.Data))
+	}
+}
+
+
 
 
 

@@ -233,6 +233,13 @@ routes:
     handler: ExportRecording
     optional_auth: true
 
+  # Meeting voice bot beta waitlist signup endpoint
+  -
+    method: POST
+    path: /v1/waitlist/bot
+    handler: JoinBotWaitlist
+
+
 
 
 

@@ -279,6 +279,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"POST", "/v1/recordings/:id/chat"},
 		{"PUT", "/v1/recordings/:id/speakers"},
 		{"POST", "/v1/recordings/:id/regenerate"},
+		{"POST", "/v1/waitlist/bot"},
 	}
 
 
@@ -642,6 +643,18 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	router.ServeHTTP(wSpkDir, reqSpkDir)
 	if wSpkDir.Code != http.StatusUnauthorized {
 		t.Fatalf("expected GET /v1/speakers to return 401 Unauthorized without auth header, got %d", wSpkDir.Code)
+	}
+
+	// Verify POST /v1/waitlist/bot is public (does NOT return 401 Unauthorized without auth header)
+	wWaitlist := httptest.NewRecorder()
+	reqWaitlist, err := http.NewRequest(http.MethodPost, "/v1/waitlist/bot", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqWaitlist.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wWaitlist, reqWaitlist)
+	if wWaitlist.Code == http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/waitlist/bot to be public and not return 401 Unauthorized, got %d", wWaitlist.Code)
 	}
 }
 

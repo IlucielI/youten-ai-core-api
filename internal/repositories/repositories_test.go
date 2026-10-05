@@ -456,6 +456,105 @@ func TestRepositories_AggregateWorkspaceSpeakers(t *testing.T) {
 	}
 }
 
+func TestRepositories_Waitlist(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+
+	t.Run("upsert waitlist success", func(t *testing.T) {
+		entry := &models.BotWaitlist{
+			ID:          uuid.New(),
+			Email:       "test@example.com",
+			Platform:    "zoom",
+			CompanySize: "11-50",
+			Status:      "PENDING",
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "bot_waitlists"`).
+			WithArgs(entry.Email, entry.Platform, entry.CompanySize, entry.Status, entry.ID, sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(entry.ID, entry.CreatedAt, entry.UpdatedAt))
+		mock.ExpectCommit()
+
+		saved, err := repo.UpsertBotWaitlist(context.Background(), entry)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if saved == nil || saved.Email != "test@example.com" {
+			t.Fatalf("unexpected saved entry: %+v", saved)
+		}
+	})
+
+	t.Run("upsert waitlist error", func(t *testing.T) {
+		entry := &models.BotWaitlist{
+			ID:    uuid.New(),
+			Email: "err@example.com",
+		}
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "bot_waitlists"`).
+			WillReturnError(errors.New("db insert error"))
+		mock.ExpectRollback()
+
+		saved, err := repo.UpsertBotWaitlist(context.Background(), entry)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if saved != nil {
+			t.Fatalf("expected nil on error, got: %+v", saved)
+		}
+	})
+
+	t.Run("find by email success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "email", "platform", "company_size", "status"}).
+			AddRow(uuid.New(), "found@example.com", "google_meet", "1-10", "PENDING")
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_waitlists" WHERE LOWER(email) = LOWER($1) ORDER BY "bot_waitlists"."id" LIMIT $2`)).
+			WithArgs("found@example.com", 1).
+			WillReturnRows(rows)
+
+		found, err := repo.FindBotWaitlistByEmail(context.Background(), "found@example.com")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if found == nil || found.Email != "found@example.com" {
+			t.Fatalf("unexpected found entry: %+v", found)
+		}
+	})
+
+	t.Run("find by email not found", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_waitlists" WHERE LOWER(email) = LOWER($1) ORDER BY "bot_waitlists"."id" LIMIT $2`)).
+			WithArgs("missing@example.com", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email"}))
+
+		found, err := repo.FindBotWaitlistByEmail(context.Background(), "missing@example.com")
+		if err != nil {
+			t.Fatalf("unexpected error on not found: %v", err)
+		}
+		if found != nil {
+			t.Fatalf("expected nil when not found, got: %+v", found)
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+
 
 
 

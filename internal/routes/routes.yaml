@@ -123,4 +123,12 @@ routes:
     handler: ClaimBulkRecordings
     auth: true
 
+  # Toggle recording public share endpoint
+  -
+    method: PATCH
+    path: /v1/recordings/:id/share
+    handler: ToggleRecordingShare
+    auth: true
+
+
 

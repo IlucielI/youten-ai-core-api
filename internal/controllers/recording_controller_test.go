@@ -1269,6 +1269,160 @@ func TestControllers_ClaimBulkRecordings_Success(t *testing.T) {
 	}
 }
 
+func TestControllers_ToggleRecordingShare_NilReceiver(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPatch, "/v1/recordings/test/share", nil)
+
+	var ctrls *Controllers
+	ctrls.ToggleRecordingShare(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ToggleRecordingShare_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPatch, "/v1/recordings/test/share", nil)
+
+	ctrls := &Controllers{}
+	ctrls.ToggleRecordingShare(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_ToggleRecordingShare_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+
+	req := httptest.NewRequest(http.MethodPatch, "/v1/recordings/invalid-uuid/share", strings.NewReader(`{"is_share_enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.ToggleRecordingShare(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ToggleRecordingShare_InvalidJSON(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	req := httptest.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/share", strings.NewReader(`{invalid}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.ToggleRecordingShare(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ToggleRecordingShare_ValidationError(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	req := httptest.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/share", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	ctrls.ToggleRecordingShare(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_ToggleRecordingShare_ServiceError(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	req := httptest.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/share", strings.NewReader(`{"is_share_enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req // No auth user
+
+	ctrls.ToggleRecordingShare(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_ToggleRecordingShare_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	recID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	req := httptest.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/share", strings.NewReader(`{"is_share_enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID})
+	c.Request = req.WithContext(ctx)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "share_token", "is_share_enabled"}).
+			AddRow(recID, userID, nil, false))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_share_enabled"=\$1,"share_token"=\$2,"updated_at"=\$3 WHERE id = \$4 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(true, sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	ctrls.ToggleRecordingShare(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.ShareToggleResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if !resp.Data.IsShareEnabled {
+		t.Error("expected IsShareEnabled true")
+	}
+	if resp.Data.ShareToken == nil {
+		t.Error("expected ShareToken non-nil")
+	}
+	if resp.Data.ShareURL == nil || !strings.Contains(*resp.Data.ShareURL, *resp.Data.ShareToken) {
+		t.Errorf("expected ShareURL containing token, got %v", resp.Data.ShareURL)
+	}
+}
+
+
 
 
 

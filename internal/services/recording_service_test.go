@@ -1387,6 +1387,215 @@ func TestService_ClaimBulkRecordings_Success(t *testing.T) {
 	}
 }
 
+func TestService_ToggleRecordingShare_Unauthorized(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	enabled := true
+
+	ctx := context.Background()
+	_, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &enabled})
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestService_ToggleRecordingShare_NilRequest(t *testing.T) {
+	svc, _, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+	_, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: nil})
+	if !errors.Is(err, constants.ErrBadRequest) {
+		t.Fatalf("expected ErrBadRequest, got %v", err)
+	}
+}
+
+func TestService_ToggleRecordingShare_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	enabled := true
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &enabled})
+	if !errors.Is(err, constants.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestService_ToggleRecordingShare_Forbidden_NotOwner(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	otherUserID := uuid.New()
+	enabled := true
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, otherUserID))
+
+	_, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &enabled})
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_ToggleRecordingShare_Forbidden_Guest(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	enabled := true
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, nil))
+
+	_, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &enabled})
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_ToggleRecordingShare_Enable_NewToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	enabled := true
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "share_token", "is_share_enabled"}).
+			AddRow(recID, userID, nil, false))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_share_enabled"=\$1,"share_token"=\$2,"updated_at"=\$3 WHERE id = \$4 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(true, sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	resp, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &enabled})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.IsShareEnabled {
+		t.Error("expected IsShareEnabled true")
+	}
+	if resp.ShareToken == nil || *resp.ShareToken == "" {
+		t.Error("expected non-empty ShareToken")
+	}
+	if resp.ShareURL == nil || !strings.Contains(*resp.ShareURL, *resp.ShareToken) {
+		t.Errorf("expected ShareURL containing token, got %v", resp.ShareURL)
+	}
+}
+
+func TestService_ToggleRecordingShare_Enable_ExistingToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	existingToken := "existing-token-abc"
+	enabled := true
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "share_token", "is_share_enabled"}).
+			AddRow(recID, userID, &existingToken, false))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_share_enabled"=\$1,"share_token"=\$2,"updated_at"=\$3 WHERE id = \$4 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(true, existingToken, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	resp, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &enabled})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.IsShareEnabled {
+		t.Error("expected IsShareEnabled true")
+	}
+	if resp.ShareToken == nil || *resp.ShareToken != existingToken {
+		t.Errorf("expected ShareToken %s, got %v", existingToken, resp.ShareToken)
+	}
+}
+
+func TestService_ToggleRecordingShare_Disable(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	existingToken := "existing-token-abc"
+	disabled := false
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "share_token", "is_share_enabled"}).
+			AddRow(recID, userID, &existingToken, true))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_share_enabled"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	resp, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &disabled})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.IsShareEnabled {
+		t.Error("expected IsShareEnabled false")
+	}
+	if resp.ShareToken != nil {
+		t.Errorf("expected nil ShareToken when disabled, got %v", resp.ShareToken)
+	}
+	if resp.ShareURL != nil {
+		t.Errorf("expected nil ShareURL when disabled, got %v", resp.ShareURL)
+	}
+}
+
+func TestService_ToggleRecordingShare_DBError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	enabled := true
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "share_token", "is_share_enabled"}).
+			AddRow(recID, userID, nil, false))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_share_enabled"=\$1,"share_token"=\$2,"updated_at"=\$3 WHERE id = \$4 AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(true, sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnError(errors.New("db update error"))
+	mock.ExpectRollback()
+
+	_, err := svc.ToggleRecordingShare(ctx, recID, dtos.ShareToggleRequest{IsShareEnabled: &enabled})
+	if err == nil || !strings.Contains(err.Error(), "failed to update share settings") {
+		t.Fatalf("expected update error, got %v", err)
+	}
+}
+
+
+
 
 
 

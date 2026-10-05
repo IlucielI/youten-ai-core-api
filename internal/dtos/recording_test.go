@@ -328,6 +328,51 @@ func TestRecordingDTO_BulkClaimResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_ShareToggleRequest_Validation(t *testing.T) {
+	enabled := true
+	validReq := dtos.ShareToggleRequest{
+		IsShareEnabled: &enabled,
+	}
+	if err := validReq.Validate(); err != nil {
+		t.Errorf("expected valid share toggle request, got %v", err)
+	}
+
+	disabled := false
+	validReqDisabled := dtos.ShareToggleRequest{
+		IsShareEnabled: &disabled,
+	}
+	if err := validReqDisabled.Validate(); err != nil {
+		t.Errorf("expected valid disabled share toggle request, got %v", err)
+	}
+
+	nilReq := dtos.ShareToggleRequest{
+		IsShareEnabled: nil,
+	}
+	if err := nilReq.Validate(); err == nil {
+		t.Error("expected error for nil IsShareEnabled, got nil")
+	}
+}
+
+func TestRecordingDTO_ShareToggleResponse_Structure(t *testing.T) {
+	tok := "share-123"
+	url := "/v1/recordings/shared/share-123"
+	resp := dtos.ShareToggleResponse{
+		IsShareEnabled: true,
+		ShareToken:     &tok,
+		ShareURL:       &url,
+	}
+	if !resp.IsShareEnabled {
+		t.Error("expected IsShareEnabled true")
+	}
+	if resp.ShareToken == nil || *resp.ShareToken != tok {
+		t.Errorf("expected ShareToken %s, got %v", tok, resp.ShareToken)
+	}
+	if resp.ShareURL == nil || *resp.ShareURL != url {
+		t.Errorf("expected ShareURL %s, got %v", url, resp.ShareURL)
+	}
+}
+
+
 
 
 

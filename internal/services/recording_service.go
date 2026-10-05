@@ -588,6 +588,66 @@ func (s *Service) ClaimBulkRecordings(ctx context.Context, req dtos.BulkClaimReq
 	}, nil
 }
 
+// ToggleRecordingShare updates the public sharing state of a recording owned by the authenticated user.
+func (s *Service) ToggleRecordingShare(ctx context.Context, id uuid.UUID, req dtos.ShareToggleRequest) (*dtos.ShareToggleResponse, error) {
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	if !isAuth || !hasUserID {
+		return nil, constants.ErrUnauthorized
+	}
+
+	if req.IsShareEnabled == nil {
+		return nil, constants.ErrBadRequest
+	}
+
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve recording: %w", err)
+	}
+
+	if rec.UserID == nil || *rec.UserID != userID {
+		return nil, constants.ErrForbidden
+	}
+
+	if *req.IsShareEnabled {
+		var shareToken string
+		if rec.ShareToken != nil && *rec.ShareToken != "" {
+			shareToken = *rec.ShareToken
+		} else {
+			tokenBytes := make([]byte, 24)
+			if _, err := rand.Read(tokenBytes); err != nil {
+				return nil, fmt.Errorf("failed to generate share token: %w", err)
+			}
+			shareToken = hex.EncodeToString(tokenBytes)
+		}
+
+		if err := s.repo.UpdateRecordingShareSettings(ctx, id, true, &shareToken); err != nil {
+			return nil, fmt.Errorf("failed to update share settings: %w", err)
+		}
+
+		shareURL := fmt.Sprintf("/v1/recordings/shared/%s", shareToken)
+		return &dtos.ShareToggleResponse{
+			IsShareEnabled: true,
+			ShareToken:     &shareToken,
+			ShareURL:       &shareURL,
+		}, nil
+	}
+
+	if err := s.repo.UpdateRecordingShareSettings(ctx, id, false, nil); err != nil {
+		return nil, fmt.Errorf("failed to update share settings: %w", err)
+	}
+
+	return &dtos.ShareToggleResponse{
+		IsShareEnabled: false,
+		ShareToken:     nil,
+		ShareURL:       nil,
+	}, nil
+}
+
+
 
 // ImportRecordingFromURL validates target link against SSRF defense policies, streams media into S3,
 // records the new recording entry, and emits the background pipeline extraction event.

@@ -337,7 +337,16 @@ type SharedRecordingResponse struct {
 	CreatedAt        time.Time              `json:"created_at"`
 }
 
+// RetryRecordingRequest defines optional parameters for pipeline retry.
+type RetryRecordingRequest struct {
+	OwnershipToken string `json:"ownership_token,omitempty"`
+}
 
-
-
-
+// RetryRecordingResponse represents the response when a recording pipeline retry is accepted.
+type RetryRecordingResponse struct {
+	ID        string    `json:"id"`
+	Status    string    `json:"status"`
+	Stage     string    `json:"stage"`
+	Message   string    `json:"message"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

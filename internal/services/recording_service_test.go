@@ -17,6 +17,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/services"
@@ -1852,4 +1853,260 @@ func TestService_PollRecordingProgress_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrRecordNotFound, got %v", err)
 	}
 }
+
+func TestService_RetryRecordingPipeline_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.RetryRecordingPipeline(ctx, recID, "")
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_RetryRecordingPipeline_Forbidden_Unauthorized(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "status", "ownership_token"}).
+			AddRow(recID, true, models.RecordingStatusFailed, "guest-tok-123"))
+
+	_, err := svc.RetryRecordingPipeline(ctx, recID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_RetryRecordingPipeline_Forbidden_NotOwner(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	callerID := uuid.New()
+	ownerID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: callerID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status"}).
+			AddRow(recID, &ownerID, models.RecordingStatusFailed))
+
+	_, err := svc.RetryRecordingPipeline(ctx, recID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_RetryRecordingPipeline_Conflict_Processing(t *testing.T) {
+	activeStatuses := []string{
+		models.RecordingStatusPending,
+		models.RecordingStatusQueued,
+		models.RecordingStatusValidating,
+		models.RecordingStatusExtracting,
+		models.RecordingStatusTranscribing,
+		models.RecordingStatusSummarizing,
+		models.RecordingStatusIndexing,
+		"PROCESSING",
+	}
+
+	for _, status := range activeStatuses {
+		t.Run(status, func(t *testing.T) {
+			svc, mock, _, _ := setupRecordingTestService(t)
+			recID := uuid.New()
+			userID := uuid.New()
+			ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+			mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+				WithArgs(recID, 1).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status"}).
+					AddRow(recID, &userID, status))
+
+			_, err := svc.RetryRecordingPipeline(ctx, recID, "")
+			if !errors.Is(err, constants.ErrConflictProcessing) {
+				t.Fatalf("expected ErrConflictProcessing for status %s, got %v", status, err)
+			}
+		})
+	}
+}
+
+func TestService_RetryRecordingPipeline_Conflict_Completed(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status"}).
+			AddRow(recID, &userID, models.RecordingStatusCompleted))
+
+	_, err := svc.RetryRecordingPipeline(ctx, recID, "")
+	if !errors.Is(err, constants.ErrRecordingAlreadyCompleted) {
+		t.Fatalf("expected ErrRecordingAlreadyCompleted, got %v", err)
+	}
+}
+
+func TestService_RetryRecordingPipeline_Success_AudioMissing(t *testing.T) {
+	svc, mock, _, publisher := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	// Single lookup in RetryRecordingPipeline passed directly to ResumeRecordingPipeline
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "audio_url", "status", "selected_template", "output_language"}).
+			AddRow(recID, &userID, nil, models.RecordingStatusFailed, "GENERAL", "en"))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT .* FROM "transcript_chunks" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusQueued, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	publisher.publishedTopics = nil
+	resp, err := svc.RetryRecordingPipeline(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.ID)
+	}
+	if resp.Stage != models.RecordingStatusExtracting {
+		t.Errorf("expected stage EXTRACTING, got %s", resp.Stage)
+	}
+	if resp.Status != models.RecordingStatusQueued {
+		t.Errorf("expected status QUEUED, got %s", resp.Status)
+	}
+	if len(publisher.publishedTopics) == 0 || publisher.publishedTopics[0] != constants.TopicRecordingUploaded {
+		t.Errorf("expected TopicRecordingUploaded, got %v", publisher.publishedTopics)
+	}
+}
+
+func TestService_RetryRecordingPipeline_Success_TranscribeMissing(t *testing.T) {
+	svc, mock, _, publisher := setupRecordingTestService(t)
+	recID := uuid.New()
+	audioURL := "https://s3.amazonaws.com/bucket/audio.mp3"
+	guestToken := "guest-token-abc"
+	ctx := context.Background()
+
+	// Single lookup with guest credentials
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "ownership_token", "audio_url", "status", "selected_template", "output_language"}).
+			AddRow(recID, true, guestToken, &audioURL, models.RecordingStatusFailed, "GENERAL", "en"))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT .* FROM "transcript_chunks" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusQueued, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	publisher.publishedTopics = nil
+	resp, err := svc.RetryRecordingPipeline(ctx, recID, guestToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Stage != models.RecordingStatusTranscribing {
+		t.Errorf("expected stage TRANSCRIBING, got %s", resp.Stage)
+	}
+	if resp.Status != models.RecordingStatusQueued {
+		t.Errorf("expected status QUEUED, got %s", resp.Status)
+	}
+	if len(publisher.publishedTopics) == 0 || publisher.publishedTopics[0] != constants.TopicRecordingTranscribe {
+		t.Errorf("expected TopicRecordingTranscribe, got %v", publisher.publishedTopics)
+	}
+}
+
+func TestService_RetryRecordingPipeline_Success_ShareToken(t *testing.T) {
+	svc, mock, _, publisher := setupRecordingTestService(t)
+	recID := uuid.New()
+	audioURL := "https://s3.amazonaws.com/bucket/audio.mp3"
+	shareToken := "share-tok-999"
+	ctx := context.Background()
+
+	// Single lookup with share token credentials
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_share_enabled", "share_token", "audio_url", "status", "selected_template", "output_language"}).
+			AddRow(recID, true, &shareToken, &audioURL, models.RecordingStatusFailed, "GENERAL", "en"))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "text"}).
+			AddRow(uuid.New(), recID, "Segment 1 text"))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT .* FROM "transcript_chunks" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusTranscribing, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	publisher.publishedTopics = nil
+	resp, err := svc.RetryRecordingPipeline(ctx, recID, shareToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Stage != models.RecordingStatusTranscribing {
+		t.Errorf("expected stage TRANSCRIBING, got %s", resp.Stage)
+	}
+	if resp.Status != models.RecordingStatusTranscribing {
+		t.Errorf("expected status TRANSCRIBING, got %s", resp.Status)
+	}
+	foundSummarize := false
+	foundIndex := false
+	for _, topic := range publisher.publishedTopics {
+		if topic == constants.TopicRecordingSummarize {
+			foundSummarize = true
+		}
+		if topic == constants.TopicRecordingIndex {
+			foundIndex = true
+		}
+	}
+	if !foundSummarize || !foundIndex {
+		t.Errorf("expected fanout to summarize and index, got %v", publisher.publishedTopics)
+	}
+}
+
 

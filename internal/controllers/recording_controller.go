@@ -601,3 +601,54 @@ func (c *Controllers) StreamRecordingProgress(ctx *gin.Context) {
 		}
 	}
 }
+
+// RetryRecording handles POST /v1/recordings/:id/retry to initiate a smart retry of a failed pipeline.
+func (c *Controllers) RetryRecording(ctx *gin.Context) {
+	if c == nil {
+		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
+			Status:    constants.ResponseStatusError,
+			Code:      constants.ResponseCodeInternalError,
+			Message:   constants.ErrInternalServerError.Message,
+			Timestamp: time.Now(),
+		})
+		return
+	}
+	if c.svc == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
+	if ownershipToken == "" && ctx.Request.Body != nil && ctx.Request.ContentLength > 0 {
+		var req dtos.RetryRecordingRequest
+		if err := ctx.ShouldBindJSON(&req); err == nil && req.OwnershipToken != "" {
+			ownershipToken = strings.TrimSpace(req.OwnershipToken)
+		}
+	}
+
+	resp, err := c.svc.RetryRecordingPipeline(ctx.Request.Context(), id, ownershipToken)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	if resp == nil {
+		c.wrapError(ctx, constants.ErrInternalServerError)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.RetryRecordingResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "pipeline retry initiated successfully",
+		Data:      *resp,
+		Timestamp: time.Now(),
+	})
+}

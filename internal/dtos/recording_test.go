@@ -2,6 +2,7 @@ package dtos_test
 
 import (
 	"testing"
+	"time"
 
 	"code-base-golang/internal/dtos"
 )
@@ -394,9 +395,31 @@ func TestRecordingDTO_SharedRecordingResponse_Structure(t *testing.T) {
 	}
 }
 
+func TestRecordingDTO_RetryRecordingRequest_Structure(t *testing.T) {
+	req := dtos.RetryRecordingRequest{
+		OwnershipToken: "custom-token",
+	}
+	if req.OwnershipToken != "custom-token" {
+		t.Errorf("expected OwnershipToken 'custom-token', got %s", req.OwnershipToken)
+	}
+}
 
-
-
-
-
-
+func TestRecordingDTO_RetryRecordingResponse_Structure(t *testing.T) {
+	now := time.Now()
+	resp := dtos.RetryRecordingResponse{
+		ID:        "rec-123",
+		Status:    "QUEUED",
+		Stage:     "EXTRACTING",
+		Message:   "pipeline retry initiated successfully",
+		UpdatedAt: now,
+	}
+	if resp.ID != "rec-123" {
+		t.Errorf("expected ID 'rec-123', got %s", resp.ID)
+	}
+	if resp.Status != "QUEUED" {
+		t.Errorf("expected Status 'QUEUED', got %s", resp.Status)
+	}
+	if resp.Stage != "EXTRACTING" {
+		t.Errorf("expected Stage 'EXTRACTING', got %s", resp.Stage)
+	}
+}

@@ -30,6 +30,23 @@ type RAGUserData struct {
 	Chunks []RAGChunkView
 }
 
+// WorkspaceChunkView wraps chunk metadata for cross-meeting workspace Q&A.
+type WorkspaceChunkView struct {
+	ChunkIndex     int
+	Content        string
+	RecordingTitle string
+	StartTime      float64
+	EndTime        float64
+	StartFormatted string
+	EndFormatted   string
+}
+
+// WorkspaceRAGUserData holds input parameters for workspace_rag_user.tmpl.
+type WorkspaceRAGUserData struct {
+	Query   string
+	Matches []WorkspaceChunkView
+}
+
 // SummaryUserData holds input parameters for summary_user.tmpl.
 type SummaryUserData struct {
 	Language       string
@@ -117,3 +134,66 @@ func RenderSummaryUserPrompt(transcriptBody string, targetLanguage string, custo
 	}
 	return strings.TrimSpace(buf.String()), nil
 }
+
+// DefaultWorkspaceRAGSystemPrompt returns the static cross-meeting workspace RAG system prompt.
+func DefaultWorkspaceRAGSystemPrompt() (string, error) {
+	var buf bytes.Buffer
+	if err := parsedTemplates.ExecuteTemplate(&buf, "workspace_rag_system.tmpl", nil); err != nil {
+		return "", fmt.Errorf("execute workspace_rag_system.tmpl: %w", err)
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
+// RenderWorkspaceRAGUserPrompt formats query and cross-meeting retrieved chunks into user prompt.
+func RenderWorkspaceRAGUserPrompt(query string, matches []WorkspaceChunkView) (string, error) {
+	var views []WorkspaceChunkView
+	for _, m := range matches {
+		title := strings.TrimSpace(m.RecordingTitle)
+		if title == "" {
+			title = "Untitled Meeting"
+		}
+		cleanContent := strings.ReplaceAll(m.Content, "</meeting_transcript>", "&lt;/meeting_transcript&gt;")
+
+		startFmt := m.StartFormatted
+		if startFmt == "" {
+			startFmt = FormatTimestamp(m.StartTime)
+		}
+		endFmt := m.EndFormatted
+		if endFmt == "" {
+			endFmt = FormatTimestamp(m.EndTime)
+		}
+
+		views = append(views, WorkspaceChunkView{
+			ChunkIndex:     m.ChunkIndex,
+			Content:        cleanContent,
+			RecordingTitle: title,
+			StartFormatted: startFmt,
+			EndFormatted:   endFmt,
+		})
+	}
+
+	data := WorkspaceRAGUserData{
+		Query:   strings.TrimSpace(query),
+		Matches: views,
+	}
+
+	var buf bytes.Buffer
+	if err := parsedTemplates.ExecuteTemplate(&buf, "workspace_rag_user.tmpl", data); err != nil {
+		return "", fmt.Errorf("execute workspace_rag_user.tmpl: %w", err)
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
+// RenderWorkspaceRAGPrompts returns both system and user prompts ready for workspace LLM chat.
+func RenderWorkspaceRAGPrompts(query string, matches []WorkspaceChunkView) (systemPrompt, userPrompt string, err error) {
+	systemPrompt, err = DefaultWorkspaceRAGSystemPrompt()
+	if err != nil {
+		return "", "", err
+	}
+	userPrompt, err = RenderWorkspaceRAGUserPrompt(query, matches)
+	if err != nil {
+		return "", "", err
+	}
+	return systemPrompt, userPrompt, nil
+}
+

@@ -3,7 +3,6 @@ package controllers
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,13 +26,7 @@ func (c *Controllers) GetRecordingDetail(ctx *gin.Context) {
 	}
 
 	// Extract ownership token from header or query param
-	token := ctx.GetHeader("X-Ownership-Token")
-	if token == "" {
-		token = ctx.Query("token")
-	}
-	if token == "" {
-		token = ctx.Query("ownership_token")
-	}
+	token := c.extractOwnershipToken(ctx)
 
 	resp, err := c.svc.GetRecordingDetail(ctx.Request.Context(), recID, token)
 	if err != nil {
@@ -94,13 +87,7 @@ func (c *Controllers) StreamRecordingProgress(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(ctx.Query("token"))
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx)
 
 	initial, subCh, unsub, err := c.svc.GetRecordingProgress(ctx.Request.Context(), id, ownershipToken)
 	if err != nil {

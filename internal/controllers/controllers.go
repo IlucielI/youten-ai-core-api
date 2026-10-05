@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,3 +58,21 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 		Timestamp: time.Now(),
 	})
 }
+
+// extractOwnershipToken extracts an ownership/share token with cascading fallback:
+// optional body token -> X-Ownership-Token header -> "token" query param -> "ownership_token" query param.
+func (c *Controllers) extractOwnershipToken(ctx *gin.Context, bodyTokens ...string) string {
+	for _, bt := range bodyTokens {
+		if t := strings.TrimSpace(bt); t != "" {
+			return t
+		}
+	}
+	if t := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token")); t != "" {
+		return t
+	}
+	if t := strings.TrimSpace(ctx.Query("token")); t != "" {
+		return t
+	}
+	return strings.TrimSpace(ctx.Query("ownership_token"))
+}
+

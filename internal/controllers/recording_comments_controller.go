@@ -47,16 +47,7 @@ func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(req.OwnershipToken)
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx, req.OwnershipToken)
 
 	resp, err := c.svc.CreateInlineComment(ctx.Request.Context(), id, ownershipToken, req)
 	if err != nil {
@@ -83,13 +74,7 @@ func (c *Controllers) ListInlineComments(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx)
 
 	resp, err := c.svc.ListInlineComments(ctx.Request.Context(), id, ownershipToken)
 	if err != nil {
@@ -123,13 +108,7 @@ func (c *Controllers) DeleteInlineComment(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx)
 
 	if err := c.svc.DeleteInlineComment(ctx.Request.Context(), id, commentID, ownershipToken); err != nil {
 		c.wrapError(ctx, err)
@@ -178,16 +157,7 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(req.OwnershipToken)
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx, req.OwnershipToken)
 
 	result, err := c.svc.InitiateRecordingChatStream(ctx.Request.Context(), id, ownershipToken, req)
 	if err != nil {

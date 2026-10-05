@@ -46,16 +46,7 @@ func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(req.OwnershipToken)
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx, req.OwnershipToken)
 
 	resp, err := c.svc.UpdateTranscriptSpeakers(ctx.Request.Context(), id, ownershipToken, req)
 	if err != nil {
@@ -105,16 +96,7 @@ func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(req.OwnershipToken)
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx, req.OwnershipToken)
 
 	resp, err := c.svc.RegenerateSummary(ctx.Request.Context(), id, ownershipToken, req)
 	if err != nil {
@@ -141,13 +123,7 @@ func (c *Controllers) ListSummaryVersions(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx)
 
 	resp, err := c.svc.ListSummaryVersions(ctx.Request.Context(), id, ownershipToken)
 	if err != nil {
@@ -180,13 +156,7 @@ func (c *Controllers) ActivateSummaryVersion(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx)
 
 	resp, err := c.svc.ActivateSummaryVersion(ctx.Request.Context(), id, versionID, ownershipToken)
 	if err != nil {
@@ -219,13 +189,7 @@ func (c *Controllers) ExportRecording(ctx *gin.Context) {
 
 	format := strings.TrimSpace(ctx.DefaultQuery("format", "markdown"))
 
-	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("token"))
-	}
-	if ownershipToken == "" {
-		ownershipToken = strings.TrimSpace(ctx.Query("ownership_token"))
-	}
+	ownershipToken := c.extractOwnershipToken(ctx)
 
 	result, err := c.svc.ExportRecordingMOM(ctx.Request.Context(), id, ownershipToken, format)
 	if err != nil {

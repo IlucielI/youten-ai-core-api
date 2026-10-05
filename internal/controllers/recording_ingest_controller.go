@@ -3,7 +3,6 @@ package controllers
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -172,13 +171,14 @@ func (c *Controllers) RetryRecording(ctx *gin.Context) {
 		return
 	}
 
-	ownershipToken := strings.TrimSpace(ctx.GetHeader("X-Ownership-Token"))
-	if ownershipToken == "" && ctx.Request.Body != nil && ctx.Request.ContentLength > 0 {
+	var bodyToken string
+	if ctx.Request.Body != nil && ctx.Request.ContentLength > 0 {
 		var req dtos.RetryRecordingRequest
-		if err := ctx.ShouldBindJSON(&req); err == nil && req.OwnershipToken != "" {
-			ownershipToken = strings.TrimSpace(req.OwnershipToken)
+		if err := ctx.ShouldBindJSON(&req); err == nil {
+			bodyToken = req.OwnershipToken
 		}
 	}
+	ownershipToken := c.extractOwnershipToken(ctx, bodyToken)
 
 	resp, err := c.svc.RetryRecordingPipeline(ctx.Request.Context(), id, ownershipToken)
 	if err != nil {

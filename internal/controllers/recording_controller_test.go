@@ -24,6 +24,7 @@ import (
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/services"
+	"code-base-golang/internal/sse"
 )
 
 type dummyStorage struct {
@@ -1539,5 +1540,213 @@ func TestControllers_GetSharedRecording_Success(t *testing.T) {
 	}
 	if len(resp.Data.Segments) != 1 {
 		t.Errorf("expected 1 segment, got %d", len(resp.Data.Segments))
+	}
+}
+
+func TestControllers_StreamRecordingProgress_NilReceiver(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/test/progress", nil)
+
+	var ctrls *Controllers
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingProgress_NilService(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/test/progress", nil)
+
+	ctrls := &Controllers{}
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingProgress_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/invalid-uuid/progress", nil)
+
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingProgress_NotFound(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/progress", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingProgress_Forbidden(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	userID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/progress", nil)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, &userID, "token-1", false))
+
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", w.Code)
+	}
+}
+
+func TestControllers_StreamRecordingProgress_TerminalInitial_Completed(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	userID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/progress", nil)
+	ctx := ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID})
+	c.Request = req.WithContext(ctx)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status", "ownership_token"}).
+			AddRow(recID, &userID, "COMPLETED", "token-1"))
+
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	if !strings.Contains(w.Header().Get("Content-Type"), "text/event-stream") {
+		t.Errorf("expected text/event-stream Content-Type, got %s", w.Header().Get("Content-Type"))
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "event: progress\n") || !strings.Contains(body, `"status":"COMPLETED"`) {
+		t.Errorf("expected progress event with COMPLETED, got: %s", body)
+	}
+}
+
+func TestControllers_StreamRecordingProgress_StreamTransitions(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	userID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/progress", nil)
+	ctx := ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID})
+	c.Request = req.WithContext(ctx)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status", "ownership_token"}).
+			AddRow(recID, &userID, "EXTRACTING", "token-1"))
+
+	// In background, broadcast next events to hub, culminating in COMPLETED
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		ctrls.Service().SSEHub().Publish(recID, sse.ProgressEvent{
+			RecordingID: recID.String(),
+			Status:      "TRANSCRIBING",
+			Stage:       "TRANSCRIBING",
+			Progress:    55,
+		})
+		time.Sleep(50 * time.Millisecond)
+		ctrls.Service().SSEHub().Publish(recID, sse.ProgressEvent{
+			RecordingID: recID.String(),
+			Status:      "COMPLETED",
+			Stage:       "COMPLETED",
+			Progress:    100,
+		})
+	}()
+
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"status":"EXTRACTING"`) {
+		t.Errorf("expected initial EXTRACTING status, got: %s", body)
+	}
+	if !strings.Contains(body, `"status":"TRANSCRIBING"`) {
+		t.Errorf("expected streamed TRANSCRIBING status, got: %s", body)
+	}
+	if !strings.Contains(body, `"status":"COMPLETED"`) {
+		t.Errorf("expected final COMPLETED status, got: %s", body)
+	}
+}
+
+func TestControllers_StreamRecordingProgress_ClientDisconnect(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	userID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/progress", nil).WithContext(reqCtx)
+	ctx := ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: userID})
+	c.Request = req.WithContext(ctx)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status", "ownership_token"}).
+			AddRow(recID, &userID, "EXTRACTING", "token-1"))
+
+	// Cancel context shortly after start
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	ctrls.StreamRecordingProgress(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"status":"EXTRACTING"`) {
+		t.Errorf("expected initial EXTRACTING status, got: %s", body)
 	}
 }

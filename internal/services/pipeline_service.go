@@ -14,7 +14,9 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
+	"code-base-golang/internal/sse"
 	"code-base-golang/internal/templates"
+	"time"
 )
 
 var (
@@ -35,6 +37,7 @@ func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipe
 	if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusExtracting, nil, nil); err != nil {
 		return fmt.Errorf("failed to update recording status: %w", err)
 	}
+	s.publishProgress(recording.ID, models.RecordingStatusExtracting, nil, nil)
 
 	bucket := s.cfg.S3BucketName
 
@@ -100,6 +103,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusTranscribing, nil, nil); err != nil {
 		return fmt.Errorf("failed to update recording status: %w", err)
 	}
+	s.publishProgress(recording.ID, models.RecordingStatusTranscribing, nil, nil)
 
 	bucket := s.cfg.S3BucketName
 
@@ -204,6 +208,7 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusSummarizing, nil, nil); err != nil {
 		return fmt.Errorf("failed to update recording status: %w", err)
 	}
+	s.publishProgress(recording.ID, models.RecordingStatusSummarizing, nil, nil)
 
 	// Retrieve template
 	templateKey := recording.SelectedTemplate
@@ -313,6 +318,7 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 	if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusIndexing, nil, nil); err != nil {
 		return fmt.Errorf("failed to update recording status: %w", err)
 	}
+	s.publishProgress(recording.ID, models.RecordingStatusIndexing, nil, nil)
 
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recording.ID)
 	if err != nil {
@@ -553,6 +559,7 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 	if err := s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusCompleted, nil, nil); err != nil {
 		return false, err
 	}
+	s.publishProgress(recordingID, models.RecordingStatusCompleted, nil, nil)
 
 	// Create user notification if tied to registered user
 	if recording.UserID != nil {
@@ -647,6 +654,7 @@ func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errC
 	if err := s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusFailed, &errCode, &errMsg); err != nil {
 		return err
 	}
+	s.publishProgress(recordingID, models.RecordingStatusFailed, &errCode, &errMsg)
 
 	if s.publisher != nil {
 		_ = s.publisher.Publish(ctx, constants.TopicRecordingFailed, payload.RecordingPipelinePayload{
@@ -656,4 +664,20 @@ func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errC
 	}
 
 	return nil
+}
+
+func (s *Service) publishProgress(recordingID uuid.UUID, status string, errCode, errMsg *string) {
+	if s.sseHub == nil {
+		return
+	}
+	stage, prog := sse.MapStatusToProgress(status)
+	s.sseHub.Publish(recordingID, sse.ProgressEvent{
+		RecordingID:  recordingID.String(),
+		Status:       status,
+		Stage:        stage,
+		Progress:     prog,
+		ErrorCode:    errCode,
+		ErrorMessage: errMsg,
+		UpdatedAt:    time.Now().UTC(),
+	})
 }

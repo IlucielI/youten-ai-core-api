@@ -20,6 +20,7 @@ import (
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/repositories"
+	"code-base-golang/internal/sse"
 )
 
 // GeneratePresignUpload generates a pre-signed S3 PUT URL for direct client-to-storage upload
@@ -963,6 +964,72 @@ func (s *Service) ImportRecordingFromURL(
 	}
 
 	return respDTO, nil
+}
+
+// GetRecordingProgress verifies ownership access and returns the current ProgressEvent
+// along with an active SSE subscription channel and unsubscribe function.
+func (s *Service) GetRecordingProgress(ctx context.Context, id uuid.UUID, ownershipToken string) (*sse.ProgressEvent, <-chan sse.ProgressEvent, func(), error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, constants.ErrRecordingNotFound
+		}
+		return nil, nil, nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Ownership verification
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && ownershipToken == rec.OwnershipToken {
+		hasAccess = true
+	} else if ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil && ownershipToken == *rec.ShareToken {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, nil, nil, constants.ErrForbidden
+	}
+
+	stage, prog := sse.MapStatusToProgress(rec.Status)
+	initialEvent := &sse.ProgressEvent{
+		RecordingID:  rec.ID.String(),
+		Status:       rec.Status,
+		Stage:        stage,
+		Progress:     prog,
+		ErrorCode:    rec.ErrorCode,
+		ErrorMessage: rec.ErrorMessage,
+		UpdatedAt:    rec.UpdatedAt,
+	}
+
+	if s.sseHub == nil {
+		return initialEvent, nil, func() {}, nil
+	}
+
+	subCh, unsub := s.sseHub.Subscribe(id)
+	return initialEvent, subCh, unsub, nil
+}
+
+// PollRecordingProgress fetches the latest progress state for a recording.
+func (s *Service) PollRecordingProgress(ctx context.Context, id uuid.UUID) (*sse.ProgressEvent, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	stage, prog := sse.MapStatusToProgress(rec.Status)
+	return &sse.ProgressEvent{
+		RecordingID:  rec.ID.String(),
+		Status:       rec.Status,
+		Stage:        stage,
+		Progress:     prog,
+		ErrorCode:    rec.ErrorCode,
+		ErrorMessage: rec.ErrorMessage,
+		UpdatedAt:    rec.UpdatedAt,
+	}, nil
 }
 
 func inferMediaExtension(contentType string) string {

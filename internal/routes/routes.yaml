@@ -135,3 +135,10 @@ routes:
     method: GET
     path: /v1/recordings/shared/:token
     handler: GetSharedRecording
+
+  # Real-time pipeline progress SSE endpoint
+  -
+    method: GET
+    path: /v1/recordings/:id/progress
+    handler: StreamRecordingProgress
+    optional_auth: true

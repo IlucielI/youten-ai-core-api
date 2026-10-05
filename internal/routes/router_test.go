@@ -274,6 +274,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"POST", "/v1/recordings/claim"},
 		{"PATCH", "/v1/recordings/:id/share"},
 		{"GET", "/v1/recordings/shared/:token"},
+		{"GET", "/v1/recordings/:id/progress"},
 	}
 
 	registeredPairs := make(map[string]bool)
@@ -422,7 +423,15 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wShared.Code == http.StatusUnauthorized {
 		t.Fatalf("expected GET /v1/recordings/shared/:token not to return 401 Unauthorized (public route), got %d", wShared.Code)
 	}
+
+	// Verify GET /v1/recordings/:id/progress is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wProgress := httptest.NewRecorder()
+	reqProgress, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001/progress", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wProgress, reqProgress)
+	if wProgress.Code == http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/:id/progress not to return 401 Unauthorized without header (optional_auth), got %d", wProgress.Code)
+	}
 }
-
-
-

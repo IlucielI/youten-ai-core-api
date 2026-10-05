@@ -8,6 +8,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/repositories"
+	"code-base-golang/internal/sse"
 )
 
 // MediaFetcher defines a function signature to safely stream external media.
@@ -25,6 +26,7 @@ type Service struct {
 	embedding      EmbeddingProvider
 	audioExtractor AudioExtractor
 	mediaFetcher   MediaFetcher
+	sseHub         sse.Hub
 }
 
 // New creates a new unified service container.
@@ -38,6 +40,7 @@ func New(cfg config.Config, repo *repositories.Repositories, storage FileStorage
 		storage:   storage,
 		repo:      repo,
 		publisher: pub,
+		sseHub:    sse.NewHub(),
 	}
 }
 
@@ -184,6 +187,25 @@ func (s *Service) SetMediaFetcher(fetcher MediaFetcher) {
 func (s *Service) WithMediaFetcher(fetcher MediaFetcher) *Service {
 	s.mediaFetcher = fetcher
 	return s
+}
+
+// SetSSEHub allows injecting or overriding SSE hub (e.g. for testing).
+func (s *Service) SetSSEHub(hub sse.Hub) {
+	s.sseHub = hub
+}
+
+// WithSSEHub fluently sets the SSE hub.
+func (s *Service) WithSSEHub(hub sse.Hub) *Service {
+	s.sseHub = hub
+	return s
+}
+
+// SSEHub returns the underlying SSE hub.
+func (s *Service) SSEHub() sse.Hub {
+	if s == nil {
+		return nil
+	}
+	return s.sseHub
 }
 
 // wrapError wraps unknown or system errors into structured AppError.

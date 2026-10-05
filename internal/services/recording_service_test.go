@@ -1691,3 +1691,165 @@ func TestService_GetSharedRecording_Success(t *testing.T) {
 		t.Errorf("expected 1 highlight, got %d", len(resp.Highlights))
 	}
 }
+
+func TestService_GetRecordingProgress_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, _, _, err := svc.GetRecordingProgress(ctx, recID, "")
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
+func TestService_GetRecordingProgress_Forbidden_Unauthorized(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := context.Background() // Not authenticated, no token
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, &userID, "token-1", false))
+
+	_, _, _, err := svc.GetRecordingProgress(ctx, recID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_GetRecordingProgress_Forbidden_NotOwner(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	callerID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: callerID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, &ownerID, "token-1", false))
+
+	_, _, _, err := svc.GetRecordingProgress(ctx, recID, "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestService_GetRecordingProgress_Success_AuthUser(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status", "ownership_token"}).
+			AddRow(recID, &userID, "TRANSCRIBING", "token-1"))
+
+	initial, subCh, unsub, err := svc.GetRecordingProgress(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer unsub()
+
+	if initial.RecordingID != recID.String() {
+		t.Errorf("expected recording ID %s, got %s", recID.String(), initial.RecordingID)
+	}
+	if initial.Status != "TRANSCRIBING" || initial.Progress != 55 {
+		t.Errorf("expected status TRANSCRIBING and progress 55, got %s / %d", initial.Status, initial.Progress)
+	}
+	if subCh == nil {
+		t.Error("expected non-nil subscription channel")
+	}
+}
+
+func TestService_GetRecordingProgress_Success_GuestToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "status", "ownership_token"}).
+			AddRow(recID, true, "EXTRACTING", "guest-token-123"))
+
+	initial, subCh, unsub, err := svc.GetRecordingProgress(ctx, recID, "guest-token-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer unsub()
+
+	if initial.Status != "EXTRACTING" || initial.Progress != 30 {
+		t.Errorf("expected EXTRACTING / 30, got %s / %d", initial.Status, initial.Progress)
+	}
+	if subCh == nil {
+		t.Error("expected non-nil sub channel")
+	}
+}
+
+func TestService_GetRecordingProgress_Success_ShareToken(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	shareToken := "share-token-xyz"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_share_enabled", "share_token", "status"}).
+			AddRow(recID, true, &shareToken, "COMPLETED"))
+
+	initial, subCh, unsub, err := svc.GetRecordingProgress(ctx, recID, "share-token-xyz")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer unsub()
+
+	if initial.Status != "COMPLETED" || initial.Progress != 100 {
+		t.Errorf("expected COMPLETED / 100, got %s / %d", initial.Status, initial.Progress)
+	}
+	if subCh == nil {
+		t.Error("expected non-nil sub channel")
+	}
+}
+
+func TestService_PollRecordingProgress_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).
+			AddRow(recID, "SUMMARIZING"))
+
+	event, err := svc.PollRecordingProgress(ctx, recID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event.Status != "SUMMARIZING" || event.Progress != 75 {
+		t.Errorf("expected SUMMARIZING / 75, got %s / %d", event.Status, event.Progress)
+	}
+}
+
+func TestService_PollRecordingProgress_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.PollRecordingProgress(ctx, recID)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected ErrRecordNotFound, got %v", err)
+	}
+}
+

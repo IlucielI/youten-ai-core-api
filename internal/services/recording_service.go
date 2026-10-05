@@ -332,61 +332,10 @@ func (s *Service) GetRecordingDetail(ctx context.Context, id uuid.UUID, ownershi
 		return nil, fmt.Errorf("failed to fetch highlights: %w", err)
 	}
 
-	segmentDTOs := make([]dtos.TranscriptSegmentDTO, len(segments))
-	for i, seg := range segments {
-		segmentDTOs[i] = dtos.TranscriptSegmentDTO{
-			ID:            seg.ID.String(),
-			SpeakerLabel:  seg.SpeakerLabel,
-			SpeakerName:   seg.SpeakerName,
-			StartTime:     seg.StartTime,
-			EndTime:       seg.EndTime,
-			Text:          seg.Text,
-			WordsData:     seg.WordsData,
-			SequenceOrder: seg.SequenceOrder,
-		}
-	}
-
-	var summaryDTO *dtos.SummaryDTO
-	if activeSummary != nil {
-		summaryDTO = &dtos.SummaryDTO{
-			ID:               activeSummary.ID.String(),
-			TemplateCategory: activeSummary.TemplateCategory,
-			CustomAngle:      activeSummary.CustomAngle,
-			Version:          activeSummary.Version,
-			IsActive:         activeSummary.IsActive,
-			StructuredData:   activeSummary.StructuredData,
-			MarkdownContent:  activeSummary.MarkdownContent,
-			CreatedAt:        activeSummary.CreatedAt,
-			UpdatedAt:        activeSummary.UpdatedAt,
-		}
-	}
-
-	chapterDTOs := make([]dtos.ChapterDTO, len(chapters))
-	for i, chap := range chapters {
-		chapterDTOs[i] = dtos.ChapterDTO{
-			ID:            chap.ID.String(),
-			Title:         chap.Title,
-			StartTime:     chap.StartTime,
-			EndTime:       chap.EndTime,
-			Summary:       chap.Summary,
-			SequenceOrder: chap.SequenceOrder,
-			CreatedAt:     chap.CreatedAt,
-		}
-	}
-
-	highlightDTOs := make([]dtos.HighlightDTO, len(highlights))
-	for i, hl := range highlights {
-		highlightDTOs[i] = dtos.HighlightDTO{
-			ID:        hl.ID.String(),
-			StartTime: hl.StartTime,
-			EndTime:   hl.EndTime,
-			Title:     hl.Title,
-			Note:      hl.Note,
-			Source:    hl.Source,
-			ClipURL:   hl.ClipURL,
-			CreatedAt: hl.CreatedAt,
-		}
-	}
+	segmentDTOs := toTranscriptSegmentDTOs(segments)
+	summaryDTO := toSummaryDTO(activeSummary)
+	chapterDTOs := toChapterDTOs(chapters)
+	highlightDTOs := toHighlightDTOs(highlights)
 
 	var userIDStr *string
 	if rec.UserID != nil {
@@ -704,61 +653,10 @@ func (s *Service) GetSharedRecording(ctx context.Context, shareToken string) (*d
 		return nil, fmt.Errorf("failed to fetch highlights: %w", err)
 	}
 
-	segmentDTOs := make([]dtos.TranscriptSegmentDTO, len(segments))
-	for i, seg := range segments {
-		segmentDTOs[i] = dtos.TranscriptSegmentDTO{
-			ID:            seg.ID.String(),
-			SpeakerLabel:  seg.SpeakerLabel,
-			SpeakerName:   seg.SpeakerName,
-			StartTime:     seg.StartTime,
-			EndTime:       seg.EndTime,
-			Text:          seg.Text,
-			WordsData:     seg.WordsData,
-			SequenceOrder: seg.SequenceOrder,
-		}
-	}
-
-	var summaryDTO *dtos.SummaryDTO
-	if activeSummary != nil {
-		summaryDTO = &dtos.SummaryDTO{
-			ID:               activeSummary.ID.String(),
-			TemplateCategory: activeSummary.TemplateCategory,
-			CustomAngle:      activeSummary.CustomAngle,
-			Version:          activeSummary.Version,
-			IsActive:         activeSummary.IsActive,
-			StructuredData:   activeSummary.StructuredData,
-			MarkdownContent:  activeSummary.MarkdownContent,
-			CreatedAt:        activeSummary.CreatedAt,
-			UpdatedAt:        activeSummary.UpdatedAt,
-		}
-	}
-
-	chapterDTOs := make([]dtos.ChapterDTO, len(chapters))
-	for i, chap := range chapters {
-		chapterDTOs[i] = dtos.ChapterDTO{
-			ID:            chap.ID.String(),
-			Title:         chap.Title,
-			StartTime:     chap.StartTime,
-			EndTime:       chap.EndTime,
-			Summary:       chap.Summary,
-			SequenceOrder: chap.SequenceOrder,
-			CreatedAt:     chap.CreatedAt,
-		}
-	}
-
-	highlightDTOs := make([]dtos.HighlightDTO, len(highlights))
-	for i, hl := range highlights {
-		highlightDTOs[i] = dtos.HighlightDTO{
-			ID:        hl.ID.String(),
-			StartTime: hl.StartTime,
-			EndTime:   hl.EndTime,
-			Title:     hl.Title,
-			Note:      hl.Note,
-			Source:    hl.Source,
-			ClipURL:   hl.ClipURL,
-			CreatedAt: hl.CreatedAt,
-		}
-	}
+	segmentDTOs := toTranscriptSegmentDTOs(segments)
+	summaryDTO := toSummaryDTO(activeSummary)
+	chapterDTOs := toChapterDTOs(chapters)
+	highlightDTOs := toHighlightDTOs(highlights)
 
 	return &dtos.SharedRecordingResponse{
 		ID:               rec.ID.String(),
@@ -1314,16 +1212,8 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		return nil, fmt.Errorf("failed to save summary version: %w", err)
 	}
 
-	return &dtos.SummaryVersionResponse{
-		ID:               newSummary.ID.String(),
-		Version:          newSummary.Version,
-		TemplateCategory: newSummary.TemplateCategory,
-		CustomAngle:      newSummary.CustomAngle,
-		StructuredData:   newSummary.StructuredData,
-		MarkdownContent:  newSummary.MarkdownContent,
-		IsActive:         newSummary.IsActive,
-		CreatedAt:        newSummary.CreatedAt,
-	}, nil
+	resp := toSummaryVersionResponse(newSummary)
+	return &resp, nil
 }
 
 // ListSummaryVersions retrieves all summary versions for a recording ordered by version ASC.
@@ -1358,16 +1248,7 @@ func (s *Service) ListSummaryVersions(ctx context.Context, id uuid.UUID, ownersh
 
 	result := make([]dtos.SummaryVersionResponse, 0, len(summaries))
 	for _, sum := range summaries {
-		result = append(result, dtos.SummaryVersionResponse{
-			ID:               sum.ID.String(),
-			Version:          sum.Version,
-			TemplateCategory: sum.TemplateCategory,
-			CustomAngle:      sum.CustomAngle,
-			StructuredData:   sum.StructuredData,
-			MarkdownContent:  sum.MarkdownContent,
-			IsActive:         sum.IsActive,
-			CreatedAt:        sum.CreatedAt,
-		})
+		result = append(result, toSummaryVersionResponse(sum))
 	}
 
 	return result, nil
@@ -1403,16 +1284,8 @@ func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, vers
 		return nil, err
 	}
 
-	return &dtos.SummaryVersionResponse{
-		ID:               activated.ID.String(),
-		Version:          activated.Version,
-		TemplateCategory: activated.TemplateCategory,
-		CustomAngle:      activated.CustomAngle,
-		StructuredData:   activated.StructuredData,
-		MarkdownContent:  activated.MarkdownContent,
-		IsActive:         activated.IsActive,
-		CreatedAt:        activated.CreatedAt,
-	}, nil
+	resp := toSummaryVersionResponse(*activated)
+	return &resp, nil
 }
 
 // CreateInlineComment creates a timestamped inline comment or reply for a recording.
@@ -1490,37 +1363,8 @@ func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownersh
 		return nil, fmt.Errorf("failed to create inline comment: %w", err)
 	}
 
-	var segIDStr *string
-	if comment.SegmentID != nil {
-		s := comment.SegmentID.String()
-		segIDStr = &s
-	}
-
-	var parentIDStr *string
-	if comment.ParentID != nil {
-		p := comment.ParentID.String()
-		parentIDStr = &p
-	}
-
-	var userIDStr *string
-	if comment.UserID != nil {
-		u := comment.UserID.String()
-		userIDStr = &u
-	}
-
-	return &dtos.CommentResponse{
-		ID:           comment.ID.String(),
-		RecordingID:  comment.RecordingID.String(),
-		UserID:       userIDStr,
-		SegmentID:    segIDStr,
-		TimestampSec: comment.TimestampSec,
-		SelectedText: comment.SelectedText,
-		AuthorName:   comment.AuthorName,
-		CommentText:  comment.CommentText,
-		ParentID:     parentIDStr,
-		CreatedAt:    comment.CreatedAt,
-		UpdatedAt:    comment.UpdatedAt,
-	}, nil
+	resp := toCommentResponse(comment)
+	return &resp, nil
 }
 
 // ListInlineComments retrieves all top-level inline comments with nested replies for a recording.
@@ -1557,73 +1401,7 @@ func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershi
 
 	res := make([]dtos.CommentResponse, 0, len(comments))
 	for _, c := range comments {
-		var segIDStr *string
-		if c.SegmentID != nil {
-			str := c.SegmentID.String()
-			segIDStr = &str
-		}
-
-		var parentIDStr *string
-		if c.ParentID != nil {
-			str := c.ParentID.String()
-			parentIDStr = &str
-		}
-
-		var userIDStr *string
-		if c.UserID != nil {
-			str := c.UserID.String()
-			userIDStr = &str
-		}
-
-		replies := make([]dtos.CommentResponse, 0, len(c.Replies))
-		for _, r := range c.Replies {
-			var rSegIDStr *string
-			if r.SegmentID != nil {
-				str := r.SegmentID.String()
-				rSegIDStr = &str
-			}
-
-			var rParentIDStr *string
-			if r.ParentID != nil {
-				str := r.ParentID.String()
-				rParentIDStr = &str
-			}
-
-			var rUserIDStr *string
-			if r.UserID != nil {
-				str := r.UserID.String()
-				rUserIDStr = &str
-			}
-
-			replies = append(replies, dtos.CommentResponse{
-				ID:           r.ID.String(),
-				RecordingID:  r.RecordingID.String(),
-				UserID:       rUserIDStr,
-				SegmentID:    rSegIDStr,
-				TimestampSec: r.TimestampSec,
-				SelectedText: r.SelectedText,
-				AuthorName:   r.AuthorName,
-				CommentText:  r.CommentText,
-				ParentID:     rParentIDStr,
-				CreatedAt:    r.CreatedAt,
-				UpdatedAt:    r.UpdatedAt,
-			})
-		}
-
-		res = append(res, dtos.CommentResponse{
-			ID:           c.ID.String(),
-			RecordingID:  c.RecordingID.String(),
-			UserID:       userIDStr,
-			SegmentID:    segIDStr,
-			TimestampSec: c.TimestampSec,
-			SelectedText: c.SelectedText,
-			AuthorName:   c.AuthorName,
-			CommentText:  c.CommentText,
-			ParentID:     parentIDStr,
-			Replies:      replies,
-			CreatedAt:    c.CreatedAt,
-			UpdatedAt:    c.UpdatedAt,
-		})
+		res = append(res, toCommentResponse(c))
 	}
 
 	return res, nil

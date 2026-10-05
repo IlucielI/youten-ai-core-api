@@ -31,6 +31,24 @@ type ProgressEvent struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// ChatTokenEvent defines the payload for an individual streamed token.
+type ChatTokenEvent struct {
+	Token string `json:"token"`
+}
+
+// ChatDoneEvent defines the completion payload with extracted citations and retrieved chunk IDs.
+type ChatDoneEvent struct {
+	MessageID         string   `json:"message_id"`
+	Content           string   `json:"content"`
+	Citations         []string `json:"citations"`
+	RetrievedChunkIDs []string `json:"retrieved_chunk_ids"`
+}
+
+// ChatErrorEvent defines the payload when streaming encounters an error.
+type ChatErrorEvent struct {
+	Error string `json:"error"`
+}
+
 // MapStatusToProgress maps a recording status string to a readable stage name and progress percentage.
 func MapStatusToProgress(status string) (stage string, progress int) {
 	switch strings.ToUpper(strings.TrimSpace(status)) {

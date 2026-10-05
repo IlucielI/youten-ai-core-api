@@ -150,3 +150,11 @@ routes:
     handler: RetryRecording
     optional_auth: true
 
+  # Interactive RAG AI Chat Typewriter SSE endpoint
+  -
+    method: POST
+    path: /v1/recordings/:id/chat
+    handler: StreamRecordingChat
+    optional_auth: true
+
+

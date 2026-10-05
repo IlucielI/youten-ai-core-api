@@ -276,7 +276,9 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"GET", "/v1/recordings/shared/:token"},
 		{"GET", "/v1/recordings/:id/progress"},
 		{"POST", "/v1/recordings/:id/retry"},
+		{"POST", "/v1/recordings/:id/chat"},
 	}
+
 
 	registeredPairs := make(map[string]bool)
 	for _, route := range router.Routes() {
@@ -446,4 +448,17 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wRetry.Code == http.StatusUnauthorized {
 		t.Fatalf("expected POST /v1/recordings/:id/retry not to return 401 Unauthorized without header (optional_auth), got %d", wRetry.Code)
 	}
+
+	// Verify POST /v1/recordings/:id/chat is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wChat := httptest.NewRecorder()
+	reqChat, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/chat", strings.NewReader(`{"message":"test"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqChat.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wChat, reqChat)
+	if wChat.Code == http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/chat not to return 401 Unauthorized without header (optional_auth), got %d", wChat.Code)
+	}
 }
+

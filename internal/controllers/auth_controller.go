@@ -264,6 +264,3 @@ func (c *Controllers) ChangePassword(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
-
-
-

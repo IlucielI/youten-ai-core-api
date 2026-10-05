@@ -13,7 +13,7 @@ import (
 
 // JoinBotWaitlist handles public applicant registration for the meeting voice bot beta waitlist.
 func (c *Controllers) JoinBotWaitlist(ctx *gin.Context) {
-	if c == nil || c.svc == nil {
+	if c.svc == nil {
 		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
 			Status:    constants.ResponseStatusError,
 			Code:      constants.ResponseCodeInternalError,

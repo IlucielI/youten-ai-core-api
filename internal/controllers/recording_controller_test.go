@@ -747,22 +747,11 @@ func TestControllers_ListRecordings_NilService(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings", nil)
 
-	var nilCtrls *Controllers
-	nilCtrls.ListRecordings(c)
+	ctrls := &Controllers{}
+	ctrls.ListRecordings(c)
 
 	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 for nil controller, got %d", w.Code)
-	}
-
-	w2 := httptest.NewRecorder()
-	c2, _ := gin.CreateTestContext(w2)
-	c2.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings", nil)
-
-	ctrls := &Controllers{}
-	ctrls.ListRecordings(c2)
-
-	if w2.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 for nil service, got %d", w2.Code)
+		t.Fatalf("expected 500 for nil service, got %d", w.Code)
 	}
 }
 
@@ -853,20 +842,6 @@ func TestControllers_ListRecordings_ServiceError(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 Internal Server Error, got %d, body: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestControllers_DeleteRecording_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "id", Value: "00000000-0000-0000-0000-000000000001"}}
-	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/00000000-0000-0000-0000-000000000001", nil)
-
-	var nilCtrls *Controllers
-	nilCtrls.DeleteRecording(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 for nil controller receiver, got %d", w.Code)
 	}
 }
 
@@ -1012,19 +987,6 @@ func TestControllers_DeleteRecording_Success(t *testing.T) {
 	}
 }
 
-func TestControllers_ClaimRecording_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/test/claim", nil)
-
-	var ctrls *Controllers
-	ctrls.ClaimRecording(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_ClaimRecording_NilService(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1167,19 +1129,6 @@ func TestControllers_ClaimRecording_Success(t *testing.T) {
 	}
 }
 
-func TestControllers_ClaimBulkRecordings_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/claim", nil)
-
-	var ctrls *Controllers
-	ctrls.ClaimBulkRecordings(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_ClaimBulkRecordings_NilService(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1290,19 +1239,6 @@ func TestControllers_ClaimBulkRecordings_Success(t *testing.T) {
 	}
 	if len(resp.Data.RecordingIDs) != 2 {
 		t.Errorf("expected 2 RecordingIDs, got %d", len(resp.Data.RecordingIDs))
-	}
-}
-
-func TestControllers_ToggleRecordingShare_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPatch, "/v1/recordings/test/share", nil)
-
-	var ctrls *Controllers
-	ctrls.ToggleRecordingShare(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -1446,19 +1382,6 @@ func TestControllers_ToggleRecordingShare_Success(t *testing.T) {
 	}
 }
 
-func TestControllers_GetSharedRecording_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/shared/test-token", nil)
-
-	var ctrls *Controllers
-	ctrls.GetSharedRecording(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_GetSharedRecording_NilService(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1563,19 +1486,6 @@ func TestControllers_GetSharedRecording_Success(t *testing.T) {
 	}
 	if len(resp.Data.Segments) != 1 {
 		t.Errorf("expected 1 segment, got %d", len(resp.Data.Segments))
-	}
-}
-
-func TestControllers_StreamRecordingProgress_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/test/progress", nil)
-
-	var ctrls *Controllers
-	ctrls.StreamRecordingProgress(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -1771,16 +1681,6 @@ func TestControllers_StreamRecordingProgress_ClientDisconnect(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, `"status":"EXTRACTING"`) {
 		t.Errorf("expected initial EXTRACTING status, got: %s", body)
-	}
-}
-
-func TestControllers_RetryRecording_NilReceiver(t *testing.T) {
-	var ctrls *Controllers
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	ctrls.RetryRecording(c)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -2029,21 +1929,6 @@ func TestControllers_RetryRecording_Success_HeaderToken(t *testing.T) {
 	}
 	if resp.Data.Status != models.RecordingStatusQueued {
 		t.Errorf("expected status QUEUED, got %s", resp.Data.Status)
-	}
-}
-
-func TestControllers_StreamRecordingChat_NilController(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
-	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+uuid.New().String()+"/chat", strings.NewReader(`{"message":"hello"}`))
-	c.Request = req
-
-	var nilCtrls *Controllers
-	nilCtrls.StreamRecordingChat(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -2316,21 +2201,6 @@ func TestControllers_StreamRecordingChat_StreamError(t *testing.T) {
 	}
 }
 
-func TestControllers_UpdateTranscriptSpeakers_NilController(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
-	req := httptest.NewRequest(http.MethodPut, "/v1/recordings/"+uuid.New().String()+"/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Bayu"}}`))
-	c.Request = req
-
-	var nilCtrls *Controllers
-	nilCtrls.UpdateTranscriptSpeakers(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_UpdateTranscriptSpeakers_NilService(t *testing.T) {
 	cfg := config.Config{}
 	ctrls := New(cfg, nil)
@@ -2531,20 +2401,6 @@ func TestControllers_UpdateTranscriptSpeakers_Success_HeaderToken(t *testing.T) 
 	}
 	if resp.Data.UpdatedCount != 5 {
 		t.Errorf("expected UpdatedCount 5, got %d", resp.Data.UpdatedCount)
-	}
-}
-
-func TestControllers_RegenerateSummary_NilController(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/"+uuid.New().String()+"/regenerate", nil)
-
-	var ctrls *Controllers
-	ctrls.RegenerateSummary(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -2871,19 +2727,6 @@ func TestControllers_RegenerateSummary_Success_HeaderToken(t *testing.T) {
 	}
 }
 
-func TestControllers_ListSummaryVersions_NilController(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/v1/recordings/test/summaries", nil)
-
-	var ctrls *Controllers
-	ctrls.ListSummaryVersions(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", w.Code)
-	}
-}
-
 func TestControllers_ListSummaryVersions_NilService(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -3067,19 +2910,6 @@ func TestControllers_ListSummaryVersions_Success_AuthenticatedOwner(t *testing.T
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
-	}
-}
-
-func TestControllers_ActivateSummaryVersion_NilController(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodPatch, "/v1/recordings/test/summaries/1/activate", nil)
-
-	var ctrls *Controllers
-	ctrls.ActivateSummaryVersion(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", w.Code)
 	}
 }
 
@@ -3297,19 +3127,6 @@ func TestControllers_ActivateSummaryVersion_Success_AuthenticatedOwner(t *testin
 	}
 }
 
-func TestControllers_CreateInlineComment_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/test/comments", nil)
-
-	var ctrls *Controllers
-	ctrls.CreateInlineComment(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_CreateInlineComment_NilService(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -3513,19 +3330,6 @@ func TestControllers_CreateInlineComment_Success_ReplyToParent(t *testing.T) {
 	}
 }
 
-func TestControllers_ListInlineComments_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/test/comments", nil)
-
-	var ctrls *Controllers
-	ctrls.ListInlineComments(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_ListInlineComments_NilService(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -3687,19 +3491,6 @@ func TestControllers_ListInlineComments_Success_AuthenticatedOwner(t *testing.T)
 	}
 	if len(resp.Data) != 0 {
 		t.Fatalf("expected 0 comments, got %d", len(resp.Data))
-	}
-}
-
-func TestControllers_DeleteInlineComment_NilReceiver(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodDelete, "/v1/recordings/test/comments/test", nil)
-
-	var ctrls *Controllers
-	ctrls.DeleteInlineComment(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -3928,20 +3719,6 @@ func TestControllers_DeleteInlineComment_Success_CommentAuthor(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestControllers_ExportRecording_NilReceiver(t *testing.T) {
-	var ctrls *Controllers
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+uuid.New().String()+"/export", nil)
-
-	ctrls.ExportRecording(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -4194,20 +3971,6 @@ func TestControllers_ExportRecording_Success_Txt(t *testing.T) {
 	}
 }
 
-func TestControllers_SearchRecordings_NilController(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/search?q=test", nil)
-
-	var ctrls *Controllers
-	ctrls.SearchRecordings(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_SearchRecordings_NilService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -4296,25 +4059,6 @@ func TestControllers_SearchRecordings_Success(t *testing.T) {
 	}
 	if resp.Data.Results[0].Score != 0.88 {
 		t.Errorf("expected score 0.88, got %f", resp.Data.Results[0].Score)
-	}
-}
-
-func TestControllers_AskWorkspaceMemory_NilController(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"test"}`))
-
-	var ctrls *Controllers
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("unexpected panic on nil controller: %v", r)
-		}
-	}()
-	ctrls.AskWorkspaceMemory(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
 	}
 }
 
@@ -4468,25 +4212,6 @@ func TestControllers_AskWorkspaceMemory_Success(t *testing.T) {
 	}
 }
 
-func TestControllers_GetWorkspaceSpeakers_NilController(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/speakers", nil)
-
-	var ctrls *Controllers
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("unexpected panic on nil controller: %v", r)
-		}
-	}()
-	ctrls.GetWorkspaceSpeakers(c)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 Internal Server Error, got %d", w.Code)
-	}
-}
-
 func TestControllers_GetWorkspaceSpeakers_NilService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -4589,4 +4314,3 @@ func TestControllers_GetWorkspaceSpeakers_Success(t *testing.T) {
 		t.Errorf("unexpected Bob data: %+v", resp.Data.Speakers[1])
 	}
 }
-

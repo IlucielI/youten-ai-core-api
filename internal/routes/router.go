@@ -20,11 +20,12 @@ var routesYAML []byte
 // routeItem defines a route mapping from routes.yaml.
 // The schema contract strictly uses lowercase keys: method, path, handler.
 type routeItem struct {
-	Method    string `yaml:"method"`
-	Path      string `yaml:"path"`
-	Handler   string `yaml:"handler"`
-	Auth      bool   `yaml:"auth,omitempty"`
-	BasicAuth bool   `yaml:"basic_auth,omitempty"`
+	Method       string `yaml:"method"`
+	Path         string `yaml:"path"`
+	Handler      string `yaml:"handler"`
+	Auth         bool   `yaml:"auth,omitempty"`
+	OptionalAuth bool   `yaml:"optional_auth,omitempty"`
+	BasicAuth    bool   `yaml:"basic_auth,omitempty"`
 }
 
 // UnmarshalYAML implements case-insensitive mapping for route keys (e.g. method/Method, path/Path).
@@ -50,6 +51,10 @@ func (r *routeItem) UnmarshalYAML(value *yaml.Node) error {
 		case "auth":
 			if b, ok := v.(bool); ok {
 				r.Auth = b
+			}
+		case "optional_auth":
+			if b, ok := v.(bool); ok {
+				r.OptionalAuth = b
 			}
 		case "basic_auth":
 			if b, ok := v.(bool); ok {
@@ -125,7 +130,10 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 			handlers = append(handlers, middlewares.BasicAuth(cfg.BasicAuthUsername, cfg.BasicAuthPassword))
 		}
 		if r.Auth {
-			handlers = append(handlers, middlewares.Auth(validator))
+			handlers = append(handlers, middlewares.RequireAuth(validator))
+		}
+		if r.OptionalAuth {
+			handlers = append(handlers, middlewares.OptionalAuth(validator))
 		}
 		handlers = append(handlers, fn)
 

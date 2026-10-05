@@ -16,6 +16,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
 )
@@ -426,3 +427,24 @@ func (s *Service) ResetPassword(ctx context.Context, req *dtos.ResetPasswordRequ
 
 	return nil
 }
+
+// Authenticate validates a JWT access token, checks its validity and claims, and returns the AuthUser context metadata.
+func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
+	if s == nil {
+		return nil, constants.ErrInternalServerError
+	}
+	claims, err := jwt.ValidateToken(s.cfg, tokenStr)
+	if err != nil || claims == nil {
+		return nil, constants.ErrInvalidToken
+	}
+	if claims.TokenType != "access" {
+		return nil, constants.ErrInvalidToken
+	}
+	return &ctxmeta.AuthUser{
+		UserID:    claims.UserID,
+		Email:     claims.Email,
+		SessionID: claims.SessionID,
+		IsGuest:   false,
+	}, nil
+}
+

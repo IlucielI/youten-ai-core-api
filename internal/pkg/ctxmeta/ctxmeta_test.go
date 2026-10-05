@@ -3,6 +3,8 @@ package ctxmeta
 import (
 	"context"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestContextMeta(t *testing.T) {
@@ -49,8 +51,10 @@ func TestAuthUser(t *testing.T) {
 
 	// Injected
 	expectedUser := AuthUser{
+		UserID:    uuid.New(),
 		Email:     "user@example.com",
 		SessionID: "sess-12345",
+		IsGuest:   false,
 	}
 	ctx = WithAuthUser(ctx, expectedUser)
 	user, ok := GetAuthUser(ctx)
@@ -61,11 +65,47 @@ func TestAuthUser(t *testing.T) {
 		t.Fatalf("expected user %+v, got %+v", expectedUser, user)
 	}
 
+	// Check GetAuthUserID & IsAuthenticated
+	uid, ok := GetAuthUserID(ctx)
+	if !ok || uid != expectedUser.UserID {
+		t.Fatalf("expected user id %s, got %s (ok=%v)", expectedUser.UserID, uid, ok)
+	}
+	if !IsAuthenticated(ctx) {
+		t.Fatal("expected IsAuthenticated to be true")
+	}
+
 	// Nil context in WithAuthUser
 	nilCtx := WithAuthUser(nil, expectedUser)
 	user, ok = GetAuthUser(nilCtx)
 	if !ok || user.Email != expectedUser.Email {
 		t.Fatalf("expected user %+v from nil context injection", expectedUser)
+	}
+
+	// Guest user tests
+	guestCtx := WithGuestUser(context.Background())
+	gUser, gOk := GetAuthUser(guestCtx)
+	if !gOk || !gUser.IsGuest {
+		t.Fatalf("expected guest user to have IsGuest=true, got %+v", gUser)
+	}
+	if _, ok := GetAuthUserID(guestCtx); ok {
+		t.Fatal("expected GetAuthUserID to return false for guest user")
+	}
+	if IsAuthenticated(guestCtx) {
+		t.Fatal("expected IsAuthenticated to return false for guest user")
+	}
+
+	// Nil context in WithGuestUser
+	nilGuestCtx := WithGuestUser(nil)
+	if gUser, gOk := GetAuthUser(nilGuestCtx); !gOk || !gUser.IsGuest {
+		t.Fatal("expected valid guest user from WithGuestUser(nil)")
+	}
+
+	// Nil context in helpers
+	if _, ok := GetAuthUserID(nil); ok {
+		t.Fatal("expected GetAuthUserID(nil) to return false")
+	}
+	if IsAuthenticated(nil) {
+		t.Fatal("expected IsAuthenticated(nil) to return false")
 	}
 }
 

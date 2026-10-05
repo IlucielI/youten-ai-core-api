@@ -139,4 +139,198 @@ func TestAuthMiddleware(t *testing.T) {
 			t.Fatalf("unexpected captured user: %+v", capturedUser)
 		}
 	}
+
+	// 6. RequireAuth explicit usage
+	{
+		validator := &mockAuthValidator{
+			authenticateFn: func(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
+				return validUser, nil
+			},
+		}
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(RequireAuth(validator))
+		r.GET("/protected-req", func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/protected-req", nil)
+		c.Request.Header.Set("Authorization", "Bearer valid-req-token")
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 with RequireAuth on valid token, got %d", w.Code)
+		}
+	}
+}
+
+func TestOptionalAuthMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	userID := uuid.New()
+	validUser := &ctxmeta.AuthUser{
+		UserID:    userID,
+		Email:     "optional@example.com",
+		SessionID: "sess-optional",
+		IsGuest:   false,
+	}
+
+	// 1. Missing Authorization header -> falls back to guest context (200 OK)
+	{
+		validator := &mockAuthValidator{}
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(OptionalAuth(validator))
+		var isGuest bool
+		var isAuth bool
+		r.GET("/optional", func(ctx *gin.Context) {
+			user, ok := ctxmeta.GetAuthUser(ctx.Request.Context())
+			isGuest = ok && user.IsGuest
+			isAuth = ctxmeta.IsAuthenticated(ctx.Request.Context())
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/optional", nil)
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 on missing auth header with OptionalAuth, got %d", w.Code)
+		}
+		if !isGuest {
+			t.Fatal("expected isGuest to be true for missing header")
+		}
+		if isAuth {
+			t.Fatal("expected isAuth to be false for missing header")
+		}
+	}
+
+	// 2. Empty Authorization header -> falls back to guest context (200 OK)
+	{
+		validator := &mockAuthValidator{}
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(OptionalAuth(validator))
+		var isGuest bool
+		r.GET("/optional", func(ctx *gin.Context) {
+			user, ok := ctxmeta.GetAuthUser(ctx.Request.Context())
+			isGuest = ok && user.IsGuest
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/optional", nil)
+		c.Request.Header.Set("Authorization", "   ")
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 on whitespace auth header with OptionalAuth, got %d", w.Code)
+		}
+		if !isGuest {
+			t.Fatal("expected isGuest to be true for whitespace header")
+		}
+	}
+
+	// 3. Valid Bearer token -> sets authenticated context (200 OK)
+	{
+		validator := &mockAuthValidator{
+			authenticateFn: func(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
+				if tokenStr == "optional-token" {
+					return validUser, nil
+				}
+				return nil, constants.ErrInvalidToken
+			},
+		}
+		var capturedUser ctxmeta.AuthUser
+		var isAuth bool
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(OptionalAuth(validator))
+		r.GET("/optional", func(ctx *gin.Context) {
+			u, _ := ctxmeta.GetAuthUser(ctx.Request.Context())
+			capturedUser = u
+			isAuth = ctxmeta.IsAuthenticated(ctx.Request.Context())
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/optional", nil)
+		c.Request.Header.Set("Authorization", "Bearer optional-token")
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 on valid token, got %d", w.Code)
+		}
+		if !isAuth || capturedUser.IsGuest || capturedUser.UserID != userID {
+			t.Fatalf("unexpected captured user: %+v", capturedUser)
+		}
+	}
+
+	// 4. Invalid header format when provided (e.g. Basic) -> 401 Unauthorized
+	{
+		validator := &mockAuthValidator{}
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(OptionalAuth(validator))
+		r.GET("/optional", func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/optional", nil)
+		c.Request.Header.Set("Authorization", "Basic xyz123")
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 on malformed Authorization header with OptionalAuth, got %d", w.Code)
+		}
+	}
+
+	// 5. Empty token after Bearer -> 401 Unauthorized
+	{
+		validator := &mockAuthValidator{}
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(OptionalAuth(validator))
+		r.GET("/optional", func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/optional", nil)
+		c.Request.Header.Set("Authorization", "Bearer   ")
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 on empty Bearer token with OptionalAuth, got %d", w.Code)
+		}
+	}
+
+	// 6. Expired or invalid token when provided -> 401 Unauthorized
+	{
+		validator := &mockAuthValidator{
+			authenticateFn: func(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
+				return nil, constants.ErrInvalidToken
+			},
+		}
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(OptionalAuth(validator))
+		r.GET("/optional", func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/optional", nil)
+		c.Request.Header.Set("Authorization", "Bearer expired-token")
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 on invalid/expired token with OptionalAuth, got %d", w.Code)
+		}
+	}
+
+	// 7. Nil validator with provided token -> 401 Unauthorized
+	{
+		w := httptest.NewRecorder()
+		c, r := gin.CreateTestContext(w)
+		r.Use(OptionalAuth(nil))
+		r.GET("/optional", func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		})
+		c.Request = httptest.NewRequest(http.MethodGet, "/optional", nil)
+		c.Request.Header.Set("Authorization", "Bearer some-token")
+		r.ServeHTTP(w, c.Request)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 on nil validator with OptionalAuth, got %d", w.Code)
+		}
+	}
 }

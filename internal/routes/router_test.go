@@ -509,6 +509,19 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wActivate.Code == http.StatusUnauthorized {
 		t.Fatalf("expected PATCH /v1/recordings/:id/summaries/:versionId/activate not to return 401 Unauthorized without header (optional_auth), got %d", wActivate.Code)
 	}
+
+	// Verify POST /v1/recordings/:id/comments is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	wComments := httptest.NewRecorder()
+	reqComments, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/comments", strings.NewReader(`{"comment_text":"test"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqComments.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wComments, reqComments)
+	if wComments.Code == http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/comments not to return 401 Unauthorized without header (optional_auth), got %d", wComments.Code)
+	}
 }
+
 
 

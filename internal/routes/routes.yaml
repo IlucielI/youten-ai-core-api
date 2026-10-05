@@ -185,6 +185,14 @@ routes:
     handler: ActivateSummaryVersion
     optional_auth: true
 
+  # Create timestamped inline comment endpoint
+  -
+    method: POST
+    path: /v1/recordings/:id/comments
+    handler: CreateInlineComment
+    optional_auth: true
+
+
 
 
 

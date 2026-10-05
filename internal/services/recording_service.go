@@ -1415,6 +1415,102 @@ func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, vers
 	}, nil
 }
 
+// CreateInlineComment creates a timestamped inline comment or reply for a recording.
+func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownershipToken string, req dtos.CreateCommentRequest) (*dtos.CommentResponse, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Verify access: owner, guest with token, or publicly shared recording
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+		hasAccess = true
+	} else if rec.IsShareEnabled {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, constants.ErrForbidden
+	}
+
+	// Resolve author name
+	authorName := strings.TrimSpace(req.AuthorName)
+	if authorName == "" {
+		if isAuth {
+			if u, uErr := s.repo.FindUserByID(ctx, userID); uErr == nil && u != nil && strings.TrimSpace(u.FullName) != "" {
+				authorName = strings.TrimSpace(u.FullName)
+			}
+		}
+	}
+	if authorName == "" {
+		authorName = "Anonymous"
+	}
+
+	// If replying to a parent comment, verify the parent comment exists and belongs to this recording
+	if req.ParentID != nil {
+		parent, err := s.repo.FindInlineCommentByID(ctx, *req.ParentID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, constants.ErrNotFound
+			}
+			return nil, fmt.Errorf("failed to find parent comment: %w", err)
+		}
+		if parent.RecordingID != rec.ID {
+			return nil, constants.ErrBadRequest
+		}
+	}
+
+	comment := models.InlineComment{
+		ID:           uuid.New(),
+		RecordingID:  rec.ID,
+		SegmentID:    req.SegmentID,
+		TimestampSec: req.TimestampSec,
+		SelectedText: req.SelectedText,
+		AuthorName:   authorName,
+		CommentText:  strings.TrimSpace(req.CommentText),
+		ParentID:     req.ParentID,
+	}
+
+	if err := s.repo.CreateInlineComment(ctx, &comment); err != nil {
+		return nil, fmt.Errorf("failed to create inline comment: %w", err)
+	}
+
+	var segIDStr *string
+	if comment.SegmentID != nil {
+		s := comment.SegmentID.String()
+		segIDStr = &s
+	}
+
+	var parentIDStr *string
+	if comment.ParentID != nil {
+		p := comment.ParentID.String()
+		parentIDStr = &p
+	}
+
+	return &dtos.CommentResponse{
+		ID:           comment.ID.String(),
+		RecordingID:  comment.RecordingID.String(),
+		SegmentID:    segIDStr,
+		TimestampSec: comment.TimestampSec,
+		SelectedText: comment.SelectedText,
+		AuthorName:   comment.AuthorName,
+		CommentText:  comment.CommentText,
+		ParentID:     parentIDStr,
+		CreatedAt:    comment.CreatedAt,
+		UpdatedAt:    comment.UpdatedAt,
+	}, nil
+}
+
+
 
 
 

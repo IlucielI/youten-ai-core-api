@@ -74,8 +74,7 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		models.RecordingStatusExtracting,
 		models.RecordingStatusTranscribing,
 		models.RecordingStatusSummarizing,
-		models.RecordingStatusIndexing,
-		"PROCESSING":
+		models.RecordingStatusIndexing:
 		return nil, constants.ErrConflictProcessing
 	}
 

@@ -574,7 +574,6 @@ func TestService_RetryRecordingPipeline_Conflict_Processing(t *testing.T) {
 		models.RecordingStatusTranscribing,
 		models.RecordingStatusSummarizing,
 		models.RecordingStatusIndexing,
-		"PROCESSING",
 	}
 
 	for _, status := range activeStatuses {

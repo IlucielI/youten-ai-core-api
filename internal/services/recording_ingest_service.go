@@ -364,8 +364,7 @@ func (s *Service) RetryRecordingPipeline(ctx context.Context, id uuid.UUID, owne
 		models.RecordingStatusExtracting,
 		models.RecordingStatusTranscribing,
 		models.RecordingStatusSummarizing,
-		models.RecordingStatusIndexing,
-		"PROCESSING":
+		models.RecordingStatusIndexing:
 		return nil, constants.ErrConflictProcessing
 	case models.RecordingStatusCompleted:
 		return nil, constants.ErrRecordingAlreadyCompleted

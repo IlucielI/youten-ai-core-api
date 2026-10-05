@@ -19,7 +19,7 @@ func (c *Controllers) JoinBotWaitlist(ctx *gin.Context) {
 		return
 	}
 
-	if err := validations.Validate(&req); err != nil {
+	if err := validations.ValidateWaitlistRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}

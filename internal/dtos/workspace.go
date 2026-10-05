@@ -1,10 +1,8 @@
 package dtos
 
 import (
-	"strings"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
 )
 
@@ -15,21 +13,6 @@ type SemanticSearchQuery struct {
 	Threshold float64 `form:"threshold" json:"threshold"`
 }
 
-// Validate validates the SemanticSearchQuery fields.
-func (q SemanticSearchQuery) Validate() error {
-	trimmed := strings.TrimSpace(q.Q)
-	if trimmed == "" {
-		return validation.Errors{
-			"q": validation.NewError("validation_required", "search query is required and cannot be blank"),
-		}
-	}
-
-	return validation.ValidateStruct(&q,
-		validation.Field(&q.Q, validation.Required, validation.Length(1, 1000)),
-		validation.Field(&q.Limit, validation.Min(0), validation.Max(50)),
-		validation.Field(&q.Threshold, validation.Min(0.0), validation.Max(1.0)),
-	)
-}
 
 // SearchResultItem represents an individual matched transcript chunk snippet from a meeting.
 type SearchResultItem struct {
@@ -55,19 +38,6 @@ type WorkspaceAskRequest struct {
 	History  []ChatMessageInput `json:"history,omitempty"`
 }
 
-// Validate validates the WorkspaceAskRequest fields.
-func (r WorkspaceAskRequest) Validate() error {
-	trimmed := strings.TrimSpace(r.Question)
-	if trimmed == "" {
-		return validation.Errors{
-			"question": validation.NewError("validation_required", "question is required and cannot be blank"),
-		}
-	}
-
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.Question, validation.Required, validation.Length(1, 4000)),
-	)
-}
 
 // MeetingSourceCitation represents a citation reference to a specific meeting and timestamp segment.
 type MeetingSourceCitation struct {

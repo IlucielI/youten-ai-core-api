@@ -147,7 +147,7 @@ func TestService_SearchWorkspaceSemantic_Success(t *testing.T) {
 	}
 }
 
-func TestService_SearchWorkspaceSemantic_Success_DefaultLimits(t *testing.T) {
+func TestService_SearchWorkspaceSemantic_Success_ThresholdZero(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 	userID := uuid.New()
 	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
@@ -163,8 +163,10 @@ func TestService_SearchWorkspaceSemantic_Success_DefaultLimits(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 10).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}))
 
+	// Limit is normalized by the validation layer; the service trusts the value it receives.
 	res, err := svc.SearchWorkspaceSemantic(ctx, dtos.SemanticSearchQuery{
-		Q: "general search",
+		Q:     "general search",
+		Limit: 10,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

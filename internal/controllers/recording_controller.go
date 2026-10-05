@@ -1008,7 +1008,7 @@ func (c *Controllers) SearchRecordings(ctx *gin.Context) {
 		return
 	}
 
-	if err := query.Validate(); err != nil {
+	if err := validations.ValidateSemanticSearchQuery(&query); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
@@ -1042,7 +1042,7 @@ func (c *Controllers) AskWorkspaceMemory(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateWorkspaceAskRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}

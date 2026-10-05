@@ -593,6 +593,11 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 		return nil, fmt.Errorf("failed to find recording: %w", err)
 	}
 
+	return s.ResumeRecordingPipeline(ctx, recording)
+}
+
+// ResumeRecordingPipeline executes Smart State Recovery using an already-loaded recording model.
+func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models.Recording) (*payload.RecordingPipelinePayload, error) {
 	if recording.Status != models.RecordingStatusFailed {
 		return nil, ErrInvalidRetryState
 	}
@@ -611,7 +616,9 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 	// 1. If audio not yet extracted
 	if recording.AudioURL == nil || *recording.AudioURL == "" {
 		p.Stage = models.RecordingStatusExtracting
+		p.Status = models.RecordingStatusQueued
 		_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil)
+		s.publishProgress(recording.ID, models.RecordingStatusQueued, nil, nil)
 		if s.publisher != nil {
 			_ = s.publisher.Publish(ctx, constants.TopicRecordingUploaded, p)
 		}
@@ -623,7 +630,9 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 	// 2. If audio exists but no transcripts
 	if len(segments) == 0 {
 		p.Stage = models.RecordingStatusTranscribing
+		p.Status = models.RecordingStatusQueued
 		_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil)
+		s.publishProgress(recording.ID, models.RecordingStatusQueued, nil, nil)
 		if s.publisher != nil {
 			_ = s.publisher.Publish(ctx, constants.TopicRecordingTranscribe, p)
 		}
@@ -631,7 +640,10 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 	}
 
 	// 3. If transcripts exist, run fan-out for missing summary or indexing
+	p.Stage = models.RecordingStatusTranscribing
+	p.Status = models.RecordingStatusTranscribing
 	_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusTranscribing, nil, nil)
+	s.publishProgress(recording.ID, models.RecordingStatusTranscribing, nil, nil)
 
 	if summary == nil && s.publisher != nil {
 		_ = s.publisher.Publish(ctx, constants.TopicRecordingSummarize, p)

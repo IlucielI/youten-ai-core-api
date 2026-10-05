@@ -34,6 +34,12 @@ var (
 	// ErrConflict is returned when an action conflicts with current state.
 	ErrConflict = apperror.New(http.StatusConflict, ResponseCodeConflict, "resource conflict")
 
+	// ErrConflictProcessing is returned when attempting to retry or mutate a recording that is currently actively processing.
+	ErrConflictProcessing = apperror.New(http.StatusConflict, "CONFLICT_PROCESSING", "recording is currently being processed, so retry cannot be initiated")
+
+	// ErrRecordingAlreadyCompleted is returned when attempting to retry a recording that has already completed.
+	ErrRecordingAlreadyCompleted = apperror.New(http.StatusConflict, "ERR_ALREADY_COMPLETED", "recording has already completed")
+
 	// ErrEmailAlreadyExists is returned when attempting to register with an email that is already registered.
 	ErrEmailAlreadyExists = apperror.New(http.StatusConflict, "ERR_EMAIL_ALREADY_EXISTS", "email is already registered")
 

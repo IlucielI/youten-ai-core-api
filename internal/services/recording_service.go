@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -1029,6 +1030,74 @@ func (s *Service) PollRecordingProgress(ctx context.Context, id uuid.UUID) (*sse
 		ErrorCode:    rec.ErrorCode,
 		ErrorMessage: rec.ErrorMessage,
 		UpdatedAt:    rec.UpdatedAt,
+	}, nil
+}
+
+// RetryRecordingPipeline verifies ownership, validates that the recording is in a retryable state (FAILED),
+// prevents concurrency conflicts (409 CONFLICT_PROCESSING if active, 409 ERR_ALREADY_COMPLETED if completed),
+// and performs Smart State Recovery by resuming from the failing worker stage without re-extracting completed assets.
+func (s *Service) RetryRecordingPipeline(ctx context.Context, id uuid.UUID, ownershipToken string) (*dtos.RetryRecordingResponse, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// 1. Ownership verification
+	hasAccess := false
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
+		hasAccess = true
+	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+		hasAccess = true
+	} else if ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(*rec.ShareToken)) == 1 {
+		hasAccess = true
+	}
+
+	if !hasAccess {
+		return nil, constants.ErrForbidden
+	}
+
+	// 2. Concurrency Conflict Protection
+	switch strings.ToUpper(strings.TrimSpace(rec.Status)) {
+	case models.RecordingStatusPending,
+		models.RecordingStatusQueued,
+		models.RecordingStatusValidating,
+		models.RecordingStatusExtracting,
+		models.RecordingStatusTranscribing,
+		models.RecordingStatusSummarizing,
+		models.RecordingStatusIndexing,
+		"PROCESSING":
+		return nil, constants.ErrConflictProcessing
+	case models.RecordingStatusCompleted:
+		return nil, constants.ErrRecordingAlreadyCompleted
+	case models.RecordingStatusFailed:
+		// Allowed for smart retry
+	default:
+		return nil, constants.ErrConflictProcessing
+	}
+
+	// 3. Smart State Recovery: delegate to pipeline resume directly using existing recording model
+	p, err := s.ResumeRecordingPipeline(ctx, rec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute pipeline retry: %w", err)
+	}
+
+	status := p.Status
+	if status == "" {
+		status = models.RecordingStatusQueued
+	}
+
+	return &dtos.RetryRecordingResponse{
+		ID:        rec.ID.String(),
+		Status:    status,
+		Stage:     p.Stage,
+		Message:   "pipeline retry initiated successfully",
+		UpdatedAt: time.Now().UTC(),
 	}, nil
 }
 

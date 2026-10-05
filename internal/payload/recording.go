@@ -10,5 +10,6 @@ type RecordingPipelinePayload struct {
 	Template    string    `json:"template,omitempty"`    // Selected template key (e.g. MOM, GENERAL)
 	Language    string    `json:"language,omitempty"`    // Output language code
 	Stage       string    `json:"stage,omitempty"`       // Pipeline stage
+	Status      string    `json:"status,omitempty"`      // Target recording status
 	Attempt     int       `json:"attempt,omitempty"`     // Retry attempt number
 }

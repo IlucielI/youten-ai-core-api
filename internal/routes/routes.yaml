@@ -142,3 +142,11 @@ routes:
     path: /v1/recordings/:id/progress
     handler: StreamRecordingProgress
     optional_auth: true
+
+  # Smart pipeline retry endpoint
+  -
+    method: POST
+    path: /v1/recordings/:id/retry
+    handler: RetryRecording
+    optional_auth: true
+

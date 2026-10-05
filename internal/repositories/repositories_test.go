@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
@@ -391,6 +392,70 @@ func TestRepositories_DeleteInlineComment(t *testing.T) {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
+
+func TestRepositories_AggregateWorkspaceSpeakers(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	userID := uuid.New()
+	now := time.Now().Truncate(time.Second)
+
+	expectedSQL := regexp.QuoteMeta(`SELECT ts.speaker_name AS name, COUNT(DISTINCT ts.recording_id) AS total_meetings, COALESCE(SUM(GREATEST(0, ts.end_time - ts.start_time)), 0) AS total_talk_time, MAX(r.created_at) AS last_active FROM transcript_segments ts JOIN recordings r ON ts.recording_id = r.id WHERE r.user_id = $1 AND r.deleted_at IS NULL AND TRIM(ts.speaker_name) != '' GROUP BY "ts"."speaker_name" ORDER BY total_meetings DESC, total_talk_time DESC, name ASC`)
+
+	t.Run("success with multiple speakers", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"name", "total_meetings", "total_talk_time", "last_active"}).
+			AddRow("Alice", 3, 450.5, now).
+			AddRow("Bob", 1, 120.0, now.Add(-time.Hour))
+
+		mock.ExpectQuery(expectedSQL).
+			WithArgs(userID).
+			WillReturnRows(rows)
+
+		stats, err := repo.AggregateWorkspaceSpeakers(context.Background(), userID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(stats) != 2 {
+			t.Fatalf("expected 2 stats, got %d", len(stats))
+		}
+		if stats[0].Name != "Alice" || stats[0].TotalMeetings != 3 || stats[0].TotalTalkTime != 450.5 {
+			t.Errorf("unexpected stat 0: %+v", stats[0])
+		}
+		if stats[1].Name != "Bob" || stats[1].TotalMeetings != 1 || stats[1].TotalTalkTime != 120.0 {
+			t.Errorf("unexpected stat 1: %+v", stats[1])
+		}
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		mock.ExpectQuery(expectedSQL).
+			WithArgs(userID).
+			WillReturnError(errors.New("db query error"))
+
+		stats, err := repo.AggregateWorkspaceSpeakers(context.Background(), userID)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if stats != nil {
+			t.Fatalf("expected nil stats on error, got: %+v", stats)
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 
 
 

@@ -102,6 +102,13 @@ routes:
     handler: AskWorkspaceMemory
     auth: true
 
+  # Workspace speakers directory endpoint
+  - method: GET
+    path: /v1/speakers
+    handler: GetWorkspaceSpeakers
+    auth: true
+
+
 
   # Recording detail retrieval endpoint
   - method: GET

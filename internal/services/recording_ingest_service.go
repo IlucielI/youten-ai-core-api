@@ -88,7 +88,7 @@ func (s *Service) UploadRecording(
 	}
 	language := strings.TrimSpace(req.Language)
 	if language == "" {
-		language = "id"
+		language = "auto"
 	}
 
 	tokenBytes := make([]byte, 32)
@@ -266,7 +266,7 @@ func (s *Service) ImportRecordingFromURL(
 	}
 	language := strings.TrimSpace(req.Language)
 	if language == "" {
-		language = "id"
+		language = "auto"
 	}
 
 	tokenBytes := make([]byte, 32)

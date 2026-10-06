@@ -16,6 +16,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
+	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/sse"
 	"code-base-golang/internal/templates"
 )
@@ -142,8 +143,13 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		return errors.New(errMsg)
 	}
 
+	sttLang := ""
+	if recording.OutputLanguage != "" && strings.ToLower(recording.OutputLanguage) != "auto" {
+		sttLang = recording.OutputLanguage
+	}
+
 	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", dtos.STTOptions{
-		Language: recording.OutputLanguage,
+		Language: sttLang,
 	})
 	if err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("stt transcription failed: %v", err))
@@ -201,7 +207,16 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		return fmt.Errorf("failed to save transcript segments: %w", err)
 	}
 
-	if err := s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, sttResult.Duration, sttResult.Language); err != nil {
+	rawLang := strings.TrimSpace(sttResult.Language)
+	detectedLang := strutil.NormalizeLanguageCode(rawLang, "")
+	if detectedLang == "" {
+		detectedLang = strutil.DetectLanguage(sttResult.Text, "id")
+	}
+	if detectedLang == "" {
+		detectedLang = "id"
+	}
+
+	if err := s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, sttResult.Duration, detectedLang); err != nil {
 		log.Printf("[PIPELINE WARN] recording %s: failed to update duration and language: %v", recording.ID.String(), err)
 	}
 
@@ -276,8 +291,14 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 
 	targetLang := recording.OutputLanguage
-	if targetLang == "" {
-		targetLang = p.Language
+	if targetLang == "" || strings.ToLower(targetLang) == "auto" {
+		if recording.DetectedLanguage != nil && *recording.DetectedLanguage != "" {
+			targetLang = *recording.DetectedLanguage
+		} else if p.Language != "" && strings.ToLower(p.Language) != "auto" {
+			targetLang = p.Language
+		} else {
+			targetLang = "id"
+		}
 	}
 
 	userPrompt, err := templates.RenderSummaryUserPrompt(transcriptBody, targetLang)

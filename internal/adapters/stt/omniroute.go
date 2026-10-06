@@ -14,6 +14,7 @@ import (
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/services"
 )
 
@@ -110,7 +111,7 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		return nil, err
 	}
 
-	if opts.Language != "" {
+	if opts.Language != "" && strings.ToLower(strings.TrimSpace(opts.Language)) != "auto" {
 		if err := writer.WriteField("language", opts.Language); err != nil {
 			return nil, err
 		}
@@ -198,9 +199,16 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		})
 	}
 
+	lang := strings.TrimSpace(parsed.Language)
+	if lang == "" {
+		lang = strutil.DetectLanguage(parsed.Text, "id")
+	} else {
+		lang = strutil.NormalizeLanguageCode(lang, "id")
+	}
+
 	return &dtos.TranscriptionResult{
 		Text:     parsed.Text,
-		Language: parsed.Language,
+		Language: lang,
 		Duration: parsed.Duration,
 		Segments: segments,
 	}, nil

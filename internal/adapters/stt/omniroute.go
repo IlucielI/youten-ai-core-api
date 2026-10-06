@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -110,6 +111,9 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 	if err := writer.WriteField("timestamp_granularities[]", "word"); err != nil {
 		return nil, err
 	}
+	if err := writer.WriteField("diarize", "true"); err != nil {
+		return nil, err
+	}
 
 	if opts.Language != "" && strings.ToLower(strings.TrimSpace(opts.Language)) != "auto" {
 		if err := writer.WriteField("language", opts.Language); err != nil {
@@ -174,12 +178,20 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 			}
 		}
 
+		text := s.Text
+		speaker := ""
+		if match := speakerPrefixRegex.FindStringSubmatch(strings.TrimSpace(text)); len(match) == 3 {
+			speaker = strings.TrimSpace(match[1])
+			text = strings.TrimSpace(match[2])
+		}
+
 		segments[i] = dtos.SegmentResult{
 			ID:               s.ID,
 			Seek:             s.Seek,
 			Start:            s.Start,
 			End:              s.End,
-			Text:             s.Text,
+			Text:             text,
+			SpeakerLabel:     speaker,
 			Tokens:           s.Tokens,
 			Temperature:      s.Temperature,
 			AvgLogprob:       s.AvgLogprob,
@@ -189,14 +201,20 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		}
 	}
 
-	// Defensive fallback if audio returned single text without segmented array
+	// Defensive fallback if audio returned single text without segmented array or diarized text block
 	if len(segments) == 0 && parsed.Text != "" {
-		segments = append(segments, dtos.SegmentResult{
-			ID:    0,
-			Start: 0,
-			End:   parsed.Duration,
-			Text:  parsed.Text,
-		})
+		diarized := parseDiarizedTextSegments(parsed.Text, parsed.Duration)
+		if len(diarized) > 0 {
+			segments = diarized
+		} else {
+			segments = append(segments, dtos.SegmentResult{
+				ID:           0,
+				Start:        0,
+				End:          parsed.Duration,
+				Text:         parsed.Text,
+				SpeakerLabel: "Speaker 0",
+			})
+		}
 	}
 
 	lang := strings.TrimSpace(parsed.Language)
@@ -216,3 +234,75 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 
 // Ensure OmniRouteSTT satisfies services.STTProvider at compile time.
 var _ services.STTProvider = (*OmniRouteSTT)(nil)
+
+var speakerPrefixRegex = regexp.MustCompile(`^(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:\s*(.*)$`)
+
+// parseDiarizedTextSegments splits text containing "Speaker X:" lines into structured segments
+// and computes proportional timestamps based on audio duration.
+func parseDiarizedTextSegments(fullText string, duration float64) []dtos.SegmentResult {
+	lines := strings.Split(fullText, "\n")
+	type parsedLine struct {
+		speaker string
+		text    string
+	}
+	var items []parsedLine
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if match := speakerPrefixRegex.FindStringSubmatch(trimmed); len(match) == 3 {
+			items = append(items, parsedLine{
+				speaker: strings.TrimSpace(match[1]),
+				text:    strings.TrimSpace(match[2]),
+			})
+		} else {
+			if len(items) > 0 {
+				items[len(items)-1].text += " " + trimmed
+			} else {
+				items = append(items, parsedLine{
+					speaker: "Speaker 0",
+					text:    trimmed,
+				})
+			}
+		}
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
+
+	totalChars := 0
+	for _, it := range items {
+		totalChars += len([]rune(it.text))
+	}
+	if totalChars == 0 {
+		totalChars = 1
+	}
+
+	res := make([]dtos.SegmentResult, len(items))
+	runningChars := 0
+	for i, it := range items {
+		charLen := len([]rune(it.text))
+		var start, end float64
+		if duration > 0 {
+			start = (float64(runningChars) / float64(totalChars)) * duration
+			end = (float64(runningChars+charLen) / float64(totalChars)) * duration
+		} else {
+			start = float64(i * 3)
+			end = float64((i + 1) * 3)
+		}
+		runningChars += charLen
+
+		res[i] = dtos.SegmentResult{
+			ID:           i,
+			Start:        start,
+			End:          end,
+			Text:         it.text,
+			SpeakerLabel: it.speaker,
+		}
+	}
+	return res
+}
+

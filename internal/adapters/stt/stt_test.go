@@ -141,3 +141,51 @@ func TestMockSTT(t *testing.T) {
 		t.Errorf("expected custom mock error, got %v", err)
 	}
 }
+
+func TestOmniRouteSTT_Transcribe_DiarizedText(t *testing.T) {
+	mockResponse := `{
+		"text": "Speaker 0: So how long did you stay in line to visit the store?\nSpeaker 1: Twenty minutes.\nSpeaker 0: Was it worth the twenty minute line?\nSpeaker 1: Yes, it was fun.",
+		"duration": 45.0,
+		"noSpeechDetected": false
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(mockResponse))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		LLMBaseURL: server.URL,
+		LLMAPIKey:  "test-key",
+		STTModel:   "deepgram/nova-2",
+	}
+
+	adapter := stt.NewOmniRoute(cfg)
+	res, err := adapter.Transcribe(context.Background(), bytes.NewReader([]byte("audio")), "sample.ogg", dtos.STTOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.Segments) != 4 {
+		t.Fatalf("expected 4 diarized segments, got %d", len(res.Segments))
+	}
+
+	if res.Segments[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected Speaker 0, got %s", res.Segments[0].SpeakerLabel)
+	}
+	if res.Segments[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected Speaker 1, got %s", res.Segments[1].SpeakerLabel)
+	}
+	if res.Segments[0].Text != "So how long did you stay in line to visit the store?" {
+		t.Errorf("expected parsed text without prefix, got %q", res.Segments[0].Text)
+	}
+	if res.Segments[1].Text != "Twenty minutes." {
+		t.Errorf("expected parsed text without prefix, got %q", res.Segments[1].Text)
+	}
+	if res.Language != "en" {
+		t.Errorf("expected detected language 'en', got %q", res.Language)
+	}
+}
+

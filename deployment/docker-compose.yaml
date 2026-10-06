@@ -2,10 +2,9 @@ services:
   api:
     image: code-base-golang-api:latest
     container_name: code-base-golang-api
+    network_mode: host
     env_file:
       - ../.env
-    ports:
-      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,7 +75,7 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5

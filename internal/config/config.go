@@ -80,6 +80,10 @@ type Config struct {
 	RateLimiterLimit   float64
 	RateLimiterBurst   int
 
+	// Quota Configuration (< 0 means unlimited)
+	GuestDailyQuota int
+	UserDailyQuota  int
+
 	// Request Body Limit Configuration
 	MaxRequestBodySize int64
 
@@ -177,6 +181,10 @@ func Load() Config {
 		RateLimiterEnabled: getEnvBool("RATE_LIMITER_ENABLED", true),
 		RateLimiterLimit:   getEnvFloat64("RATE_LIMITER_LIMIT", 20.0),
 		RateLimiterBurst:   getEnvInt("RATE_LIMITER_BURST", 30),
+
+		// Quota settings (default: constants fallback; negative value disables quota check)
+		GuestDailyQuota: getEnvInt("GUEST_DAILY_QUOTA", 1),
+		UserDailyQuota:  getEnvInt("USER_DAILY_QUOTA", 5),
 
 		// Request Body Limit settings (default 2MB)
 		MaxRequestBodySize: int64(getEnvInt("MAX_REQUEST_BODY_SIZE", 2*1024*1024)),

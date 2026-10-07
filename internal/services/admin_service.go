@@ -2,12 +2,24 @@ package services
 
 import (
 	"context"
+	"errors"
 	"math"
 
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/repositories"
 )
+
+// AdminActionMeta carries administrative actor and request provenance for audit logging.
+type AdminActionMeta struct {
+	AdminID   uuid.UUID
+	IPAddress string
+	UserAgent string
+}
 
 // AdminListUsers retrieves a paginated and filtered list of users with dynamic daily quota metrics.
 func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery) (*dtos.AdminUserListResponse, error) {
@@ -62,5 +74,63 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 			TotalItems:  total,
 			TotalPages:  totalPages,
 		},
+	}, nil
+}
+
+// AdminOverrideUserQuota sets or resets a user's daily quota override and records an administrative audit log.
+func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta AdminActionMeta, userID uuid.UUID, req dtos.AdminUserQuotaOverrideRequest) (*dtos.AdminUserQuotaResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	prevOverride := user.DailyQuotaOverride
+
+	if err := s.repo.UpdateUserDailyQuotaOverride(ctx, userID, req.DailyQuotaOverride); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	user.DailyQuotaOverride = req.DailyQuotaOverride
+	effectiveQuota := resolveDailyQuota(user)
+
+	// Persist administrative audit log
+	adminIDVal := meta.AdminID
+	entityIDStr := userID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "user.quota_override",
+		Entity:   "user",
+		EntityID: &entityIDStr,
+		Payload: models.JSONMap{
+			"previous_override": prevOverride,
+			"new_override":      req.DailyQuotaOverride,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AdminUserQuotaResponse{
+		UserID:             userID,
+		DailyQuotaOverride: req.DailyQuotaOverride,
+		EffectiveQuota:     effectiveQuota,
 	}, nil
 }

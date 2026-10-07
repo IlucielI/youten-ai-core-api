@@ -242,3 +242,10 @@ routes:
     handler: AdminListUsers
     admin_auth: true
     admin_permission: "users:read"
+
+  # Admin override user daily transcription quota (CMS).
+  - method: PATCH
+    path: /v1/admin/users/:id/quota
+    handler: AdminOverrideUserQuota
+    admin_auth: true
+    admin_permission: "users:write"

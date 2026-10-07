@@ -5,9 +5,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/services"
 )
 
 // AdminListUsers handles GET /v1/admin/users.
@@ -27,6 +30,53 @@ func (c *Controllers) AdminListUsers(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserListResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+// AdminOverrideUserQuota handles PATCH /v1/admin/users/:id/quota.
+func (c *Controllers) AdminOverrideUserQuota(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid user ID"))
+		return
+	}
+
+	var req dtos.AdminUserQuotaOverrideRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminOverrideUserQuota(ctx.Request.Context(), meta, userID, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserQuotaResponse]{
 		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   constants.ResponseMessageSuccess,

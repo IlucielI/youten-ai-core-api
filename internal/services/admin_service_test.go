@@ -942,6 +942,107 @@ func TestService_AdminGetDLQMessages(t *testing.T) {
 	})
 }
 
+func TestService_AdminRetryDLQJob(t *testing.T) {
+	t.Run("invalid request returns error", func(t *testing.T) {
+		svc, _, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		_, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: uuid.Nil})
+		if err == nil {
+			t.Fatal("expected error for nil recording ID, got nil")
+		}
+	})
+
+	t.Run("recording not found returns ErrRecordingNotFound", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		recID := uuid.New()
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		_, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: recID})
+		if err == nil {
+			t.Fatal("expected ErrNotFound, got nil")
+		}
+	})
+
+	t.Run("already completed recording returns ErrConflict", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		recID := uuid.New()
+		now := time.Now()
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "status", "created_at", "updated_at"}).
+				AddRow(recID, models.RecordingStatusCompleted, now, now))
+
+		_, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: recID})
+		if err == nil {
+			t.Fatal("expected ErrRecordingAlreadyCompleted, got nil")
+		}
+	})
+
+	t.Run("success resumes pipeline and logs audit action", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		recID := uuid.New()
+		now := time.Now()
+
+		// 1. FindRecordingByID
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "status", "title", "original_filename", "selected_template", "output_language", "audio_url", "created_at", "updated_at",
+			}).
+				AddRow(recID, models.RecordingStatusFailed, "Meeting", "meet.mp4", "GENERAL", "id", nil, now, now))
+
+		// 2. ResumeRecordingPipeline: ListTranscriptSegmentsByRecordingID
+		mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+		// 3. FindActiveSummaryByRecordingID
+		mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE`).
+			WithArgs(recID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		// 4. ListTranscriptChunksByRecordingID
+		mock.ExpectQuery(`SELECT .* FROM "transcript_chunks" WHERE recording_id = \$1 ORDER BY chunk_index ASC`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+		// 5. UpdateRecordingStatus to QUEUED
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+			WithArgs(models.RecordingStatusQueued, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// 6. CreateAdminAuditLog
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{AdminID: adminID}, dtos.DLQRetryRequest{RecordingID: recID})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.RecordingID != recID {
+			t.Fatalf("expected recording ID %s, got %s", recID, resp.RecordingID)
+		}
+		if resp.Status != models.RecordingStatusQueued {
+			t.Errorf("expected status %s, got %s", models.RecordingStatusQueued, resp.Status)
+		}
+	})
+}
+
+
 
 
 

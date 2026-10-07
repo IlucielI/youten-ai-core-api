@@ -402,3 +402,44 @@ func (c *Controllers) AdminGetDLQPipeline(ctx *gin.Context) {
 	})
 }
 
+// AdminRetryDLQJob handles POST /v1/admin/pipeline/dlq/retry.
+func (c *Controllers) AdminRetryDLQJob(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	var req dtos.DLQRetryRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid json payload"))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminRetryDLQJob(ctx.Request.Context(), meta, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.DLQRetryResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+

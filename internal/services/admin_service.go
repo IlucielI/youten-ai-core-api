@@ -640,6 +640,87 @@ func resolveDLQQueueAndTopic(status, sourceType string) (string, string) {
 	}
 }
 
+// AdminRetryDLQJob reprocesses a dead-lettered or stuck pipeline job, recovers state, and logs the administrative action.
+func (s *Service) AdminRetryDLQJob(ctx context.Context, meta AdminActionMeta, req dtos.DLQRetryRequest) (*dtos.DLQRetryResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	rec, err := s.repo.FindRecordingByID(ctx, req.RecordingID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if strings.ToUpper(strings.TrimSpace(rec.Status)) == models.RecordingStatusCompleted {
+		return nil, constants.ErrRecordingAlreadyCompleted
+	}
+
+	previousStatus := rec.Status
+	previousStage := req.Stage
+
+	// If job was stuck in non-terminal processing state, reset status to FAILED so resume can proceed
+	if rec.Status != models.RecordingStatusFailed {
+		rec.Status = models.RecordingStatusFailed
+	}
+
+	// Execute smart pipeline resume
+	p, err := s.ResumeRecordingPipeline(ctx, rec)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	status := p.Status
+	if status == "" {
+		status = models.RecordingStatusQueued
+	}
+	stage := p.Stage
+	if stage == "" {
+		stage = models.RecordingStatusExtracting
+	}
+
+	// Persist admin audit log
+	adminIDVal := meta.AdminID
+	entityIDStr := req.RecordingID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "pipeline.dlq_retry",
+		Entity:   "recording",
+		EntityID: &entityIDStr,
+		Payload: models.JSONMap{
+			"previous_status": previousStatus,
+			"requested_stage": previousStage,
+			"resumed_status":  status,
+			"resumed_stage":   stage,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.DLQRetryResponse{
+		RecordingID: rec.ID,
+		Status:      status,
+		Stage:       stage,
+		Message:     "pipeline job retry initiated successfully",
+		RetriedAt:   time.Now().UTC(),
+	}, nil
+}
+
+
 
 
 

@@ -172,6 +172,19 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		return fmt.Errorf("failed to clean up transcript segments: %w", err)
 	}
 
+	// Pre-filter: remove pure music/non-speech/empty segments from Whisper BEFORE LLM consensus.
+	// This prevents speech utterances from being mapped onto intro music timestamps (e.g. 00:00).
+	var prefilteredSegments []dtos.SegmentResult
+	for _, seg := range sttResult.Segments {
+		cleanText := strings.TrimSpace(seg.Text)
+		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
+		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" {
+			continue
+		}
+		prefilteredSegments = append(prefilteredSegments, seg)
+	}
+	sttResult.Segments = prefilteredSegments
+
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors
 	if len(sttResult.Segments) > 0 && s.llm != nil {
 		s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText)
@@ -181,9 +194,10 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	for _, seg := range sttResult.Segments {
 		cleanText := strings.TrimSpace(seg.Text)
 		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
-		if cleanText == "" || norm == "musik" || norm == "music" {
+		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" {
 			continue
 		}
+		cleanText = sanitizeEntityNames(cleanText)
 
 		wordsJSON, _ := json.Marshal(seg.Words)
 		speaker := seg.SpeakerLabel
@@ -890,9 +904,9 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 			var sb strings.Builder
 			if ref != "" {
-				sb.WriteString("INPUT DEEPGRAM (Referensi Speaker & Dialog Mengalir):\n")
+				sb.WriteString("REFERENSI AKUSTIK DEEPGRAM:\n")
 				sb.WriteString(ref)
-				sb.WriteString("\n\nINPUT WHISPER CHUNK (Stempel Waktu & Fonetik Alternatif):\n")
+				sb.WriteString("\n\nSEGMEN NOMOR WHISPER:\n")
 			}
 
 			hasContent := false
@@ -962,7 +976,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 					}
 					segments[it.Index].SpeakerName = speakerName
 					if strings.TrimSpace(it.Text) != "" {
-						segments[it.Index].Text = strings.TrimSpace(it.Text)
+						segments[it.Index].Text = sanitizeEntityNames(strings.TrimSpace(it.Text))
 					}
 				}
 			}
@@ -997,6 +1011,28 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			}
 		}
 	}
+}
+
+// sanitizeEntityNames normalizes phonetic mishearings and variations of known official entities.
+func sanitizeEntityNames(text string) string {
+	res := text
+	gunadarmaVariations := []string{
+		"Universitas Bunda Dharma",
+		"Universitas Bunda Darma",
+		"Universitas Bina Dana",
+		"Universitas Bunga dan Rumah",
+		"Universitas Gunadharma",
+		"Universitas Bunga Dharma",
+		"Gunadharma",
+	}
+	for _, v := range gunadarmaVariations {
+		if v == "Gunadharma" {
+			res = strings.ReplaceAll(res, v, "Gunadarma")
+		} else {
+			res = strings.ReplaceAll(res, v, "Universitas Gunadarma")
+		}
+	}
+	return res
 }
 
 // isGenericSpeakerLabel returns true if the name is empty or a generic placeholder (e.g. "Speaker 0", "Pembicara 1").

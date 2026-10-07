@@ -103,3 +103,15 @@ func ValidateCreateCommentRequest(r *dtos.CreateCommentRequest) error {
 		validation.Field(&r.TimestampSec, validation.Min(0.0)),
 	)
 }
+
+// ValidateUpdateTranscriptSegmentRequest validates an individual transcript segment update payload.
+func ValidateUpdateTranscriptSegmentRequest(r *dtos.UpdateTranscriptSegmentRequest) error {
+	trimmed := strings.TrimSpace(r.Text)
+	if trimmed == "" {
+		return validation.NewError("validation_required", "transcript segment text cannot be blank")
+	}
+	if len([]rune(trimmed)) > 10000 {
+		return validation.NewError("validation_length", "transcript segment text cannot exceed 10000 characters")
+	}
+	return nil
+}

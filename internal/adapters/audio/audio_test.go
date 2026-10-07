@@ -72,3 +72,22 @@ func TestFFmpegExtractor_LookPath(t *testing.T) {
 		}
 	}
 }
+
+func TestParseDuration(t *testing.T) {
+	logOutput := `Input #0, matroska,webm, from 'input.webm':
+  Metadata:
+    encoder         : google/video-file
+  Duration: 00:06:10.78, start: 0.000000, bitrate: 128 kb/s
+  Stream #0:0: Audio: opus, 48000 Hz, stereo, fltp (default)`
+
+	d := audio.ParseDuration(logOutput)
+	expected := 6*60 + 10.78
+	if d != expected {
+		t.Errorf("expected %f, got %f", expected, d)
+	}
+
+	invalid := audio.ParseDuration("no duration info")
+	if invalid != 0 {
+		t.Errorf("expected 0 for invalid, got %f", invalid)
+	}
+}

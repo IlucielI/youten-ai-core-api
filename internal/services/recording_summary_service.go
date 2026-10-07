@@ -15,6 +15,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/payload"
 	"code-base-golang/internal/pkg/apperror"
 	"code-base-golang/internal/templates"
 )
@@ -48,6 +49,47 @@ func (s *Service) UpdateTranscriptSpeakers(ctx context.Context, id uuid.UUID, ow
 	return &dtos.UpdateSpeakersResponse{
 		UpdatedCount: int(updatedCount),
 		Speakers:     cleanedSpeakers,
+	}, nil
+}
+
+// UpdateTranscriptSegment updates the text of a single transcript segment and dispatches async chunk re-indexing.
+func (s *Service) UpdateTranscriptSegment(ctx context.Context, id uuid.UUID, segmentID uuid.UUID, ownershipToken string, req dtos.UpdateTranscriptSegmentRequest) (*dtos.TranscriptSegmentDTO, error) {
+	rec, err := s.repo.FindRecordingByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrRecordingNotFound
+		}
+		return nil, fmt.Errorf("failed to lookup recording: %w", err)
+	}
+
+	// Ownership verification (owner or ownership token).
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+		return nil, constants.ErrForbidden
+	}
+
+	cleanedText := strings.TrimSpace(req.Text)
+	updatedSeg, err := s.repo.UpdateTranscriptSegmentText(ctx, rec.ID, segmentID, cleanedText)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrTranscriptSegmentNotFound
+		}
+		return nil, fmt.Errorf("failed to update transcript segment: %w", err)
+	}
+
+	// Trigger async re-indexing so RAG chunk embeddings stay in sync
+	_ = s.publishEvent(ctx, constants.TopicRecordingIndex, payload.RecordingPipelinePayload{
+		RecordingID: rec.ID,
+	})
+
+	return &dtos.TranscriptSegmentDTO{
+		ID:            updatedSeg.ID.String(),
+		SpeakerLabel:  updatedSeg.SpeakerLabel,
+		SpeakerName:   updatedSeg.SpeakerName,
+		StartTime:     updatedSeg.StartTime,
+		EndTime:       updatedSeg.EndTime,
+		Text:          updatedSeg.Text,
+		WordsData:     updatedSeg.WordsData,
+		SequenceOrder: updatedSeg.SequenceOrder,
 	}, nil
 }
 

@@ -49,6 +49,9 @@ var (
 	// ErrSummaryNotFound is returned when a requested summary version is not found.
 	ErrSummaryNotFound = apperror.New(http.StatusNotFound, "ERR_SUMMARY_NOT_FOUND", "summary version not found")
 
+	// ErrTranscriptSegmentNotFound is returned when a requested transcript segment is not found.
+	ErrTranscriptSegmentNotFound = apperror.New(http.StatusNotFound, "ERR_SEGMENT_NOT_FOUND", "transcript segment not found")
+
 	// ErrEmailAlreadyExists is returned when attempting to register with an email that is already registered.
 	ErrEmailAlreadyExists = apperror.New(http.StatusConflict, "ERR_EMAIL_ALREADY_EXISTS", "email is already registered")
 

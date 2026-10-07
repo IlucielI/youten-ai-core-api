@@ -144,6 +144,15 @@ func DefaultWorkspaceRAGSystemPrompt() (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
+// DefaultDiarizeSystemPrompt returns the system prompt for transcription post-processing, speaker diarization, and phonetic correction.
+func DefaultDiarizeSystemPrompt() (string, error) {
+	var buf bytes.Buffer
+	if err := parsedTemplates.ExecuteTemplate(&buf, "diarize_system.tmpl", nil); err != nil {
+		return "", fmt.Errorf("execute diarize_system.tmpl: %w", err)
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
 // RenderWorkspaceRAGUserPrompt formats query and cross-meeting retrieved chunks into user prompt.
 func RenderWorkspaceRAGUserPrompt(query string, matches []WorkspaceChunkView) (string, error) {
 	var views []WorkspaceChunkView

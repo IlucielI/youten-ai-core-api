@@ -156,3 +156,17 @@ func TestTemplates_WorkspaceRAGPrompts(t *testing.T) {
 	}
 }
 
+func TestTemplates_DefaultDiarizeSystemPrompt(t *testing.T) {
+	prompt, err := templates.DefaultDiarizeSystemPrompt()
+	if err != nil {
+		t.Fatalf("unexpected error rendering diarize system prompt: %v", err)
+	}
+	if !strings.Contains(prompt, "Diarization Specialist") {
+		t.Errorf("expected prompt to contain 'Diarization Specialist', got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Speaker 0") {
+		t.Errorf("expected prompt to contain 'Speaker 0', got: %s", prompt)
+	}
+}
+
+

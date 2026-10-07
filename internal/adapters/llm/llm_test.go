@@ -289,3 +289,44 @@ func TestOmniRouteLLM_StreamContextCancel(t *testing.T) {
 		}
 	}
 }
+
+func TestOmniRouteLLM_GenerateStructured_SSEStreamResponse(t *testing.T) {
+	ssePayload := strings.Join([]string{
+		`data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`,
+		`data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"{\"summary\":\"Roadmap agreed\",\"action_items\":[]}"},"finish_reason":null}]}`,
+		`data: {"id":"chatcmpl-sse","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":150,"completion_tokens":25,"total_tokens":175}}`,
+		`: x-omniroute-comment`,
+		`data: [DONE]`,
+	}, "\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{LLMBaseURL: server.URL}
+	adapter := llm.NewOmniRoute(cfg)
+
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"summary": map[string]interface{}{"type": "string"},
+		},
+	}
+
+	resp, err := adapter.GenerateStructured(context.Background(), "System prompt", "User prompt", schema)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedJSON := `{"summary":"Roadmap agreed","action_items":[]}`
+	if resp.RawJSON != expectedJSON {
+		t.Errorf("expected %q, got %q", expectedJSON, resp.RawJSON)
+	}
+	if resp.Usage.TotalTokens != 175 {
+		t.Errorf("expected 175 total tokens, got %d", resp.Usage.TotalTokens)
+	}
+}
+

@@ -71,3 +71,69 @@ func InferMediaExtension(contentType string) string {
 		return ""
 	}
 }
+
+// NormalizeLanguageCode converts language name or tag into normalized 2-letter ISO code ("id", "en", etc.).
+// If empty, returns fallback (typically "id").
+func NormalizeLanguageCode(lang string, fallback string) string {
+	l := strings.ToLower(strings.TrimSpace(lang))
+	switch l {
+	case "en", "english", "eng":
+		return "en"
+	case "id", "indonesian", "indonesia", "ind":
+		return "id"
+	case "":
+		return fallback
+	default:
+		return l
+	}
+}
+
+// DetectLanguage inspects text using high-frequency marker word heuristics to detect language ("en" or "id").
+// Returns fallback if confidence is low or text has insufficient word signal.
+func DetectLanguage(text string, fallback string) string {
+	clean := strings.ToLower(text)
+	words := strings.Fields(clean)
+	if len(words) == 0 {
+		return fallback
+	}
+
+	idKeywords := map[string]struct{}{
+		"yang": {}, "dan": {}, "di": {}, "ini": {}, "itu": {},
+		"untuk": {}, "dengan": {}, "saya": {}, "kamu": {}, "bisa": {},
+		"adalah": {}, "tidak": {}, "dari": {}, "ke": {}, "pada": {},
+		"sudah": {}, "akan": {}, "kita": {}, "mereka": {}, "ada": {},
+		"karena": {}, "tapi": {}, "juga": {}, "oleh": {}, "seperti": {},
+	}
+
+	enKeywords := map[string]struct{}{
+		"the": {}, "and": {}, "you": {}, "that": {}, "is": {},
+		"was": {}, "for": {}, "with": {}, "are": {}, "this": {},
+		"have": {}, "from": {}, "they": {}, "here": {}, "how": {},
+		"what": {}, "did": {}, "not": {}, "there": {}, "about": {},
+		"well": {}, "like": {}, "just": {}, "were": {}, "when": {},
+	}
+
+	idCount := 0
+	enCount := 0
+	for _, w := range words {
+		w = strings.Trim(w, ",.?!:;\"'()[]{}")
+		if _, ok := idKeywords[w]; ok {
+			idCount++
+		}
+		if _, ok := enKeywords[w]; ok {
+			enCount++
+		}
+	}
+
+	if enCount > idCount && enCount >= 2 {
+		return "en"
+	}
+	if idCount > enCount && idCount >= 2 {
+		return "id"
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return "id"
+}
+

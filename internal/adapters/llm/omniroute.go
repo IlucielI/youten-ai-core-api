@@ -351,12 +351,126 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		return nil, fmt.Errorf("llm api returned status %d: %s", resp.StatusCode, string(respBytes))
 	}
 
+	trimmed := bytes.TrimSpace(respBytes)
+	if bytes.HasPrefix(trimmed, []byte("data:")) {
+		return parseSSEChatResponse(trimmed)
+	}
+
 	var chatResp openAIChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
+		// Fallback: check if response payload is an SSE event stream
+		if sseResp, sseErr := parseSSEChatResponse(trimmed); sseErr == nil && len(sseResp.Choices) > 0 && sseResp.Choices[0].Message.Content != "" {
+			return sseResp, nil
+		}
 		return nil, fmt.Errorf("failed to unmarshal chat response: %w", err)
 	}
 
 	return &chatResp, nil
+}
+
+// parseSSEChatResponse reconstructs a full chat completion response from an SSE event stream payload.
+func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
+	reader := bufio.NewReader(bytes.NewReader(respBytes))
+	var contentBuilder strings.Builder
+	var finishReason string
+	var usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	}
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return nil, fmt.Errorf("failed reading sse stream: %w", err)
+		}
+
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && strings.HasPrefix(trimmed, "data:") {
+			payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+			if payload == "[DONE]" {
+				break
+			}
+
+			var chunk struct {
+				ID      string `json:"id"`
+				Choices []struct {
+					Index int `json:"index"`
+					Delta struct {
+						Role    string `json:"role,omitempty"`
+						Content string `json:"content,omitempty"`
+					} `json:"delta"`
+					Message struct {
+						Role    string `json:"role,omitempty"`
+						Content string `json:"content,omitempty"`
+					} `json:"message"`
+					FinishReason string `json:"finish_reason,omitempty"`
+				} `json:"choices"`
+				Usage struct {
+					PromptTokens     int `json:"prompt_tokens"`
+					CompletionTokens int `json:"completion_tokens"`
+					TotalTokens      int `json:"total_tokens"`
+				} `json:"usage"`
+			}
+
+			if err := json.Unmarshal([]byte(payload), &chunk); err == nil {
+				if chunk.Usage.TotalTokens > 0 {
+					usage = chunk.Usage
+				}
+				if len(chunk.Choices) > 0 {
+					choice := chunk.Choices[0]
+					if choice.Delta.Content != "" {
+						contentBuilder.WriteString(choice.Delta.Content)
+					} else if choice.Message.Content != "" {
+						contentBuilder.WriteString(choice.Message.Content)
+					}
+					if choice.FinishReason != "" {
+						finishReason = choice.FinishReason
+					}
+				}
+			}
+		}
+
+		if err == io.EOF {
+			break
+		}
+	}
+
+	if contentBuilder.Len() == 0 {
+		return nil, fmt.Errorf("empty content in sse stream response")
+	}
+
+	if finishReason == "" {
+		finishReason = "stop"
+	}
+
+	chatResp := &openAIChatResponse{
+		Choices: []struct {
+			Index   int `json:"index"`
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		}{
+			{
+				Index: 0,
+				Message: struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				}{
+					Role:    "assistant",
+					Content: contentBuilder.String(),
+				},
+				FinishReason: finishReason,
+			},
+		},
+	}
+	chatResp.Usage.PromptTokens = usage.PromptTokens
+	chatResp.Usage.CompletionTokens = usage.CompletionTokens
+	chatResp.Usage.TotalTokens = usage.TotalTokens
+
+	return chatResp, nil
 }
 
 // Ensure OmniRouteLLM satisfies services.LLMProvider at compile time.

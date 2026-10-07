@@ -88,3 +88,69 @@ func TestInferMediaExtension(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeLanguageCode(t *testing.T) {
+	tests := []struct {
+		input    string
+		fallback string
+		expected string
+	}{
+		{"English", "id", "en"},
+		{"en", "id", "en"},
+		{"INDONESIAN", "en", "id"},
+		{"id", "en", "id"},
+		{"", "id", "id"},
+		{"ja", "id", "ja"},
+	}
+
+	for _, tt := range tests {
+		got := strutil.NormalizeLanguageCode(tt.input, tt.fallback)
+		if got != tt.expected {
+			t.Errorf("NormalizeLanguageCode(%q, %q) = %q, want %q", tt.input, tt.fallback, got, tt.expected)
+		}
+	}
+}
+
+func TestDetectLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		fallback string
+		expected string
+	}{
+		{
+			name:     "English conversation sample",
+			text:     "So how long did you stand in line? Twenty minutes. And do you guys live around here? Well, we just walked around.",
+			fallback: "id",
+			expected: "en",
+		},
+		{
+			name:     "Indonesian meeting sample",
+			text:     "Selamat pagi rekan-rekan semua, hari ini kita akan membahas rencana rilis dan strategi untuk kuartal berikutnya.",
+			fallback: "en",
+			expected: "id",
+		},
+		{
+			name:     "Empty text uses fallback",
+			text:     "",
+			fallback: "id",
+			expected: "id",
+		},
+		{
+			name:     "Gibberish or low confidence uses fallback",
+			text:     "123 456 xyz abc",
+			fallback: "id",
+			expected: "id",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := strutil.DetectLanguage(tt.text, tt.fallback)
+			if got != tt.expected {
+				t.Errorf("DetectLanguage() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+

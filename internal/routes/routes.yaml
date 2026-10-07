@@ -183,6 +183,12 @@ routes:
     handler: UpdateTranscriptSpeakers
     optional_auth: true
 
+  # Update individual transcript segment text.
+  - method: PATCH
+    path: /v1/recordings/:id/segments/:segmentId
+    handler: UpdateTranscriptSegment
+    optional_auth: true
+
   # Regenerate the summary with a new template/angle.
   - method: POST
     path: /v1/recordings/:id/regenerate

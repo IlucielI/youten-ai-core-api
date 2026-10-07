@@ -88,7 +88,7 @@ func (s *Service) UploadRecording(
 	}
 	language := strings.TrimSpace(req.Language)
 	if language == "" {
-		language = "id"
+		language = "auto"
 	}
 
 	tokenBytes := make([]byte, 32)
@@ -266,7 +266,7 @@ func (s *Service) ImportRecordingFromURL(
 	}
 	language := strings.TrimSpace(req.Language)
 	if language == "" {
-		language = "id"
+		language = "auto"
 	}
 
 	tokenBytes := make([]byte, 32)
@@ -410,8 +410,15 @@ func (s *Service) checkDailyQuota(ctx context.Context) error {
 		}
 
 		dailyQuota := constants.DefaultUserDailyQuota
+		if s.cfg.UserDailyQuota > 0 {
+			dailyQuota = s.cfg.UserDailyQuota
+		}
 		if user.DailyQuotaOverride != nil {
 			dailyQuota = *user.DailyQuotaOverride
+		}
+
+		if s.cfg.UserDailyQuota < 0 && user.DailyQuotaOverride == nil {
+			return nil
 		}
 
 		countToday, err := s.repo.CountUserRecordingsToday(ctx, userID)
@@ -422,11 +429,20 @@ func (s *Service) checkDailyQuota(ctx context.Context) error {
 			return constants.ErrDailyQuotaExceeded
 		}
 	} else {
+		if s.cfg.GuestDailyQuota < 0 {
+			return nil
+		}
+
+		guestQuota := constants.DefaultGuestDailyQuota
+		if s.cfg.GuestDailyQuota > 0 {
+			guestQuota = s.cfg.GuestDailyQuota
+		}
+
 		countToday, err := s.repo.CountGuestRecordingsToday(ctx, clientIP)
 		if err != nil {
 			return fmt.Errorf("failed to count guest daily recordings: %w", err)
 		}
-		if countToday >= int64(constants.DefaultGuestDailyQuota) {
+		if countToday >= int64(guestQuota) {
 			return constants.ErrGuestDailyQuotaExceeded
 		}
 	}

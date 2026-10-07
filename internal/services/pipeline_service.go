@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +18,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
+	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/sse"
 	"code-base-golang/internal/templates"
 )
@@ -142,8 +145,19 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		return errors.New(errMsg)
 	}
 
+	sttLang := ""
+	if recording.OutputLanguage != "" && strings.ToLower(recording.OutputLanguage) != "auto" {
+		sttLang = recording.OutputLanguage
+	} else if recording.DetectedLanguage != nil && *recording.DetectedLanguage != "" && strings.ToLower(*recording.DetectedLanguage) != "auto" {
+		sttLang = *recording.DetectedLanguage
+	}
+	if sttLang == "" || strings.ToLower(sttLang) == "auto" {
+		sttLang = "id"
+	}
+
 	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", dtos.STTOptions{
-		Language: recording.OutputLanguage,
+		Language:      sttLang,
+		AudioDuration: recording.DurationSeconds,
 	})
 	if err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("stt transcription failed: %v", err))
@@ -163,45 +177,93 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		return fmt.Errorf("failed to clean up transcript segments: %w", err)
 	}
 
+	// Pre-filter: remove pure music/non-speech/empty segments from Whisper BEFORE LLM consensus.
+	// This prevents speech utterances from being mapped onto intro music timestamps (e.g. 00:00).
+	var prefilteredSegments []dtos.SegmentResult
+	for _, seg := range sttResult.Segments {
+		cleanText := strings.TrimSpace(seg.Text)
+		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
+		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" || norm == "intro" {
+			continue
+		}
+		prefilteredSegments = append(prefilteredSegments, seg)
+	}
+	sttResult.Segments = prefilteredSegments
+
+	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors
+	if len(sttResult.Segments) > 0 && s.llm != nil {
+		s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText)
+	}
+
 	var modelSegments []models.TranscriptSegment
-	for i, seg := range sttResult.Segments {
+	for _, seg := range sttResult.Segments {
+		cleanText := strings.TrimSpace(seg.Text)
+		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
+		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" || norm == "intro" {
+			continue
+		}
+
 		wordsJSON, _ := json.Marshal(seg.Words)
 		speaker := seg.SpeakerLabel
 		if speaker == "" {
 			speaker = constants.DefaultSpeakerLabel
 		}
+		speakerName := seg.SpeakerName
+		if speakerName == "" {
+			speakerName = speaker
+		}
 		modelSegments = append(modelSegments, models.TranscriptSegment{
 			RecordingID:   recording.ID,
 			SpeakerLabel:  speaker,
-			SpeakerName:   speaker,
+			SpeakerName:   speakerName,
 			StartTime:     seg.Start,
 			EndTime:       seg.End,
-			Text:          seg.Text,
+			Text:          cleanText,
 			WordsData:     json.RawMessage(wordsJSON),
-			SequenceOrder: i + 1,
+			SequenceOrder: len(modelSegments) + 1,
 		})
 	}
 
 	// If no segments provided by STT, fallback to a single segment from full text
 	if len(modelSegments) == 0 && strings.TrimSpace(sttResult.Text) != "" {
+		fallbackDuration := sttResult.Duration
+		if fallbackDuration <= 0 {
+			fallbackDuration = recording.DurationSeconds
+		}
 		modelSegments = append(modelSegments, models.TranscriptSegment{
 			RecordingID:   recording.ID,
 			SpeakerLabel:  constants.DefaultSpeakerLabel,
 			SpeakerName:   constants.DefaultSpeakerLabel,
 			StartTime:     0,
-			EndTime:       sttResult.Duration,
+			EndTime:       fallbackDuration,
 			Text:          sttResult.Text,
 			WordsData:     json.RawMessage("[]"),
 			SequenceOrder: 1,
 		})
 	}
 
+	// Merge consecutive segments from the same speaker to prevent sentence fragmentation
+	modelSegments = mergeConsecutiveSegments(modelSegments, 3.0, 45.0)
+
 	if err := s.repo.SaveTranscriptSegments(ctx, modelSegments); err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to save transcript segments: %v", err))
 		return fmt.Errorf("failed to save transcript segments: %w", err)
 	}
 
-	if err := s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, sttResult.Duration, sttResult.Language); err != nil {
+	rawLang := strings.TrimSpace(sttResult.Language)
+	detectedLang := strutil.NormalizeLanguageCode(rawLang, "")
+	if detectedLang == "" {
+		detectedLang = strutil.DetectLanguage(sttResult.Text, "id")
+	}
+	if detectedLang == "" {
+		detectedLang = "id"
+	}
+
+	durationToSave := sttResult.Duration
+	if durationToSave <= 0 && recording.DurationSeconds > 0 {
+		durationToSave = recording.DurationSeconds
+	}
+	if err := s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, durationToSave, detectedLang); err != nil {
 		log.Printf("[PIPELINE WARN] recording %s: failed to update duration and language: %v", recording.ID.String(), err)
 	}
 
@@ -276,8 +338,14 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 
 	targetLang := recording.OutputLanguage
-	if targetLang == "" {
-		targetLang = p.Language
+	if targetLang == "" || strings.ToLower(targetLang) == "auto" {
+		if recording.DetectedLanguage != nil && *recording.DetectedLanguage != "" {
+			targetLang = *recording.DetectedLanguage
+		} else if p.Language != "" && strings.ToLower(p.Language) != "auto" {
+			targetLang = p.Language
+		} else {
+			targetLang = "id"
+		}
 	}
 
 	userPrompt, err := templates.RenderSummaryUserPrompt(transcriptBody, targetLang)
@@ -776,3 +844,245 @@ func (s *Service) publishProgress(recordingID uuid.UUID, status string, errCode,
 		UpdatedAt:    time.Now().UTC(),
 	})
 }
+
+// needsDiarization returns true if all segments currently have empty or default speaker labels.
+func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
+	for _, seg := range segments {
+		lbl := strings.TrimSpace(seg.SpeakerLabel)
+		if lbl != "" && lbl != constants.DefaultSpeakerLabel {
+			return false
+		}
+	}
+	return true
+}
+
+// diarizeAndCorrectSegmentsWithLLM uses the LLM to infer speaker turn-taking and correct obvious phonetic ASR slips across transcript segments.
+// If an acoustic speaker reference is provided (e.g. from Deepgram diarization), it runs concurrent chunk validation (up to 5 workers)
+// evaluating Deepgram dialogue foundation against Whisper timestamps and phonetic alternatives.
+func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult, diarizedRef ...string) {
+	if len(segments) == 0 || s.llm == nil {
+		return
+	}
+
+	ref := ""
+	if len(diarizedRef) > 0 {
+		ref = strings.TrimSpace(diarizedRef[0])
+		if len(ref) > 15000 {
+			ref = ref[:15000]
+		}
+	}
+
+	systemPrompt, err := templates.DefaultDiarizeSystemPrompt()
+	if err != nil {
+		systemPrompt = "Anda adalah AI Speech Consensus Engine dan Diarization Specialist. " +
+			"Tentukan speaker label ('Speaker 0', 'Speaker 1'), deteksi nama pembicara, dan koreksi kata fonetik. " +
+			"Keluarkan JSON array objek dengan keys 'index', 'speaker', 'speaker_name', dan 'text'."
+	}
+
+	const chunkSize = 15
+	const maxConcurrency = 5
+
+	type chunkTask struct {
+		startIdx int
+		endIdx   int
+	}
+
+	var tasks []chunkTask
+	for i := 0; i < len(segments); i += chunkSize {
+		end := i + chunkSize
+		if end > len(segments) {
+			end = len(segments)
+		}
+		tasks = append(tasks, chunkTask{startIdx: i, endIdx: end})
+	}
+
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(t chunkTask) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			var sb strings.Builder
+			if ref != "" {
+				sb.WriteString("REFERENSI AKUSTIK DEEPGRAM:\n")
+				sb.WriteString(ref)
+				sb.WriteString("\n\nSEGMEN NOMOR WHISPER:\n")
+			}
+
+			hasContent := false
+			for idx := t.startIdx; idx < t.endIdx; idx++ {
+				txt := strings.TrimSpace(segments[idx].Text)
+				if txt != "" {
+					hasContent = true
+					if segments[idx].Start > 0 || segments[idx].End > 0 {
+						sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, segments[idx].Start, segments[idx].End, txt))
+					} else {
+						sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
+					}
+				}
+			}
+
+			if !hasContent {
+				return
+			}
+
+			temp := 0.0
+			chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
+				{Role: "user", Content: sb.String()},
+			}, dtos.ChatOptions{Temperature: &temp})
+			if err != nil {
+				log.Printf("[PIPELINE WARN] llm consensus chunk [%d:%d] failed: %v", t.startIdx, t.endIdx, err)
+				return
+			}
+
+			cleanJSON := strings.TrimSpace(chatRes.Content)
+			if idx := strings.Index(cleanJSON, "["); idx != -1 {
+				cleanJSON = cleanJSON[idx:]
+			}
+			if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
+				cleanJSON = cleanJSON[:idx+1]
+			}
+
+			type correctedItem struct {
+				Index       int    `json:"index"`
+				Speaker     string `json:"speaker"`
+				SpeakerName string `json:"speaker_name"`
+				Text        string `json:"text"`
+			}
+
+			var items []correctedItem
+			if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
+				var labelMap map[string]string
+				if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
+					for idx := t.startIdx; idx < t.endIdx; idx++ {
+						key := strconv.Itoa(idx)
+						if val, ok := labelMap[key]; ok && strings.TrimSpace(val) != "" {
+							segments[idx].SpeakerLabel = strings.TrimSpace(val)
+							segments[idx].SpeakerName = strings.TrimSpace(val)
+						}
+					}
+				}
+				return
+			}
+
+			for _, it := range items {
+				if it.Index >= t.startIdx && it.Index < t.endIdx {
+					if strings.TrimSpace(it.Speaker) != "" {
+						segments[it.Index].SpeakerLabel = strings.TrimSpace(it.Speaker)
+					}
+					speakerName := strings.TrimSpace(it.SpeakerName)
+					if speakerName == "" {
+						speakerName = segments[it.Index].SpeakerLabel
+					}
+					segments[it.Index].SpeakerName = speakerName
+					if strings.TrimSpace(it.Text) != "" {
+						segments[it.Index].Text = strings.TrimSpace(it.Text)
+					}
+				}
+			}
+		}(task)
+	}
+
+	wg.Wait()
+
+	// Canonical name propagation:
+	// When a speaker introduces themselves or is addressed in any turn (e.g. "Putri"),
+	// propagate that discovered real name across ALL turns belonging to that SpeakerLabel.
+	discoveredNames := make(map[string]string)
+	for _, seg := range segments {
+		lbl := strings.TrimSpace(seg.SpeakerLabel)
+		name := strings.TrimSpace(seg.SpeakerName)
+		if lbl != "" && !isGenericSpeakerLabel(name) {
+			if _, exists := discoveredNames[lbl]; !exists {
+				discoveredNames[lbl] = name
+			}
+		}
+	}
+
+	for i := range segments {
+		lbl := strings.TrimSpace(segments[i].SpeakerLabel)
+		if realName, ok := discoveredNames[lbl]; ok {
+			segments[i].SpeakerName = realName
+		} else if isGenericSpeakerLabel(segments[i].SpeakerName) {
+			if lbl != "" {
+				segments[i].SpeakerName = lbl
+			} else {
+				segments[i].SpeakerName = constants.DefaultSpeakerLabel
+			}
+		}
+	}
+}
+
+// isGenericSpeakerLabel returns true if the name is empty or a generic placeholder (e.g. "Speaker 0", "Pembicara 1").
+func isGenericSpeakerLabel(name string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(name))
+	if trimmed == "" {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "speaker") || strings.HasPrefix(trimmed, "pembicara") || trimmed == "unknown"
+}
+
+// mergeConsecutiveSegments combines consecutive segments spoken by the same speaker
+// into a single cohesive utterance if the gap between them is within maxGapSeconds
+// and total merged duration does not exceed maxDurationSeconds.
+func mergeConsecutiveSegments(segments []models.TranscriptSegment, maxGapSeconds float64, maxDurationSeconds float64) []models.TranscriptSegment {
+	if len(segments) <= 1 {
+		return segments
+	}
+
+	var merged []models.TranscriptSegment
+	current := segments[0]
+
+	for i := 1; i < len(segments); i++ {
+		next := segments[i]
+		sameSpeaker := (current.SpeakerLabel != "" && current.SpeakerLabel == next.SpeakerLabel) ||
+			(current.SpeakerName != "" && current.SpeakerName == next.SpeakerName)
+
+		gap := next.StartTime - current.EndTime
+		currDuration := current.EndTime - current.StartTime
+		addedDuration := next.EndTime - next.StartTime
+
+		// Merge if same speaker, duration under limit, and gap is within allowed range (or overlapping)
+		if sameSpeaker && (currDuration+addedDuration <= maxDurationSeconds) && (gap <= maxGapSeconds || next.StartTime <= current.EndTime) {
+			if next.EndTime > current.EndTime {
+				current.EndTime = next.EndTime
+			}
+			current.Text = strings.TrimSpace(current.Text + " " + next.Text)
+			current.WordsData = mergeWordsJSON(current.WordsData, next.WordsData)
+		} else {
+			merged = append(merged, current)
+			current = next
+		}
+	}
+	merged = append(merged, current)
+
+	for i := range merged {
+		merged[i].SequenceOrder = i + 1
+	}
+	return merged
+}
+
+// mergeWordsJSON combines two JSON arrays of dtos.WordResult into one.
+func mergeWordsJSON(w1, w2 json.RawMessage) json.RawMessage {
+	var list1, list2 []dtos.WordResult
+	if len(w1) > 0 {
+		_ = json.Unmarshal(w1, &list1)
+	}
+	if len(w2) > 0 {
+		_ = json.Unmarshal(w2, &list2)
+	}
+	combined := append(list1, list2...)
+	if len(combined) == 0 {
+		return json.RawMessage("[]")
+	}
+	res, err := json.Marshal(combined)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	return json.RawMessage(res)
+}
+

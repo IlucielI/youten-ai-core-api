@@ -265,3 +265,27 @@ func FetchMediaStream(ctx context.Context, targetURL string, timeout time.Durati
 	return resp, nil
 }
 
+// IsAllowedDomain checks whether the host (ignoring port and case) exactly matches any domain in the allowlist.
+func IsAllowedDomain(host string, allowedList []string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if stripped, _, err := net.SplitHostPort(h); err == nil {
+		h = stripped
+	} else if strings.HasPrefix(h, "[") && strings.HasSuffix(h, "]") {
+		h = strings.Trim(h, "[]")
+	}
+	if h == "" {
+		return false
+	}
+	for _, allowed := range allowedList {
+		a := strings.ToLower(strings.TrimSpace(allowed))
+		if a == "" {
+			continue
+		}
+		if h == a {
+			return true
+		}
+	}
+	return false
+}
+
+

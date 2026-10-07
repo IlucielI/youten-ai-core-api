@@ -504,6 +504,42 @@ func TestAdminTestTemplateRequest_Validate(t *testing.T) {
 	})
 }
 
+func TestDLQMessagesResponse(t *testing.T) {
+	recID := uuid.New()
+	now := time.Now()
+	resp := DLQMessagesResponse{
+		Total:       2,
+		FailedCount: 1,
+		StuckCount:  1,
+		Page:        1,
+		Limit:       20,
+		Items: []DLQMessageItem{
+			{
+				RecordingID:  recID,
+				Queue:        "recording.dlq",
+				RoutingKey:   "recording.failed",
+				Stage:        "FAILED",
+				Status:       "FAILED",
+				ErrorCode:    "ERR_TRANSCRIPTION_FAILED",
+				ErrorMessage: "stt timeout",
+				RetryCount:   0,
+				FailedAt:     now,
+				Title:        "Failed Audio",
+				UserName:     "John Doe",
+				UserEmail:    "john@example.com",
+			},
+		},
+	}
+
+	if resp.Total != 2 || len(resp.Items) != 1 {
+		t.Fatalf("unexpected DLQ response structure: %+v", resp)
+	}
+	if resp.Items[0].RecordingID != recID {
+		t.Fatalf("expected recording ID %s, got %s", recID, resp.Items[0].RecordingID)
+	}
+}
+
+
 
 
 

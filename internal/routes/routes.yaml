@@ -306,6 +306,14 @@ routes:
     admin_auth: true
     admin_permission: "templates:write"
 
+  # Admin monitor DLQ and stuck pipeline jobs (CMS).
+  - method: GET
+    path: /v1/admin/pipeline/dlq
+    handler: AdminGetDLQPipeline
+    admin_auth: true
+    admin_permission: "ops:read"
+
+
 
 
 

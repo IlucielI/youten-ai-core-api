@@ -563,6 +563,84 @@ func (s *Service) AdminTestTemplate(ctx context.Context, meta AdminActionMeta, r
 	}, nil
 }
 
+// AdminGetDLQMessages retrieves failed and stuck pipeline items for DLQ monitoring.
+func (s *Service) AdminGetDLQMessages(ctx context.Context, meta AdminActionMeta, page, limit int) (*dtos.DLQMessagesResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	// Recordings stuck in intermediate states for > 15 minutes are considered stuck
+	stuckThreshold := 15 * time.Minute
+
+	recs, total, failedCount, stuckCount, err := s.repo.ListDLQRecordings(ctx, stuckThreshold, limit, offset)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.DLQMessageItem, 0, len(recs))
+	for _, rec := range recs {
+		queueName, routingKey := resolveDLQQueueAndTopic(rec.Status, rec.SourceType)
+
+		item := dtos.DLQMessageItem{
+			RecordingID: rec.ID,
+			Queue:       queueName,
+			RoutingKey:  routingKey,
+			Stage:       rec.Status,
+			Status:      rec.Status,
+			RetryCount:  0,
+			FailedAt:    rec.UpdatedAt,
+			Title:       rec.Title,
+		}
+
+		if rec.ErrorCode != nil {
+			item.ErrorCode = *rec.ErrorCode
+		}
+		if rec.ErrorMessage != nil {
+			item.ErrorMessage = *rec.ErrorMessage
+		}
+		if rec.User != nil {
+			item.UserName = rec.User.FullName
+			item.UserEmail = rec.User.Email
+		}
+
+		items = append(items, item)
+	}
+
+	return &dtos.DLQMessagesResponse{
+		Total:       total,
+		FailedCount: failedCount,
+		StuckCount:  stuckCount,
+		Page:        page,
+		Limit:       limit,
+		Items:       items,
+	}, nil
+}
+
+func resolveDLQQueueAndTopic(status, sourceType string) (string, string) {
+	switch status {
+	case models.RecordingStatusQueued, models.RecordingStatusExtracting:
+		if sourceType == constants.RecordingSourceTypeLink {
+			return constants.TopicRecordingImport, constants.TopicRecordingImport
+		}
+		return constants.TopicRecordingExtract, constants.TopicRecordingExtract
+	case models.RecordingStatusTranscribing:
+		return constants.TopicRecordingTranscribe, constants.TopicRecordingTranscribe
+	case models.RecordingStatusSummarizing:
+		return constants.TopicRecordingSummarize, constants.TopicRecordingSummarize
+	case models.RecordingStatusIndexing:
+		return constants.TopicRecordingIndex, constants.TopicRecordingIndex
+	case models.RecordingStatusFailed:
+		return "recording.dlq", constants.TopicRecordingFailed
+	default:
+		return "pipeline.unknown", "pipeline.unknown"
+	}
+}
+
+
 
 
 

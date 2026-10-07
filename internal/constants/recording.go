@@ -9,7 +9,34 @@ const (
 	TemplateKeySalesDiscovery = "SALES_DISCOVERY"
 	TemplateKeyDailyStandup   = "DAILY_STANDUP"
 	TemplateKeyGeneral        = "GENERAL"
+	TemplateKeyPodcast        = "PODCAST"
+	TemplateKeyLecture        = "LECTURE"
+	TemplateKeyMusicLyrics    = "MUSIC_LYRICS"
 )
+
+// ValidTemplates contains all registered template category keys.
+var ValidTemplates = []string{
+	TemplateKeyMOM,
+	TemplateKeyOneOnOne,
+	TemplateKeyInterview,
+	TemplateKeyTechReview,
+	TemplateKeySalesDiscovery,
+	TemplateKeyDailyStandup,
+	TemplateKeyGeneral,
+	TemplateKeyPodcast,
+	TemplateKeyLecture,
+	TemplateKeyMusicLyrics,
+}
+
+// IsValidTemplate checks whether the given template key is recognized.
+func IsValidTemplate(key string) bool {
+	for _, t := range ValidTemplates {
+		if t == key {
+			return true
+		}
+	}
+	return false
+}
 
 // DefaultTemplateKey is the fallback template applied when none is specified.
 const DefaultTemplateKey = TemplateKeyGeneral

@@ -168,6 +168,8 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	}
 	if template != nil && template.Prompt != "" {
 		systemPrompt = template.Prompt
+	} else if defPrompt := templates.DefaultPromptForTemplate(templateKey); defPrompt != "" {
+		systemPrompt = defPrompt
 	}
 
 	targetLang := rec.OutputLanguage
@@ -188,6 +190,8 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	var schema map[string]interface{}
 	if template != nil && len(template.OutputSchema) > 0 {
 		schema = map[string]interface{}(template.OutputSchema)
+	} else {
+		schema = templates.DefaultSchemaForTemplate(templateKey)
 	}
 
 	structuredRes, err := s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)

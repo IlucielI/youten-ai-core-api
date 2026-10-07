@@ -169,4 +169,61 @@ func TestTemplates_DefaultDiarizeSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestTemplates_DefaultPromptForTemplate(t *testing.T) {
+	tests := []struct {
+		category string
+		expected string
+	}{
+		{"PODCAST", "show notes terstruktur"},
+		{"podcast", "show notes terstruktur"},
+		{"LECTURE", "materi pembelajaran"},
+		{"lecture", "materi pembelajaran"},
+		{"MUSIC_LYRICS", "lirik musik"},
+		{"music_lyrics", "lirik musik"},
+		{"UNKNOWN", ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.category, func(t *testing.T) {
+			p := templates.DefaultPromptForTemplate(tc.category)
+			if !strings.Contains(p, tc.expected) {
+				t.Errorf("DefaultPromptForTemplate(%q) = %q; expected to contain %q", tc.category, p, tc.expected)
+			}
+		})
+	}
+}
+
+func TestTemplates_DefaultSchemaForTemplate(t *testing.T) {
+	tests := []struct {
+		category     string
+		requiredProp string
+	}{
+		{"PODCAST", "episode_title"},
+		{"LECTURE", "lecture_title"},
+		{"MUSIC_LYRICS", "song_title"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.category, func(t *testing.T) {
+			schema := templates.DefaultSchemaForTemplate(tc.category)
+			if schema == nil {
+				t.Fatalf("expected non-nil schema for %s", tc.category)
+			}
+			props, ok := schema["properties"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected properties map in schema for %s", tc.category)
+			}
+			if _, exists := props[tc.requiredProp]; !exists {
+				t.Errorf("expected %s in properties for %s", tc.requiredProp, tc.category)
+			}
+		})
+	}
+
+	// Unknown template returns nil schema
+	if s := templates.DefaultSchemaForTemplate("NON_EXISTENT"); s != nil {
+		t.Errorf("expected nil schema for unknown template, got %v", s)
+	}
+}
+
+
 

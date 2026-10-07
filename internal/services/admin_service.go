@@ -134,3 +134,50 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta AdminActionMe
 		EffectiveQuota:     effectiveQuota,
 	}, nil
 }
+
+// AdminRevokeUserSessions revokes all active auth and session tokens for a target user and creates an audit trail.
+func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta AdminActionMeta, userID uuid.UUID) (*dtos.AdminRevokeUserSessionsResponse, error) {
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if err := s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, ""); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	entityIDStr := userID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "user.revoke_sessions",
+		Entity:   "user",
+		EntityID: &entityIDStr,
+		Payload: models.JSONMap{
+			"target_email": user.Email,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AdminRevokeUserSessionsResponse{
+		UserID:  userID,
+		Revoked: true,
+		Message: "all active sessions have been successfully revoked",
+	}, nil
+}

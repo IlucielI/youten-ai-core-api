@@ -257,3 +257,68 @@ func TestService_AdminOverrideUserQuota(t *testing.T) {
 		}
 	})
 }
+
+func TestService_AdminRevokeUserSessions(t *testing.T) {
+	t.Run("success revokes tokens and logs audit", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+
+		// 1. Find user query
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status"}).
+				AddRow(userID, "user@example.com", "Test User", "active"))
+
+		// 2. Revoke all tokens
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE user_id = \$3 AND revoked_at IS NULL`).
+			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 3))
+		mock.ExpectCommit()
+
+		// 3. Insert audit log
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminRevokeUserSessions(context.Background(), AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "127.0.0.1",
+			UserAgent: "test-agent",
+		}, userID)
+
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected non-nil response")
+		}
+		if resp.UserID != userID {
+			t.Errorf("expected userID %v, got %v", userID, resp.UserID)
+		}
+		if !resp.Revoked {
+			t.Error("expected revoked true")
+		}
+	})
+
+	t.Run("user not found returns ErrNotFound", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		_, err := svc.AdminRevokeUserSessions(context.Background(), AdminActionMeta{AdminID: adminID}, userID)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}

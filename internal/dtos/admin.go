@@ -76,3 +76,10 @@ type AdminUserQuotaResponse struct {
 	DailyQuotaOverride *int      `json:"daily_quota_override"`
 	EffectiveQuota     int       `json:"effective_quota"`
 }
+
+// AdminRevokeUserSessionsResponse represents the outcome of terminating a user's active sessions.
+type AdminRevokeUserSessionsResponse struct {
+	UserID  uuid.UUID `json:"user_id"`
+	Revoked bool      `json:"revoked"`
+	Message string    `json:"message"`
+}

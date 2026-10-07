@@ -59,6 +59,42 @@ func TestService_DiarizeAndCorrectSegmentsWithLLM_ArrayFormat(t *testing.T) {
 	}
 }
 
+func TestService_DiarizeAndCorrectSegmentsWithLLM_PropagatesDiscoveredName(t *testing.T) {
+	mockLLM := &dummyLLM{
+		chatResp: `[
+			{"index": 0, "speaker": "Speaker 0", "speaker_name": "Speaker 0", "text": "Selamat pagi Pak."},
+			{"index": 1, "speaker": "Speaker 1", "speaker_name": "Speaker 1", "text": "Siapa nama kamu?"},
+			{"index": 2, "speaker": "Speaker 0", "speaker_name": "Putri", "text": "Nama saya Putri."},
+			{"index": 3, "speaker": "Speaker 0", "speaker_name": "Speaker 0", "text": "Saya lulusan Akuntansi."}
+		]`,
+	}
+	svc := &Service{llm: mockLLM}
+
+	segments := []dtos.SegmentResult{
+		{Text: "Selamat pagi Pak.", SpeakerLabel: "Speaker 0"},
+		{Text: "Siapa nama kamu?", SpeakerLabel: "Speaker 1"},
+		{Text: "Nama saya Putri.", SpeakerLabel: "Speaker 0"},
+		{Text: "Saya lulusan Akuntansi.", SpeakerLabel: "Speaker 0"},
+	}
+
+	svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments)
+
+	// Speaker 0 should now be "Putri" on index 0, 2, and 3
+	if segments[0].SpeakerName != "Putri" {
+		t.Errorf("expected segment 0 speaker_name 'Putri', got %q", segments[0].SpeakerName)
+	}
+	if segments[2].SpeakerName != "Putri" {
+		t.Errorf("expected segment 2 speaker_name 'Putri', got %q", segments[2].SpeakerName)
+	}
+	if segments[3].SpeakerName != "Putri" {
+		t.Errorf("expected segment 3 speaker_name 'Putri', got %q", segments[3].SpeakerName)
+	}
+	// Speaker 1 should retain fallback "Speaker 1"
+	if segments[1].SpeakerName != "Speaker 1" {
+		t.Errorf("expected segment 1 speaker_name 'Speaker 1', got %q", segments[1].SpeakerName)
+	}
+}
+
 func TestService_DiarizeAndCorrectSegmentsWithLLM_MapFormatFallback(t *testing.T) {
 	mockLLM := &dummyLLM{
 		chatResp: `{"0": "Speaker 0", "1": "Speaker 1"}`,

@@ -855,7 +855,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	systemPrompt := "You are an expert audio transcription post-processor and diarization assistant. " +
 		"Given numbered dialogue lines from an audio recording:\n" +
 		"1. Preserve acoustic speaker labels ('Speaker 0', 'Speaker 1', etc.) when provided in brackets like [Speaker X], or analyze conversational turn-taking and assign speaker labels ('Speaker 0', 'Speaker 1', etc.) if brackets are missing.\n" +
-		"2. Detect the actual name of each speaker if introduced or addressed in the conversation (e.g. 'Putri', 'Sarah'). If a speaker's name is not explicitly mentioned or known, fallback exactly to their speaker label (e.g. 'Speaker 0', 'Speaker 1').\n" +
+		"2. Detect the actual name of each speaker if introduced or addressed in the conversation (e.g. 'Putri', 'Sarah'). Prefer a concise first name or common calling name (e.g. 'Putri'). If a speaker's name is not explicitly mentioned or known, fallback exactly to their speaker label (e.g. 'Speaker 0', 'Speaker 1').\n" +
 		"3. Correct obvious phonetic ASR mishearings, slips, and homophones based on conversational context " +
 		"(e.g., 'Universitas Bunda Dharma' -> 'Universitas Gunadarma', 'bekerja di botol kanan' -> 'bekerja di bawah tekanan'). Do NOT alter valid numbers or invent new facts.\n" +
 		"Return ONLY a valid JSON array of objects with keys 'index' (integer), 'speaker' (string), 'speaker_name' (string), and 'text' (string). " +
@@ -918,6 +918,42 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			}
 		}
 	}
+
+	// Canonical name propagation:
+	// When a speaker introduces themselves or is addressed in any turn (e.g. "Putri"),
+	// propagate that discovered real name across ALL turns belonging to that SpeakerLabel.
+	discoveredNames := make(map[string]string)
+	for _, seg := range segments {
+		lbl := strings.TrimSpace(seg.SpeakerLabel)
+		name := strings.TrimSpace(seg.SpeakerName)
+		if lbl != "" && !isGenericSpeakerLabel(name) {
+			if _, exists := discoveredNames[lbl]; !exists {
+				discoveredNames[lbl] = name
+			}
+		}
+	}
+
+	for i := range segments {
+		lbl := strings.TrimSpace(segments[i].SpeakerLabel)
+		if realName, ok := discoveredNames[lbl]; ok {
+			segments[i].SpeakerName = realName
+		} else if isGenericSpeakerLabel(segments[i].SpeakerName) {
+			if lbl != "" {
+				segments[i].SpeakerName = lbl
+			} else {
+				segments[i].SpeakerName = constants.DefaultSpeakerLabel
+			}
+		}
+	}
+}
+
+// isGenericSpeakerLabel returns true if the name is empty or a generic placeholder (e.g. "Speaker 0", "Pembicara 1").
+func isGenericSpeakerLabel(name string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(name))
+	if trimmed == "" {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "speaker") || strings.HasPrefix(trimmed, "pembicara") || trimmed == "unknown"
 }
 
 // mergeConsecutiveSegments combines consecutive segments spoken by the same speaker

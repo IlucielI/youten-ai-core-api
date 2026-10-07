@@ -19,6 +19,8 @@ type JSONExportPayload struct {
 	Status           string                    `json:"status"`
 	CreatedAt        time.Time                 `json:"created_at"`
 	ExecutiveSummary string                    `json:"executive_summary,omitempty"`
+	SummaryVersion   int                       `json:"summary_version,omitempty"`
+	TemplateCategory string                    `json:"template_category,omitempty"`
 	ActionItems      []string                  `json:"action_items,omitempty"`
 	Chapters         []JSONExportChapter       `json:"chapters,omitempty"`
 	Highlights       []JSONExportHighlight     `json:"highlights,omitempty"`

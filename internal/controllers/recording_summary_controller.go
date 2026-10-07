@@ -212,10 +212,17 @@ func (c *Controllers) ExportRecording(ctx *gin.Context) {
 	}
 
 	format := strings.TrimSpace(ctx.DefaultQuery("format", "markdown"))
+	version := strings.TrimSpace(ctx.Query("version"))
+	if version == "" {
+		version = strings.TrimSpace(ctx.Query("version_id"))
+	}
+	if version == "" {
+		version = strings.TrimSpace(ctx.Query("summary_id"))
+	}
 
 	ownershipToken := c.extractOwnershipToken(ctx)
 
-	result, err := c.svc.ExportRecordingMOM(ctx.Request.Context(), id, ownershipToken, format)
+	result, err := c.svc.ExportRecordingMOM(ctx.Request.Context(), id, ownershipToken, format, version)
 	if err != nil {
 		c.wrapError(ctx, err)
 		return

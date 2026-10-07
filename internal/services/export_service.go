@@ -10,6 +10,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -24,8 +25,8 @@ import (
 )
 
 // ExportRecordingMOM generates a multi-format export of a meeting recording's executive summary,
-// action items, chapter breakdown, and diarized transcript.
-func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershipToken string, format string) (*dtos.ExportResult, error) {
+// action items, chapter breakdown, and diarized transcript for a specific or active summary version.
+func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershipToken string, format string, version string) (*dtos.ExportResult, error) {
 	rec, err := s.repo.FindRecordingByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -71,10 +72,29 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 		return nil, constants.ErrBadRequest
 	}
 
-	// Fetch related entities (gracefully handling missing or empty records)
-	summary, err := s.repo.FindActiveSummaryByRecordingID(ctx, id)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("failed to fetch active summary: %w", err)
+	// Fetch requested summary version (or fallback to active summary)
+	var summary *models.Summary
+	if strings.TrimSpace(version) != "" {
+		vStr := strings.TrimSpace(version)
+		if targetUUID, err := uuid.Parse(vStr); err == nil {
+			sum, err := s.repo.FindSummaryByRecordingAndID(ctx, id, targetUUID)
+			if err == nil {
+				summary = sum
+			}
+		} else if targetVer, err := strconv.Atoi(vStr); err == nil {
+			sum, err := s.repo.FindSummaryByRecordingAndVersion(ctx, id, targetVer)
+			if err == nil {
+				summary = sum
+			}
+		}
+	}
+
+	if summary == nil {
+		activeSummary, err := s.repo.FindActiveSummaryByRecordingID(ctx, id)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to fetch active summary: %w", err)
+		}
+		summary = activeSummary
 	}
 
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, id)
@@ -93,6 +113,9 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 	}
 
 	baseName := strutil.SanitizeFilename(rec.Title, fmt.Sprintf("recording_%s", rec.ID.String()[:8]))
+	if summary != nil && summary.Version > 0 {
+		baseName = fmt.Sprintf("%s_v%d", baseName, summary.Version)
+	}
 
 	switch expFormat {
 	case constants.ExportFormatMarkdown:
@@ -610,7 +633,15 @@ func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapter
 	sb.WriteString(fmt.Sprintf("# %s\n\n", rec.Title))
 	sb.WriteString(fmt.Sprintf("- **Tanggal:** %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
 	sb.WriteString(fmt.Sprintf("- **Durasi:** %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
-	sb.WriteString(fmt.Sprintf("- **Status:** %s\n\n", rec.Status))
+	sb.WriteString(fmt.Sprintf("- **Status:** %s\n", rec.Status))
+	if summary != nil && summary.Version > 0 {
+		templateLabel := summary.TemplateCategory
+		if templateLabel == "" {
+			templateLabel = "General"
+		}
+		sb.WriteString(fmt.Sprintf("- **Versi Ringkasan:** Versi %d (%s)\n", summary.Version, templateLabel))
+	}
+	sb.WriteString("\n")
 
 	// 1. RINGKASAN
 	sb.WriteString("## 1. Ringkasan Pertemuan (Summary)\n\n")
@@ -723,7 +754,15 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 
 	sb.WriteString(fmt.Sprintf("Tanggal:  %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
 	sb.WriteString(fmt.Sprintf("Durasi:   %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
-	sb.WriteString(fmt.Sprintf("Status:   %s\n\n", rec.Status))
+	sb.WriteString(fmt.Sprintf("Status:   %s\n", rec.Status))
+	if summary != nil && summary.Version > 0 {
+		templateLabel := summary.TemplateCategory
+		if templateLabel == "" {
+			templateLabel = "General"
+		}
+		sb.WriteString(fmt.Sprintf("Versi:    Versi %d (%s)\n", summary.Version, templateLabel))
+	}
+	sb.WriteString("\n")
 
 	// 1. RINGKASAN
 	sb.WriteString(divider + "\n")
@@ -832,6 +871,13 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 
 func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []models.Chapter, highlights []models.Highlight, segments []models.TranscriptSegment) ([]byte, error) {
 	formatted := formatSummaryContent(summary)
+	summaryVersion := 0
+	templateCategory := ""
+	if summary != nil {
+		summaryVersion = summary.Version
+		templateCategory = summary.TemplateCategory
+	}
+
 	payload := dtos.JSONExportPayload{
 		RecordingID:      rec.ID.String(),
 		Title:            rec.Title,
@@ -839,6 +885,8 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 		Status:           rec.Status,
 		CreatedAt:        rec.CreatedAt,
 		ExecutiveSummary: formatted.Overview,
+		SummaryVersion:   summaryVersion,
+		TemplateCategory: templateCategory,
 		ActionItems:      formatted.ActionItems,
 		Analytics:        computeExportAnalytics(segments),
 	}

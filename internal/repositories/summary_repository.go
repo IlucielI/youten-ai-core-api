@@ -43,6 +43,18 @@ func (r *Repositories) FindSummaryByRecordingAndVersion(ctx context.Context, rec
 	return &summary, nil
 }
 
+// FindSummaryByRecordingAndID retrieves a specific summary version by its UUID.
+func (r *Repositories) FindSummaryByRecordingAndID(ctx context.Context, recordingID uuid.UUID, summaryID uuid.UUID) (*models.Summary, error) {
+	var summary models.Summary
+	err := r.db.WithContext(ctx).
+		Where("recording_id = ? AND id = ?", recordingID, summaryID).
+		First(&summary).Error
+	if err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
 // ListSummaryVersions returns all summary versions for a recording ordered by version ASC.
 func (r *Repositories) ListSummaryVersions(ctx context.Context, recordingID uuid.UUID) ([]models.Summary, error) {
 	var list []models.Summary

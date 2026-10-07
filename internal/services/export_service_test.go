@@ -28,7 +28,7 @@ func TestService_ExportRecordingMOM_RecordingNotFound(t *testing.T) {
 		WithArgs(recID, 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "token", "markdown")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "token", "markdown", "")
 	if !errors.Is(err, constants.ErrRecordingNotFound) {
 		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
 	}
@@ -48,7 +48,7 @@ func TestService_ExportRecordingMOM_Forbidden(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
 			AddRow(recID, "valid-token", &ownerID, false))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "wrong-token", "markdown")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "wrong-token", "markdown", "")
 	if !errors.Is(err, constants.ErrForbidden) {
 		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
@@ -68,7 +68,7 @@ func TestService_ExportRecordingMOM_InvalidFormat(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled"}).
 			AddRow(recID, "token", &ownerID, false))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "", "unsupported_xyz")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "unsupported_xyz", "")
 	if !errors.Is(err, constants.ErrBadRequest) {
 		t.Fatalf("expected ErrBadRequest for unsupported format, got %v", err)
 	}
@@ -116,7 +116,7 @@ func TestService_ExportRecordingMOM_Success_Markdown_Owner(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "title", "note", "start_time", "end_time"}).
 			AddRow(uuid.New(), recID, &hTitle, &hNote, 10.0, 20.0))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "", "markdown")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "markdown", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestService_ExportRecordingMOM_Success_Txt_GuestToken(t *testing.T) {
 		WithArgs(recID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, guestToken, "txt")
+	res, err := svc.ExportRecordingMOM(ctx, recID, guestToken, "txt", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestService_ExportRecordingMOM_Success_JSON_PublicShare(t *testing.T) {
 		WithArgs(recID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "", "json")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "json", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestService_ExportRecordingMOM_Success_PDF(t *testing.T) {
 		WithArgs(recID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "", "pdf")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "pdf", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestService_ExportRecordingMOM_UnicodeFilename(t *testing.T) {
 		WithArgs(recID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "", "txt")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "txt", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestService_ExportRecordingMOM_StandupSchema_StructuredFormatting(t *testin
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "title", "note", "start_time", "end_time"}).
 			AddRow(uuid.New(), recID, &hTitle, &hNote, 50.0, 70.0))
 
-	res, err := svc.ExportRecordingMOM(ctx, recID, "", "txt")
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "txt", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -466,4 +466,57 @@ func TestWrapTextLine(t *testing.T) {
 		}
 	}
 }
+
+func TestService_ExportRecordingMOM_SpecificVersion(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	now := time.Now()
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "status", "created_at", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, "Interview Evaluation", 300.0, "COMPLETED", now, &userID, "token", false))
+
+	// Mock specific version query for version 2
+	version2JSON := `{"candidate_name":"John Doe","target_role":"Lead Backend Engineer","recommendation":"STRONG_HIRE","justification":"Exceptional Go and systems design expertise."}`
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND version = \$2.*LIMIT \$3`).
+		WithArgs(recID, 2, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "template_category", "is_active", "markdown_content", "structured_data"}).
+			AddRow(uuid.New(), recID, 2, "INTERVIEW", false, version2JSON, version2JSON))
+
+	// Segments
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	// Chapters
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	// Highlights
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "txt", "2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(res.Filename, "_v2") {
+		t.Errorf("expected filename containing _v2, got: %s", res.Filename)
+	}
+
+	content := string(res.Data)
+	if !strings.Contains(content, "Versi 2 (INTERVIEW)") {
+		t.Errorf("expected version 2 label in export content, got: %s", content)
+	}
+	if !strings.Contains(content, "John Doe") || !strings.Contains(content, "Lead Backend Engineer") {
+		t.Errorf("expected version 2 candidate data in export, got: %s", content)
+	}
+}
+
 

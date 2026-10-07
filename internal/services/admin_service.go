@@ -930,6 +930,63 @@ func (s *Service) AdminResolveReport(ctx context.Context, meta AdminActionMeta, 
 	}, nil
 }
 
+// AdminListAuditLogs retrieves a paginated and filtered audit trail of administrative actions.
+func (s *Service) AdminListAuditLogs(ctx context.Context, q dtos.AdminAuditLogListQuery) (*dtos.AdminAuditLogListResponse, error) {
+	q.SetDefaults()
+
+	offset := (q.Page - 1) * q.Limit
+	filter := repositories.AdminAuditLogFilter{
+		Action:  q.Action,
+		Entity:  q.Entity,
+		AdminID: q.AdminID,
+		Limit:   q.Limit,
+		Offset:  offset,
+	}
+
+	logs, total, err := s.repo.ListAdminAuditLogsFiltered(ctx, filter)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.AdminAuditLogListItem, 0, len(logs))
+	for _, l := range logs {
+		item := dtos.AdminAuditLogListItem{
+			ID:        l.ID,
+			AdminID:   l.AdminID,
+			Action:    l.Action,
+			Entity:    l.Entity,
+			EntityID:  l.EntityID,
+			Payload:   map[string]interface{}(l.Payload),
+			IPAddress: l.IPAddress,
+			UserAgent: l.UserAgent,
+			CreatedAt: l.CreatedAt,
+		}
+		if l.Admin != nil {
+			u := l.Admin.Username
+			item.AdminUsername = &u
+			fn := l.Admin.FullName
+			item.AdminFullName = &fn
+		}
+		items = append(items, item)
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	return &dtos.AdminAuditLogListResponse{
+		Items: items,
+		Pagination: dtos.PaginationMeta{
+			CurrentPage: q.Page,
+			PageSize:    q.Limit,
+			TotalItems:  total,
+			TotalPages:  totalPages,
+		},
+	}, nil
+}
+
+
 
 
 

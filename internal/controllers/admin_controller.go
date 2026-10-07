@@ -586,6 +586,37 @@ func (c *Controllers) AdminResolveReport(ctx *gin.Context) {
 	})
 }
 
+// AdminListAuditLogs handles GET /v1/admin/audit-logs.
+func (c *Controllers) AdminListAuditLogs(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	var q dtos.AdminAuditLogListQuery
+	if err := ctx.ShouldBindQuery(&q); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
+		return
+	}
+	q.SetDefaults()
+
+	resp, err := c.svc.AdminListAuditLogs(ctx.Request.Context(), q)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminAuditLogListResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 
 

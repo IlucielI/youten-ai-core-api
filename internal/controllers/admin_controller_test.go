@@ -1231,6 +1231,70 @@ func TestControllers_AdminResolveReport(t *testing.T) {
 	})
 }
 
+func TestControllers_AdminListAuditLogs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		logID := uuid.New()
+		adminID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_audit_logs" ORDER BY created_at DESC LIMIT \$1`).
+			WithArgs(20).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "admin_id", "action", "entity", "created_at",
+			}).AddRow(
+				logID, adminID, "config.update_flags", "system_config", now,
+			))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users" WHERE "admin_users"\."id" = \$1 AND "admin_users"\."deleted_at" IS NULL`).
+			WithArgs(adminID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name"}).AddRow(adminID, "sysadmin", "System Administrator"))
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "sysadmin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.GET("/v1/admin/audit-logs", ctrls.AdminListAuditLogs)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit-logs?page=1&limit=20", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("unauthorized without admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.GET("/v1/admin/audit-logs", ctrls.AdminListAuditLogs)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit-logs", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+}
+
+
 
 
 

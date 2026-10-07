@@ -252,10 +252,10 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 
 	rawLang := strings.TrimSpace(sttResult.Language)
 	detectedLang := strutil.NormalizeLanguageCode(rawLang, "")
-	if detectedLang == "" || detectedLang == "ru" || detectedLang == "russian" {
+	if detectedLang == "" {
 		detectedLang = strutil.DetectLanguage(sttResult.Text, "id")
 	}
-	if detectedLang == "" || detectedLang == "ru" || detectedLang == "russian" {
+	if detectedLang == "" {
 		detectedLang = "id"
 	}
 

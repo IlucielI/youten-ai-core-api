@@ -442,4 +442,73 @@ func (c *Controllers) AdminRetryDLQJob(ctx *gin.Context) {
 	})
 }
 
+// AdminGetSystemConfig handles GET /v1/admin/config.
+func (c *Controllers) AdminGetSystemConfig(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminGetSystemConfig(ctx.Request.Context(), meta)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SystemConfigResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+// AdminUpdateSystemConfig handles PATCH /v1/admin/config.
+func (c *Controllers) AdminUpdateSystemConfig(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	var req dtos.UpdateSystemConfigRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid json payload"))
+		return
+	}
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminUpdateSystemConfig(ctx.Request.Context(), meta, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SystemConfigResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 

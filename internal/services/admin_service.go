@@ -720,6 +720,72 @@ func (s *Service) AdminRetryDLQJob(ctx context.Context, meta AdminActionMeta, re
 	}, nil
 }
 
+// IsMaintenanceMode checks if maintenance mode is enabled in Redis/in-memory config.
+func (s *Service) IsMaintenanceMode(ctx context.Context) bool {
+	if s == nil || s.repo == nil {
+		return false
+	}
+	return s.repo.IsMaintenanceMode(ctx)
+}
+
+// AdminGetSystemConfig retrieves current system flags and maintenance status.
+func (s *Service) AdminGetSystemConfig(ctx context.Context, meta AdminActionMeta) (*dtos.SystemConfigResponse, error) {
+	cfg, err := s.repo.GetSystemConfig(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.SystemConfigResponse{
+		MaintenanceMode:    cfg.MaintenanceMode,
+		AllowGuestUploads:  cfg.AllowGuestUploads,
+		BotWaitlistEnabled: cfg.BotWaitlistEnabled,
+	}, nil
+}
+
+// AdminUpdateSystemConfig updates system flags and persists an audit log.
+func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta AdminActionMeta, req dtos.UpdateSystemConfigRequest) (*dtos.SystemConfigResponse, error) {
+	cfg, err := s.repo.UpdateSystemConfig(ctx, req.MaintenanceMode, req.AllowGuestUploads, req.BotWaitlistEnabled)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// Persist admin audit log
+	adminIDVal := meta.AdminID
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	payload := models.JSONMap{
+		"maintenance_mode":     cfg.MaintenanceMode,
+		"allow_guest_uploads":  cfg.AllowGuestUploads,
+		"bot_waitlist_enabled": cfg.BotWaitlistEnabled,
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:   &adminIDVal,
+		Action:    "config.update_flags",
+		Entity:    "system_config",
+		Payload:   payload,
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.SystemConfigResponse{
+		MaintenanceMode:    cfg.MaintenanceMode,
+		AllowGuestUploads:  cfg.AllowGuestUploads,
+		BotWaitlistEnabled: cfg.BotWaitlistEnabled,
+	}, nil
+}
+
+
 
 
 

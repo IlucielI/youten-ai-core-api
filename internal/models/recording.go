@@ -27,7 +27,9 @@ const (
 	ErrCodeNoSpeechDetected   = "ERR_NO_SPEECH_DETECTED"
 	ErrCodeSummarizationFail  = "ERR_SUMMARIZATION_FAILED"
 	ErrCodeIndexingFail       = "ERR_INDEXING_FAILED"
-	ErrCodeImportFetchFailed  = "ERR_IMPORT_FETCH_FAILED"
+	ErrCodeImportFetchFailed    = "ERR_IMPORT_FETCH_FAILED"
+	ErrCodeGDriveAccessDenied   = "ERR_GDRIVE_ACCESS_DENIED"
+	ErrCodeUnsupportedMediaType = "ERR_UNSUPPORTED_MEDIA_TYPE"
 )
 
 // Recording represents a core media file, its processing lifecycle, guest ownership, and sharing configuration.

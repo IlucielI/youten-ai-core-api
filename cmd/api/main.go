@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/adapters/s3"
 	"code-base-golang/internal/adapters/smtp"
 	"code-base-golang/internal/adapters/stt"
+	"code-base-golang/internal/adapters/googledrive"
 	"code-base-golang/internal/adapters/youtube"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/controllers"
@@ -135,6 +136,18 @@ func main() {
 		log.Printf("[WARN] Failed to initialize YouTube media extractor: %v", err)
 	}
 
+	gdriveExtractor := googledrive.NewExtractorWithConfig(googledrive.Config{
+		AudioExtractor: audioExtractor,
+	})
+
+	var mediaExtractors []services.MediaLinkExtractor
+	if ytExtractor != nil {
+		mediaExtractors = append(mediaExtractors, ytExtractor)
+	}
+	if gdriveExtractor != nil {
+		mediaExtractors = append(mediaExtractors, gdriveExtractor)
+	}
+
 	repo := repositories.New(db.DB(), rdb)
 	var publisher services.EventPublisher
 	if broker != nil {
@@ -146,8 +159,8 @@ func main() {
 		WithLLM(llmAdapter).
 		WithEmbedding(embeddingAdapter).
 		WithAudioExtractor(audioExtractor)
-	if ytExtractor != nil {
-		svc.WithMediaLinkExtractor(ytExtractor)
+	if len(mediaExtractors) > 0 {
+		svc.WithMediaLinkExtractor(services.NewCompositeMediaLinkExtractor(mediaExtractors))
 	}
 	ctrls := controllers.New(cfg, svc)
 	router := routes.NewRouter(cfg, ctrls, svc)

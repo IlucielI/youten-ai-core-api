@@ -2,6 +2,14 @@ package services
 
 import (
 	"context"
+	"errors"
+)
+
+var (
+	// ErrMediaAccessDenied indicates access to the remote media was denied or requires authentication.
+	ErrMediaAccessDenied = errors.New("media resource access denied or private")
+	// ErrUnsupportedMedia indicates the extracted media is of an unsupported format or type.
+	ErrUnsupportedMedia = errors.New("unsupported media format for audio extraction")
 )
 
 // CompositeMediaLinkExtractor chains multiple MediaLinkExtractor implementations

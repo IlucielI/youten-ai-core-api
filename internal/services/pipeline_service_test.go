@@ -1,6 +1,7 @@
 package services_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -452,3 +453,178 @@ func TestPipelineService_ProcessImport_ExtractorFailure(t *testing.T) {
 		t.Errorf("expected TopicRecordingFailed published, got %v", pub.publishedTopics)
 	}
 }
+
+func TestPipelineService_ProcessImport_GoogleDrive_Success(t *testing.T) {
+	svc, mock, pub, cleanup := setupTestPipelineService(t)
+	defer cleanup()
+
+	mockExt := &mockPipelineLinkExtractor{
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+			return &services.ExtractedAudio{
+				Stream:          io.NopCloser(bytes.NewReader([]byte("gdrive-audio-data"))),
+				SizeBytes:       17,
+				DurationSeconds: 120.0,
+				ContentType:     "audio/mpeg",
+				Filename:        "quarterly_sync.mp3",
+				Title:           "Quarterly Sync Meeting",
+			}, nil
+		},
+	}
+	svc.WithMediaLinkExtractor(mockExt)
+
+	recID := uuid.New()
+	targetURL := "https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view"
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "original_filename", "audio_url", "status"}).
+			AddRow(recID, "Google Drive (1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms)", "import_1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms.m4a", "", models.RecordingStatusQueued))
+
+	// 2. UpdateRecordingStatus -> EXTRACTING
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusExtracting, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. UpdateRecordingAudioURL
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs("recordings/"+recID.String()+"/audio.mp3", 120.0, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. UpdateRecording (title updated to "Quarterly Sync Meeting")
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE .*`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	p := payload.RecordingPipelinePayload{
+		RecordingID: recID,
+		URL:         targetURL,
+		Template:    "GENERAL",
+		Language:    "en",
+	}
+
+	err := svc.ProcessImport(context.Background(), p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(pub.publishedTopics) == 0 || pub.publishedTopics[len(pub.publishedTopics)-1] != constants.TopicRecordingTranscribe {
+		t.Errorf("expected TopicRecordingTranscribe published, got %v", pub.publishedTopics)
+	}
+}
+
+func TestPipelineService_ProcessImport_GoogleDrive_PermissionDenied(t *testing.T) {
+	svc, mock, pub, cleanup := setupTestPipelineService(t)
+	defer cleanup()
+
+	mockExt := &mockPipelineLinkExtractor{
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+			return nil, errors.New("access denied: file is private or restricted")
+		},
+	}
+	svc.WithMediaLinkExtractor(mockExt)
+
+	recID := uuid.New()
+	targetURL := "https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view"
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "original_filename", "audio_url", "status"}).
+			AddRow(recID, "Media Import", "import_gdrive.m4a", "", models.RecordingStatusQueued))
+
+	// 2. UpdateRecordingStatus -> EXTRACTING
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusExtracting, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. FailRecording -> FAILED with ErrCodeGdriveAccessDenied
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.ErrCodeGDriveAccessDenied, sqlmock.AnyArg(), models.RecordingStatusFailed, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	p := payload.RecordingPipelinePayload{
+		RecordingID: recID,
+		URL:         targetURL,
+	}
+
+	err := svc.ProcessImport(context.Background(), p)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	foundFailed := false
+	for _, topic := range pub.publishedTopics {
+		if topic == constants.TopicRecordingFailed {
+			foundFailed = true
+		}
+	}
+	if !foundFailed {
+		t.Errorf("expected TopicRecordingFailed published, got %v", pub.publishedTopics)
+	}
+}
+
+func TestPipelineService_ProcessImport_UnsupportedMediaType(t *testing.T) {
+	svc, mock, pub, cleanup := setupTestPipelineService(t)
+	defer cleanup()
+
+	mockExt := &mockPipelineLinkExtractor{
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+			return nil, errors.New("unsupported media format")
+		},
+	}
+	svc.WithMediaLinkExtractor(mockExt)
+
+	recID := uuid.New()
+	targetURL := "https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view"
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "original_filename", "audio_url", "status"}).
+			AddRow(recID, "Media Import", "import_gdrive.m4a", "", models.RecordingStatusQueued))
+
+	// 2. UpdateRecordingStatus -> EXTRACTING
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusExtracting, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. FailRecording -> FAILED with ErrCodeUnsupportedMediaType
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.ErrCodeUnsupportedMediaType, sqlmock.AnyArg(), models.RecordingStatusFailed, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	p := payload.RecordingPipelinePayload{
+		RecordingID: recID,
+		URL:         targetURL,
+	}
+
+	err := svc.ProcessImport(context.Background(), p)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	foundFailed := false
+	for _, topic := range pub.publishedTopics {
+		if topic == constants.TopicRecordingFailed {
+			foundFailed = true
+		}
+	}
+	if !foundFailed {
+		t.Errorf("expected TopicRecordingFailed published, got %v", pub.publishedTopics)
+	}
+}
+

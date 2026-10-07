@@ -820,3 +820,54 @@ func TestService_ImportRecordingFromURL_YouTube_AsyncACK(t *testing.T) {
 	}
 }
 
+func TestService_ImportRecordingFromURL_GoogleDrive_AsyncACK(t *testing.T) {
+	svc, mock, _, publisher := setupRecordingTestService(t)
+	ctx := ctxmeta.WithClientMeta(context.Background(), "127.0.0.1", "TestAgent")
+
+	mockExtractor := &mockMediaLinkExtractor{
+		supportsFunc: func(rawURL string) bool {
+			return strings.HasPrefix(rawURL, "https://drive.google.com/")
+		},
+		extractIDFunc: func(rawURL string) (string, error) {
+			return "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms", nil
+		},
+	}
+	svc.SetMediaLinkExtractor(mockExtractor)
+
+	// Guest quota check
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(is_guest = TRUE AND guest_ip = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs("127.0.0.1", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	recID := uuid.New()
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "recordings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(recID, now, now))
+	mock.ExpectCommit()
+
+	resp, err := svc.ImportRecordingFromURL(ctx, dtos.ImportURLRequest{
+		URL:      "https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view",
+		Title:    "Quarterly Review",
+		Template: "GENERAL",
+		Language: "en",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Status != models.RecordingStatusQueued {
+		t.Errorf("expected status %s, got %s", models.RecordingStatusQueued, resp.Status)
+	}
+	if resp.Title != "Quarterly Review" {
+		t.Errorf("expected title 'Quarterly Review', got %q", resp.Title)
+	}
+	if resp.OriginalFilename != "import_1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms.m4a" {
+		t.Errorf("expected original filename 'import_1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms.m4a', got %q", resp.OriginalFilename)
+	}
+	if len(publisher.publishedTopics) == 0 || publisher.publishedTopics[0] != constants.TopicRecordingImport {
+		t.Errorf("expected topic %s, got %v", constants.TopicRecordingImport, publisher.publishedTopics)
+	}
+}
+
+

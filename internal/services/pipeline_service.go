@@ -81,7 +81,13 @@ func (s *Service) ProcessImport(ctx context.Context, p payload.RecordingPipeline
 
 	extracted, err := s.mediaLinkExtractor.ExtractAudio(importCtx, targetURL)
 	if err != nil {
-		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, fmt.Sprintf("media import failed: %v", err))
+		errCode := models.ErrCodeImportFetchFailed
+		if errors.Is(err, ErrMediaAccessDenied) || strings.Contains(strings.ToLower(err.Error()), "access denied") || strings.Contains(strings.ToLower(err.Error()), "permission") {
+			errCode = models.ErrCodeGDriveAccessDenied
+		} else if errors.Is(err, ErrUnsupportedMedia) || strings.Contains(strings.ToLower(err.Error()), "unsupported media") || strings.Contains(strings.ToLower(err.Error()), "audio extractor is not configured") {
+			errCode = models.ErrCodeUnsupportedMediaType
+		}
+		s.failAndLog(ctx, recording.ID, errCode, fmt.Sprintf("media import failed: %v", err))
 		return fmt.Errorf("media import failed: %w", err)
 	}
 	defer extracted.Close()
@@ -106,7 +112,7 @@ func (s *Service) ProcessImport(ctx context.Context, p payload.RecordingPipeline
 	}
 
 	// Update title with extracted title if default
-	if extracted.Title != "" && (recording.Title == "" || strings.HasPrefix(recording.Title, "Media Import") || strings.HasPrefix(recording.Title, "YouTube (") || strings.HasPrefix(recording.Title, "YouTube Video")) {
+	if extracted.Title != "" && (recording.Title == "" || strings.HasPrefix(recording.Title, "Media Import") || strings.HasPrefix(recording.Title, "YouTube (") || strings.HasPrefix(recording.Title, "YouTube Video") || strings.HasPrefix(recording.Title, "Google Drive (")) {
 		recording.Title = extracted.Title
 		_ = s.repo.UpdateRecording(ctx, recording)
 	}

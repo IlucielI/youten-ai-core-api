@@ -149,7 +149,10 @@ func TestSSRF_FetchMediaStream_BlocksPrivateTarget(t *testing.T) {
 }
 
 func TestSSRF_IsAllowedDomain(t *testing.T) {
-	allowed := []string{"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+	allowed := []string{
+		"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be",
+		"drive.google.com", "docs.google.com", "drive.usercontent.google.com",
+	}
 
 	tests := []struct {
 		host     string
@@ -159,9 +162,14 @@ func TestSSRF_IsAllowedDomain(t *testing.T) {
 		{"www.youtube.com", true},
 		{"m.youtube.com", true},
 		{"youtu.be", true},
+		{"drive.google.com", true},
+		{"docs.google.com", true},
+		{"drive.usercontent.google.com", true},
+		{"drive.google.com:443", true},
 		{"youtube.com:443", true},
 		{"attacker-youtube.com", false},
 		{"youtube.com.attacker.com", false},
+		{"attacker-drive.google.com", false},
 		{"sub.youtube.com", false}, // strict exact match prevents arbitrary subdomain hijacking
 		{"google.com", false},
 		{"", false},

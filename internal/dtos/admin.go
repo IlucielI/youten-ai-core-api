@@ -472,6 +472,52 @@ type ResolveReportResponse struct {
 	ResolvedAt     time.Time `json:"resolved_at"`
 }
 
+// AdminAuditLogListQuery defines filter criteria for querying staff audit logs.
+type AdminAuditLogListQuery struct {
+	Action  string     `form:"action"`
+	Entity  string     `form:"entity"`
+	AdminID *uuid.UUID `form:"admin_id"`
+	Page    int        `form:"page"`
+	Limit   int        `form:"limit"`
+}
+
+// SetDefaults sanitizes pagination values and filters.
+func (q *AdminAuditLogListQuery) SetDefaults() {
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Limit < 1 {
+		q.Limit = 20
+	}
+	if q.Limit > 100 {
+		q.Limit = 100
+	}
+	q.Action = strings.TrimSpace(q.Action)
+	q.Entity = strings.TrimSpace(q.Entity)
+}
+
+// AdminAuditLogListItem represents a single administrative audit event.
+type AdminAuditLogListItem struct {
+	ID            uuid.UUID              `json:"id"`
+	AdminID       *uuid.UUID             `json:"admin_id,omitempty"`
+	AdminUsername *string                `json:"admin_username,omitempty"`
+	AdminFullName *string                `json:"admin_full_name,omitempty"`
+	Action        string                 `json:"action"`
+	Entity        string                 `json:"entity"`
+	EntityID      *string                `json:"entity_id,omitempty"`
+	Payload       map[string]interface{} `json:"payload,omitempty"`
+	IPAddress     *string                `json:"ip_address,omitempty"`
+	UserAgent     *string                `json:"user_agent,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
+}
+
+// AdminAuditLogListResponse represents a paginated audit trail response.
+type AdminAuditLogListResponse struct {
+	Items      []AdminAuditLogListItem `json:"items"`
+	Pagination PaginationMeta          `json:"pagination"`
+}
+
+
 
 
 

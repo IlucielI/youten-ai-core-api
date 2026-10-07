@@ -348,6 +348,14 @@ routes:
     admin_auth: true
     admin_permission: "moderation:write"
 
+  # Admin list staff audit trail logs (CMS).
+  - method: GET
+    path: /v1/admin/audit-logs
+    handler: AdminListAuditLogs
+    admin_auth: true
+    admin_permission: "audit:read"
+
+
 
 
 

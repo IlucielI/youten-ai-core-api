@@ -1283,6 +1283,65 @@ func TestService_AdminResolveReport(t *testing.T) {
 	})
 }
 
+func TestService_AdminListAuditLogs(t *testing.T) {
+	t.Run("success returns paginated audit logs with filters", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		logID := uuid.New()
+		adminID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "admin_audit_logs" WHERE action = \$1`).
+			WithArgs("user.quota_override").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_audit_logs" WHERE action = \$1 ORDER BY created_at DESC LIMIT \$2`).
+			WithArgs("user.quota_override", 20).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "admin_id", "action", "entity", "entity_id", "payload", "ip_address", "user_agent", "created_at",
+			}).AddRow(
+				logID, adminID, "user.quota_override", "user", "target-123", []byte(`{}`), "127.0.0.1", "test-agent", now,
+			))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users" WHERE "admin_users"\."id" = \$1 AND "admin_users"\."deleted_at" IS NULL`).
+			WithArgs(adminID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name"}).AddRow(adminID, "auditadmin", "Audit Admin"))
+
+		resp, err := svc.AdminListAuditLogs(context.Background(), dtos.AdminAuditLogListQuery{
+			Action: "user.quota_override",
+			Page:   1,
+			Limit:  20,
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if len(resp.Items) != 1 {
+			t.Fatalf("expected 1 audit item, got %d", len(resp.Items))
+		}
+		if resp.Items[0].Action != "user.quota_override" {
+			t.Errorf("expected action 'user.quota_override', got %q", resp.Items[0].Action)
+		}
+		if resp.Items[0].AdminUsername == nil || *resp.Items[0].AdminUsername != "auditadmin" {
+			t.Errorf("expected username 'auditadmin', got %v", resp.Items[0].AdminUsername)
+		}
+	})
+
+	t.Run("db failure returns error", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "admin_audit_logs"`).
+			WillReturnError(errors.New("db error"))
+
+		_, err := svc.AdminListAuditLogs(context.Background(), dtos.AdminAuditLogListQuery{})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+
 
 
 

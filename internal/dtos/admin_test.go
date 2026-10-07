@@ -698,6 +698,79 @@ func TestResolveReportResponse(t *testing.T) {
 	}
 }
 
+func TestAdminAuditLogListQuery_SetDefaults(t *testing.T) {
+	t.Run("defaults invalid values", func(t *testing.T) {
+		q := AdminAuditLogListQuery{
+			Page:  -1,
+			Limit: 0,
+		}
+		q.SetDefaults()
+
+		if q.Page != 1 {
+			t.Errorf("expected page 1, got %d", q.Page)
+		}
+		if q.Limit != 20 {
+			t.Errorf("expected limit 20, got %d", q.Limit)
+		}
+	})
+
+	t.Run("caps limit at 100 and trims query fields", func(t *testing.T) {
+		q := AdminAuditLogListQuery{
+			Action: "  report.resolve  ",
+			Entity: "  report  ",
+			Page:   2,
+			Limit:  500,
+		}
+		q.SetDefaults()
+
+		if q.Limit != 100 {
+			t.Errorf("expected limit 100, got %d", q.Limit)
+		}
+		if q.Action != "report.resolve" {
+			t.Errorf("expected trimmed action, got %q", q.Action)
+		}
+		if q.Entity != "report" {
+			t.Errorf("expected trimmed entity, got %q", q.Entity)
+		}
+	})
+}
+
+func TestAdminAuditLogListResponse(t *testing.T) {
+	id := uuid.New()
+	adminID := uuid.New()
+	username := "sysadmin"
+	fullname := "System Admin"
+	now := time.Now()
+
+	resp := AdminAuditLogListResponse{
+		Items: []AdminAuditLogListItem{
+			{
+				ID:            id,
+				AdminID:       &adminID,
+				AdminUsername: &username,
+				AdminFullName: &fullname,
+				Action:        "user.quota_override",
+				Entity:        "user",
+				CreatedAt:     now,
+			},
+		},
+		Pagination: PaginationMeta{
+			CurrentPage: 1,
+			PageSize:    20,
+			TotalItems:  1,
+			TotalPages:  1,
+		},
+	}
+
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].Action != "user.quota_override" {
+		t.Errorf("expected action 'user.quota_override', got %q", resp.Items[0].Action)
+	}
+}
+
+
 
 
 

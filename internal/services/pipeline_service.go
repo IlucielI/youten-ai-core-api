@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -233,10 +234,10 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 
 	rawLang := strings.TrimSpace(sttResult.Language)
 	detectedLang := strutil.NormalizeLanguageCode(rawLang, "")
-	if detectedLang == "" {
+	if detectedLang == "" || detectedLang == "ru" || detectedLang == "russian" {
 		detectedLang = strutil.DetectLanguage(sttResult.Text, "id")
 	}
-	if detectedLang == "" {
+	if detectedLang == "" || detectedLang == "ru" || detectedLang == "russian" {
 		detectedLang = "id"
 	}
 
@@ -838,108 +839,137 @@ func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 }
 
 // diarizeAndCorrectSegmentsWithLLM uses the LLM to infer speaker turn-taking and correct obvious phonetic ASR slips across transcript segments.
-// If an acoustic speaker reference is provided (e.g. from secondary STT diarization), it aligns the turns onto the primary segments.
+// If an acoustic speaker reference is provided (e.g. from Deepgram diarization), it runs concurrent chunk validation (up to 5 workers)
+// evaluating Deepgram dialogue foundation against Whisper timestamps and phonetic alternatives.
 func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult, diarizedRef ...string) {
 	if len(segments) == 0 || s.llm == nil {
 		return
 	}
 
-	var sb strings.Builder
 	ref := ""
 	if len(diarizedRef) > 0 {
 		ref = strings.TrimSpace(diarizedRef[0])
-	}
-
-	if ref != "" {
-		sb.WriteString("PRIMARY NUMBERED SEGMENTS:\n")
-	}
-
-	for i, seg := range segments {
-		trimmed := strings.TrimSpace(seg.Text)
-		if trimmed != "" {
-			if strings.TrimSpace(seg.SpeakerLabel) != "" && strings.TrimSpace(seg.SpeakerLabel) != constants.DefaultSpeakerLabel {
-				sb.WriteString(fmt.Sprintf("%d [%s]: %s\n", i, strings.TrimSpace(seg.SpeakerLabel), trimmed))
-			} else {
-				sb.WriteString(fmt.Sprintf("%d: %s\n", i, trimmed))
-			}
-		}
-	}
-	if sb.Len() == 0 {
-		return
-	}
-
-	if ref != "" {
-		sb.WriteString("\nACOUSTIC SPEAKER REFERENCE:\n")
 		if len(ref) > 15000 {
 			ref = ref[:15000]
 		}
-		sb.WriteString(ref)
-		sb.WriteString("\n")
 	}
 
 	systemPrompt, err := templates.DefaultDiarizeSystemPrompt()
 	if err != nil {
-		systemPrompt = "You are an expert audio transcription post-processor and diarization assistant. " +
-			"Return ONLY a valid JSON array of objects with keys 'index' (integer), 'speaker' (string), 'speaker_name' (string), and 'text' (string)."
+		systemPrompt = "Anda adalah AI Speech Consensus Engine dan Diarization Specialist. " +
+			"Tentukan speaker label ('Speaker 0', 'Speaker 1'), deteksi nama pembicara, dan koreksi kata fonetik. " +
+			"Keluarkan JSON array objek dengan keys 'index', 'speaker', 'speaker_name', dan 'text'."
 	}
 
-	temp := 0.0
-	chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
-		{Role: "user", Content: sb.String()},
-	}, dtos.ChatOptions{Temperature: &temp})
-	if err != nil {
-		log.Printf("[PIPELINE WARN] llm diarization and correction failed: %v", err)
-		return
+	const chunkSize = 15
+	const maxConcurrency = 5
+
+	type chunkTask struct {
+		startIdx int
+		endIdx   int
 	}
 
-	cleanJSON := strings.TrimSpace(chatRes.Content)
-	if idx := strings.Index(cleanJSON, "["); idx != -1 {
-		cleanJSON = cleanJSON[idx:]
-	}
-	if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
-		cleanJSON = cleanJSON[:idx+1]
-	}
-
-	type correctedItem struct {
-		Index       int    `json:"index"`
-		Speaker     string `json:"speaker"`
-		SpeakerName string `json:"speaker_name"`
-		Text        string `json:"text"`
+	var tasks []chunkTask
+	for i := 0; i < len(segments); i += chunkSize {
+		end := i + chunkSize
+		if end > len(segments) {
+			end = len(segments)
+		}
+		tasks = append(tasks, chunkTask{startIdx: i, endIdx: end})
 	}
 
-	var items []correctedItem
-	if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
-		// Fallback: try parsing as map[string]string if LLM returned key-value format
-		var labelMap map[string]string
-		if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
-			for i := range segments {
-				key := strconv.Itoa(i)
-				if val, ok := labelMap[key]; ok && strings.TrimSpace(val) != "" {
-					segments[i].SpeakerLabel = strings.TrimSpace(val)
-					segments[i].SpeakerName = strings.TrimSpace(val)
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(t chunkTask) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			var sb strings.Builder
+			if ref != "" {
+				sb.WriteString("INPUT DEEPGRAM (Referensi Speaker & Dialog Mengalir):\n")
+				sb.WriteString(ref)
+				sb.WriteString("\n\nINPUT WHISPER CHUNK (Stempel Waktu & Fonetik Alternatif):\n")
+			}
+
+			hasContent := false
+			for idx := t.startIdx; idx < t.endIdx; idx++ {
+				txt := strings.TrimSpace(segments[idx].Text)
+				if txt != "" {
+					hasContent = true
+					if segments[idx].Start > 0 || segments[idx].End > 0 {
+						sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, segments[idx].Start, segments[idx].End, txt))
+					} else {
+						sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
+					}
 				}
 			}
-			return
-		}
-		log.Printf("[PIPELINE WARN] failed to parse diarization and correction json: %v", err)
-		return
+
+			if !hasContent {
+				return
+			}
+
+			temp := 0.0
+			chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
+				{Role: "user", Content: sb.String()},
+			}, dtos.ChatOptions{Temperature: &temp})
+			if err != nil {
+				log.Printf("[PIPELINE WARN] llm consensus chunk [%d:%d] failed: %v", t.startIdx, t.endIdx, err)
+				return
+			}
+
+			cleanJSON := strings.TrimSpace(chatRes.Content)
+			if idx := strings.Index(cleanJSON, "["); idx != -1 {
+				cleanJSON = cleanJSON[idx:]
+			}
+			if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
+				cleanJSON = cleanJSON[:idx+1]
+			}
+
+			type correctedItem struct {
+				Index       int    `json:"index"`
+				Speaker     string `json:"speaker"`
+				SpeakerName string `json:"speaker_name"`
+				Text        string `json:"text"`
+			}
+
+			var items []correctedItem
+			if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
+				var labelMap map[string]string
+				if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
+					for idx := t.startIdx; idx < t.endIdx; idx++ {
+						key := strconv.Itoa(idx)
+						if val, ok := labelMap[key]; ok && strings.TrimSpace(val) != "" {
+							segments[idx].SpeakerLabel = strings.TrimSpace(val)
+							segments[idx].SpeakerName = strings.TrimSpace(val)
+						}
+					}
+				}
+				return
+			}
+
+			for _, it := range items {
+				if it.Index >= t.startIdx && it.Index < t.endIdx {
+					if strings.TrimSpace(it.Speaker) != "" {
+						segments[it.Index].SpeakerLabel = strings.TrimSpace(it.Speaker)
+					}
+					speakerName := strings.TrimSpace(it.SpeakerName)
+					if speakerName == "" {
+						speakerName = segments[it.Index].SpeakerLabel
+					}
+					segments[it.Index].SpeakerName = speakerName
+					if strings.TrimSpace(it.Text) != "" {
+						segments[it.Index].Text = strings.TrimSpace(it.Text)
+					}
+				}
+			}
+		}(task)
 	}
 
-	for _, it := range items {
-		if it.Index >= 0 && it.Index < len(segments) {
-			if strings.TrimSpace(it.Speaker) != "" {
-				segments[it.Index].SpeakerLabel = strings.TrimSpace(it.Speaker)
-			}
-			speakerName := strings.TrimSpace(it.SpeakerName)
-			if speakerName == "" {
-				speakerName = segments[it.Index].SpeakerLabel
-			}
-			segments[it.Index].SpeakerName = speakerName
-			if strings.TrimSpace(it.Text) != "" {
-				segments[it.Index].Text = strings.TrimSpace(it.Text)
-			}
-		}
-	}
+	wg.Wait()
 
 	// Canonical name propagation:
 	// When a speaker introduces themselves or is addressed in any turn (e.g. "Putri"),

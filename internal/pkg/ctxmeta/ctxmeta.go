@@ -2,6 +2,7 @@ package ctxmeta
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -9,10 +10,11 @@ import (
 type contextKey string
 
 const (
-	clientIPKey  contextKey = "client_ip"
-	userAgentKey contextKey = "user_agent"
-	authUserKey  contextKey = "auth_user"
-	requestIDKey contextKey = "request_id"
+	clientIPKey      contextKey = "client_ip"
+	userAgentKey     contextKey = "user_agent"
+	authUserKey      contextKey = "auth_user"
+	adminAuthUserKey contextKey = "admin_auth_user"
+	requestIDKey     contextKey = "request_id"
 )
 
 // AuthUser represents authenticated user identity extracted from JWT and session.
@@ -114,5 +116,78 @@ func GetRequestID(ctx context.Context) string {
 		return reqID
 	}
 	return ""
+}
+
+// AdminAuthUser represents an authenticated staff administrator.
+type AdminAuthUser struct {
+	AdminID     uuid.UUID
+	Username    string
+	FullName    string
+	RoleID      uuid.UUID
+	RoleName    string
+	Permissions []string
+}
+
+// WithAdminAuthUser injects the authenticated admin into the context.
+func WithAdminAuthUser(ctx context.Context, admin AdminAuthUser) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, adminAuthUserKey, admin)
+}
+
+// GetAdminAuthUser retrieves the authenticated admin from context.
+func GetAdminAuthUser(ctx context.Context) (AdminAuthUser, bool) {
+	if ctx == nil {
+		return AdminAuthUser{}, false
+	}
+	admin, ok := ctx.Value(adminAuthUserKey).(AdminAuthUser)
+	return admin, ok
+}
+
+// GetAdminAuthUserID retrieves the authenticated admin ID from context.
+func GetAdminAuthUserID(ctx context.Context) (uuid.UUID, bool) {
+	admin, ok := GetAdminAuthUser(ctx)
+	if !ok || admin.AdminID == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return admin.AdminID, true
+}
+
+// IsAdminAuthenticated checks whether the context contains an authenticated admin.
+func IsAdminAuthenticated(ctx context.Context) bool {
+	admin, ok := GetAdminAuthUser(ctx)
+	return ok && admin.AdminID != uuid.Nil
+}
+
+// HasAdminPermission checks if the admin user possesses the required permission.
+// Grants access if:
+// 1. Admin has wildcard "*" (Super Admin).
+// 2. Admin has exact matching permission (e.g., "users:read").
+// 3. Admin has category wildcard matching prefix (e.g., "users:*" matches "users:read").
+func HasAdminPermission(user AdminAuthUser, requiredPerm string) bool {
+	requiredPerm = strings.TrimSpace(requiredPerm)
+	if requiredPerm == "" {
+		return true
+	}
+	parts := strings.Split(requiredPerm, ":")
+	domainPrefix := ""
+	if len(parts) > 1 {
+		domainPrefix = parts[0] + ":*"
+	}
+
+	for _, p := range user.Permissions {
+		p = strings.TrimSpace(p)
+		if p == "*" {
+			return true
+		}
+		if p == requiredPerm {
+			return true
+		}
+		if domainPrefix != "" && p == domainPrefix {
+			return true
+		}
+	}
+	return false
 }
 

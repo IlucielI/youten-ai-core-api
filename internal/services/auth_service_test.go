@@ -1356,6 +1356,83 @@ func TestService_Authenticate(t *testing.T) {
 	}
 }
 
+func TestService_AuthenticateAdmin(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	cfg := config.Config{
+		AppName:             "youten-test",
+		JWTSecret:           "test-jwt-secret-key-1234567890",
+		JWTAccessExpiration: 15 * time.Minute,
+	}
+
+	adminID := uuid.New()
+	roleID := uuid.New()
+	username := "admin_bob"
+	fullName := "Bob Administrator"
+	roleName := "Security"
+	permissions := []string{"users:read", "audit:read"}
+
+	tokenStr, err := jwt.GenerateAdminToken(cfg, adminID, username)
+	if err != nil {
+		t.Fatalf("failed to generate admin token: %v", err)
+	}
+
+	// 1. Success case
+	mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+		WithArgs(adminID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name", "role_id", "status"}).
+			AddRow(adminID, username, fullName, roleID, constants.UserStatusActive))
+
+	mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+		WithArgs(roleID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "permissions"}).
+			AddRow(roleID, roleName, []byte(`["users:read", "audit:read"]`)))
+
+	adminUser, err := svc.AuthenticateAdmin(context.Background(), tokenStr)
+	if err != nil {
+		t.Fatalf("expected valid admin authentication, got: %v", err)
+	}
+	if adminUser.AdminID != adminID || adminUser.Username != username || adminUser.RoleName != roleName {
+		t.Fatalf("unexpected adminUser: %+v", adminUser)
+	}
+	if len(adminUser.Permissions) != len(permissions) {
+		t.Fatalf("expected %d permissions, got %d", len(permissions), len(adminUser.Permissions))
+	}
+
+	// 2. Inactive admin user returns ErrUserInactive
+	mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+		WithArgs(adminID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name", "role_id", "status"}).
+			AddRow(adminID, username, fullName, roleID, "suspended"))
+
+	mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+		WithArgs(roleID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "permissions"}).
+			AddRow(roleID, roleName, []byte(`["users:read"]`)))
+
+	_, err = svc.AuthenticateAdmin(context.Background(), tokenStr)
+	if !errors.Is(err, constants.ErrUserInactive) {
+		t.Fatalf("expected ErrUserInactive, got: %v", err)
+	}
+
+	// 3. Admin not found in DB returns ErrUnauthorized
+	mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+		WithArgs(adminID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err = svc.AuthenticateAdmin(context.Background(), tokenStr)
+	if !errors.Is(err, constants.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got: %v", err)
+	}
+
+	// 4. Malformed token returns ErrInvalidToken
+	_, err = svc.AuthenticateAdmin(context.Background(), "invalid-token-string")
+	if !errors.Is(err, constants.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken on malformed token, got: %v", err)
+	}
+}
+
 func TestService_GetProfile_Success_DefaultQuota(t *testing.T) {
 	svc, mock, cleanup := setupAuthServiceMock(t)
 	defer cleanup()

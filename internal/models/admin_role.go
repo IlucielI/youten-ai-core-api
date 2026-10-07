@@ -21,3 +21,15 @@ type AdminRole struct {
 func (AdminRole) TableName() string {
 	return "admin_roles"
 }
+
+// PermissionsList decodes raw JSONB permissions into a typed string slice.
+func (r *AdminRole) PermissionsList() []string {
+	if r == nil || len(r.Permissions) == 0 {
+		return nil
+	}
+	var perms []string
+	if err := json.Unmarshal(r.Permissions, &perms); err != nil {
+		return nil
+	}
+	return perms
+}

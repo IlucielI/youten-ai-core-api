@@ -36,6 +36,15 @@ func (r *Repositories) ListActiveTemplates(ctx context.Context) ([]models.Templa
 	return list, nil
 }
 
+// ListAllTemplates lists all templates (both active and inactive) ordered by category key.
+func (r *Repositories) ListAllTemplates(ctx context.Context) ([]models.Template, error) {
+	var list []models.Template
+	if err := r.db.WithContext(ctx).Order("category_key ASC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 // UpsertTemplate creates or updates a template by category_key.
 func (r *Repositories) UpsertTemplate(ctx context.Context, tmpl *models.Template) error {
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{

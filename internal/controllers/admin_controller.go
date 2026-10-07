@@ -224,3 +224,20 @@ func (c *Controllers) AdminUpdateRole(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// AdminListTemplates handles GET /v1/admin/templates.
+func (c *Controllers) AdminListTemplates(ctx *gin.Context) {
+	resp, err := c.svc.AdminListTemplates(ctx.Request.Context())
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminTemplateListResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}

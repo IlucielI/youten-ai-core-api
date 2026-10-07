@@ -277,3 +277,11 @@ routes:
     handler: AdminUpdateRole
     admin_auth: true
     admin_permission: "roles:write"
+
+  # Admin list prompt templates (CMS).
+  - method: GET
+    path: /v1/admin/templates
+    handler: AdminListTemplates
+    admin_auth: true
+    admin_permission: "templates:read"
+

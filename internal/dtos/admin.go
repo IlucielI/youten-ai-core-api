@@ -163,3 +163,23 @@ func (r *AdminUpdateRoleRequest) Validate() error {
 	}
 	return nil
 }
+
+// AdminTemplateItem represents a prompt template in administrative views.
+type AdminTemplateItem struct {
+	ID           uuid.UUID              `json:"id"`
+	CategoryKey  string                 `json:"category_key"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	Prompt       string                 `json:"prompt"`
+	OutputSchema map[string]interface{} `json:"output_schema"`
+	Version      int                    `json:"version"`
+	IsActive     bool                   `json:"is_active"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+}
+
+// AdminTemplateListResponse encapsulates a list of prompt templates.
+type AdminTemplateListResponse struct {
+	Items []AdminTemplateItem `json:"items"`
+}
+

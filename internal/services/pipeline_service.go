@@ -852,14 +852,11 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		return
 	}
 
-	systemPrompt := "You are an expert audio transcription post-processor and diarization assistant. " +
-		"Given numbered dialogue lines from an audio recording:\n" +
-		"1. Preserve acoustic speaker labels ('Speaker 0', 'Speaker 1', etc.) when provided in brackets like [Speaker X], or analyze conversational turn-taking and assign speaker labels ('Speaker 0', 'Speaker 1', etc.) if brackets are missing.\n" +
-		"2. Detect the actual name of each speaker if introduced or addressed in the conversation (e.g. 'Putri', 'Sarah'). Prefer a concise first name or common calling name (e.g. 'Putri'). If a speaker's name is not explicitly mentioned or known, fallback exactly to their speaker label (e.g. 'Speaker 0', 'Speaker 1').\n" +
-		"3. Correct obvious phonetic ASR mishearings, slips, and homophones based on conversational context " +
-		"(e.g., 'Universitas Bunda Dharma' -> 'Universitas Gunadarma', 'bekerja di botol kanan' -> 'bekerja di bawah tekanan'). Do NOT alter valid numbers or invent new facts.\n" +
-		"Return ONLY a valid JSON array of objects with keys 'index' (integer), 'speaker' (string), 'speaker_name' (string), and 'text' (string). " +
-		"Example: [{\"index\": 0, \"speaker\": \"Speaker 0\", \"speaker_name\": \"Putri\", \"text\": \"...\"}]. Do not return any other text or markdown."
+	systemPrompt, err := templates.DefaultDiarizeSystemPrompt()
+	if err != nil {
+		systemPrompt = "You are an expert audio transcription post-processor and diarization assistant. " +
+			"Return ONLY a valid JSON array of objects with keys 'index' (integer), 'speaker' (string), 'speaker_name' (string), and 'text' (string)."
+	}
 
 	temp := 0.0
 	chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{

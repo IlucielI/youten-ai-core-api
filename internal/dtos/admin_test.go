@@ -770,6 +770,38 @@ func TestAdminAuditLogListResponse(t *testing.T) {
 	}
 }
 
+func TestSystemOverviewStatsResponse(t *testing.T) {
+	resp := SystemOverviewStatsResponse{
+		TotalUsers:           100,
+		ActiveUsers:          90,
+		TotalRecordings:      500,
+		CompletedRecordings:  480,
+		FailedRecordings:     20,
+		TotalStorageBytes:    1048576,
+		TotalDurationSeconds: 3600.0,
+	}
+
+	if resp.TotalUsers != 100 || resp.ActiveUsers != 90 || resp.TotalRecordings != 500 {
+		t.Fatalf("unexpected stats response values: %+v", resp)
+	}
+}
+
+func TestCostOversightResponse(t *testing.T) {
+	resp := CostOversightResponse{
+		TotalAudioMinutes:     60.0,
+		EstimatedSTTCostUSD:   0.36,
+		TotalLLMTokens:        18000,
+		EstimatedLLMCostUSD:   0.005,
+		TotalEstimatedCostUSD: 0.365,
+		Currency:              "USD",
+	}
+
+	if resp.TotalAudioMinutes != 60.0 || resp.EstimatedSTTCostUSD != 0.36 || resp.Currency != "USD" {
+		t.Fatalf("unexpected cost oversight values: %+v", resp)
+	}
+}
+
+
 
 
 

@@ -517,6 +517,28 @@ type AdminAuditLogListResponse struct {
 	Pagination PaginationMeta          `json:"pagination"`
 }
 
+// SystemOverviewStatsResponse provides system-wide operational metrics.
+type SystemOverviewStatsResponse struct {
+	TotalUsers           int64   `json:"total_users"`
+	ActiveUsers          int64   `json:"active_users"`
+	TotalRecordings      int64   `json:"total_recordings"`
+	CompletedRecordings  int64   `json:"completed_recordings"`
+	FailedRecordings     int64   `json:"failed_recordings"`
+	TotalStorageBytes    int64   `json:"total_storage_bytes"`
+	TotalDurationSeconds float64 `json:"total_duration_seconds"`
+}
+
+// CostOversightResponse provides cost estimation and consumption metrics.
+type CostOversightResponse struct {
+	TotalAudioMinutes     float64 `json:"total_audio_minutes"`
+	EstimatedSTTCostUSD   float64 `json:"estimated_stt_cost_usd"`
+	TotalLLMTokens        int64   `json:"total_llm_tokens"`
+	EstimatedLLMCostUSD   float64 `json:"estimated_llm_cost_usd"`
+	TotalEstimatedCostUSD float64 `json:"total_estimated_cost_usd"`
+	Currency              string  `json:"currency"`
+}
+
+
 
 
 

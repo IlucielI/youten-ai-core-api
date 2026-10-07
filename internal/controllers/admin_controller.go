@@ -616,6 +616,53 @@ func (c *Controllers) AdminListAuditLogs(ctx *gin.Context) {
 	})
 }
 
+// AdminGetOverviewStats handles GET /v1/admin/stats/overview.
+func (c *Controllers) AdminGetOverviewStats(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	resp, err := c.svc.AdminGetOverviewStats(ctx.Request.Context())
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SystemOverviewStatsResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+// AdminGetCostOversight handles GET /v1/admin/stats/costs.
+func (c *Controllers) AdminGetCostOversight(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	resp, err := c.svc.AdminGetCostOversight(ctx.Request.Context())
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.CostOversightResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 
 

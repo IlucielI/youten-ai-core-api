@@ -355,6 +355,21 @@ routes:
     admin_auth: true
     admin_permission: "audit:read"
 
+  # Admin get system overview stats (CMS).
+  - method: GET
+    path: /v1/admin/stats/overview
+    handler: AdminGetOverviewStats
+    admin_auth: true
+    admin_permission: "analytics:read"
+
+  # Admin get cost oversight calculations (CMS).
+  - method: GET
+    path: /v1/admin/stats/costs
+    handler: AdminGetCostOversight
+    admin_auth: true
+    admin_permission: "analytics:read"
+
+
 
 
 

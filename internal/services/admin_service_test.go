@@ -1341,6 +1341,83 @@ func TestService_AdminListAuditLogs(t *testing.T) {
 	})
 }
 
+func TestService_AdminStatsAndCosts(t *testing.T) {
+	t.Run("AdminGetOverviewStats success returns aggregated metrics", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		// 1. Total users
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(100))
+		// 2. Active users
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE status = \$1 AND "users"\."deleted_at" IS NULL`).
+			WithArgs("active").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(90))
+		// 3. Total recordings
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(50))
+		// 4. Completed recordings
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs("COMPLETED").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(45))
+		// 5. Failed recordings
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs("FAILED").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+		// 6. Sum storage and duration
+		mock.ExpectQuery(`SELECT COALESCE\(SUM\(file_size_bytes\), 0\) as total_storage, COALESCE\(SUM\(duration_seconds\), 0\) as total_duration FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"total_storage", "total_duration"}).AddRow(1048576, 3600.0))
+
+		resp, err := svc.AdminGetOverviewStats(context.Background())
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.TotalUsers != 100 || resp.ActiveUsers != 90 || resp.TotalRecordings != 50 {
+			t.Fatalf("unexpected overview stats: %+v", resp)
+		}
+		if resp.CompletedRecordings != 45 || resp.FailedRecordings != 5 || resp.TotalStorageBytes != 1048576 {
+			t.Fatalf("unexpected overview details: %+v", resp)
+		}
+	})
+
+	t.Run("AdminGetCostOversight computes estimates based on duration", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE status = \$1 AND "users"\."deleted_at" IS NULL`).
+			WithArgs("active").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs("COMPLETED").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs("FAILED").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		// 3600s = 60m
+		mock.ExpectQuery(`SELECT COALESCE\(SUM\(file_size_bytes\), 0\) as total_storage, COALESCE\(SUM\(duration_seconds\), 0\) as total_duration FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"total_storage", "total_duration"}).AddRow(500000, 3600.0))
+
+		resp, err := svc.AdminGetCostOversight(context.Background())
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.TotalAudioMinutes != 60.0 {
+			t.Errorf("expected 60 audio minutes, got %v", resp.TotalAudioMinutes)
+		}
+		if resp.EstimatedSTTCostUSD <= 0 {
+			t.Errorf("expected positive STT cost, got %v", resp.EstimatedSTTCostUSD)
+		}
+		if resp.TotalEstimatedCostUSD <= 0 {
+			t.Errorf("expected positive total cost, got %v", resp.TotalEstimatedCostUSD)
+		}
+	})
+}
+
+
 
 
 

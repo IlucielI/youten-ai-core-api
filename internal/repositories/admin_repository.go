@@ -125,3 +125,54 @@ func (r *Repositories) ListAdminAuditLogsFiltered(ctx context.Context, f AdminAu
 	return logs, total, nil
 }
 
+// SystemOverviewStats contains high-level database aggregates for telemetry.
+type SystemOverviewStats struct {
+	TotalUsers           int64
+	ActiveUsers          int64
+	TotalRecordings      int64
+	CompletedRecordings  int64
+	FailedRecordings     int64
+	TotalStorageBytes    int64
+	TotalDurationSeconds float64
+}
+
+// GetSystemOverviewStats aggregates system telemetry counts across users and recordings.
+func (r *Repositories) GetSystemOverviewStats(ctx context.Context) (*SystemOverviewStats, error) {
+	var stats SystemOverviewStats
+
+	if err := r.db.WithContext(ctx).Model(&models.User{}).Count(&stats.TotalUsers).Error; err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).Model(&models.User{}).Where("status = ?", models.UserStatusActive).Count(&stats.ActiveUsers).Error; err != nil {
+		return nil, err
+	}
+
+	if err := r.db.WithContext(ctx).Model(&models.Recording{}).Count(&stats.TotalRecordings).Error; err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).Model(&models.Recording{}).Where("status = ?", models.RecordingStatusCompleted).Count(&stats.CompletedRecordings).Error; err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).Model(&models.Recording{}).Where("status = ?", models.RecordingStatusFailed).Count(&stats.FailedRecordings).Error; err != nil {
+		return nil, err
+	}
+
+	type SumResult struct {
+		TotalStorageBytes    int64   `gorm:"column:total_storage"`
+		TotalDurationSeconds float64 `gorm:"column:total_duration"`
+	}
+	var sumRes SumResult
+	err := r.db.WithContext(ctx).Model(&models.Recording{}).
+		Select("COALESCE(SUM(file_size_bytes), 0) as total_storage, COALESCE(SUM(duration_seconds), 0) as total_duration").
+		Scan(&sumRes).Error
+	if err != nil {
+		return nil, err
+	}
+
+	stats.TotalStorageBytes = sumRes.TotalStorageBytes
+	stats.TotalDurationSeconds = sumRes.TotalDurationSeconds
+
+	return &stats, nil
+}
+
+

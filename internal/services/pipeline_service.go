@@ -173,11 +173,17 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors
 	if len(sttResult.Segments) > 0 && s.llm != nil {
-		s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments)
+		s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText)
 	}
 
 	var modelSegments []models.TranscriptSegment
-	for i, seg := range sttResult.Segments {
+	for _, seg := range sttResult.Segments {
+		cleanText := strings.TrimSpace(seg.Text)
+		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
+		if cleanText == "" || norm == "musik" || norm == "music" {
+			continue
+		}
+
 		wordsJSON, _ := json.Marshal(seg.Words)
 		speaker := seg.SpeakerLabel
 		if speaker == "" {
@@ -193,9 +199,9 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 			SpeakerName:   speakerName,
 			StartTime:     seg.Start,
 			EndTime:       seg.End,
-			Text:          seg.Text,
+			Text:          cleanText,
 			WordsData:     json.RawMessage(wordsJSON),
-			SequenceOrder: i + 1,
+			SequenceOrder: len(modelSegments) + 1,
 		})
 	}
 
@@ -832,12 +838,22 @@ func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 }
 
 // diarizeAndCorrectSegmentsWithLLM uses the LLM to infer speaker turn-taking and correct obvious phonetic ASR slips across transcript segments.
-func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult) {
+// If an acoustic speaker reference is provided (e.g. from secondary STT diarization), it aligns the turns onto the primary segments.
+func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult, diarizedRef ...string) {
 	if len(segments) == 0 || s.llm == nil {
 		return
 	}
 
 	var sb strings.Builder
+	ref := ""
+	if len(diarizedRef) > 0 {
+		ref = strings.TrimSpace(diarizedRef[0])
+	}
+
+	if ref != "" {
+		sb.WriteString("PRIMARY NUMBERED SEGMENTS:\n")
+	}
+
 	for i, seg := range segments {
 		trimmed := strings.TrimSpace(seg.Text)
 		if trimmed != "" {
@@ -850,6 +866,15 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	}
 	if sb.Len() == 0 {
 		return
+	}
+
+	if ref != "" {
+		sb.WriteString("\nACOUSTIC SPEAKER REFERENCE:\n")
+		if len(ref) > 15000 {
+			ref = ref[:15000]
+		}
+		sb.WriteString(ref)
+		sb.WriteString("\n")
 	}
 
 	systemPrompt, err := templates.DefaultDiarizeSystemPrompt()

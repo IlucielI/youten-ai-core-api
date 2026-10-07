@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"code-base-golang/internal/config"
@@ -21,10 +23,11 @@ import (
 
 // OmniRouteSTT implements services.STTProvider using an OpenAI-compatible audio transcription endpoint.
 type OmniRouteSTT struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
+	baseURL      string
+	apiKey       string
+	model        string
+	diarizeModel string
+	httpClient   *http.Client
 }
 
 // NewOmniRoute creates a new OmniRoute OpenAI-compatible STT adapter.
@@ -39,16 +42,19 @@ func NewOmniRoute(cfg config.Config, customClient ...*http.Client) *OmniRouteSTT
 		model = "whisper-1"
 	}
 
+	diarizeModel := strings.TrimSpace(cfg.STTDiarizeModel)
+
 	client := &http.Client{Timeout: 5 * time.Minute}
 	if len(customClient) > 0 && customClient[0] != nil {
 		client = customClient[0]
 	}
 
 	return &OmniRouteSTT{
-		baseURL:    baseURL,
-		apiKey:     strings.TrimSpace(cfg.LLMAPIKey),
-		model:      model,
-		httpClient: client,
+		baseURL:      baseURL,
+		apiKey:       strings.TrimSpace(cfg.LLMAPIKey),
+		model:        model,
+		diarizeModel: diarizeModel,
+		httpClient:   client,
 	}
 }
 
@@ -77,11 +83,67 @@ type openAIVerboseJSON struct {
 }
 
 // Transcribe streams audio to the transcription endpoint and decodes the verbose JSON response.
+// When STTDiarizeModel is configured, it executes both models in parallel:
+// 1. Primary STT (e.g. groq/whisper-large-v3) produces precise timestamps & phonetic segments.
+// 2. Secondary STT (e.g. deepgram/nova-3) produces acoustic speaker separation.
 func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("audio reader cannot be nil")
 	}
 
+	audioBytes, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read audio input stream: %w", err)
+	}
+
+	if o.diarizeModel == "" || strings.EqualFold(o.diarizeModel, o.model) {
+		return o.transcribeSingle(ctx, audioBytes, filename, o.model, opts)
+	}
+
+	var (
+		wg            sync.WaitGroup
+		primaryResult *dtos.TranscriptionResult
+		primaryErr    error
+		diarizeResult *dtos.TranscriptionResult
+		diarizeErr    error
+	)
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		primaryResult, primaryErr = o.transcribeSingle(ctx, audioBytes, filename, o.model, opts)
+	}()
+
+	go func() {
+		defer wg.Done()
+		diarizeResult, diarizeErr = o.transcribeSingle(ctx, audioBytes, filename, o.diarizeModel, opts)
+	}()
+
+	wg.Wait()
+
+	if primaryErr != nil {
+		if diarizeResult != nil && diarizeErr == nil {
+			log.Printf("[STT WARN] primary STT model (%s) failed (%v), falling back to diarize model (%s)", o.model, primaryErr, o.diarizeModel)
+			return diarizeResult, nil
+		}
+		return nil, fmt.Errorf("primary STT (%s) failed: %w", o.model, primaryErr)
+	}
+
+	if diarizeErr != nil {
+		log.Printf("[STT WARN] secondary diarization STT (%s) failed: %v, continuing with primary STT only", o.diarizeModel, diarizeErr)
+	} else if diarizeResult != nil {
+		// Attach acoustic speaker diarized text from secondary STT
+		primaryResult.DiarizedText = diarizeResult.Text
+		if len(primaryResult.Segments) == 0 && len(diarizeResult.Segments) > 0 {
+			primaryResult.Segments = diarizeResult.Segments
+		}
+	}
+
+	return primaryResult, nil
+}
+
+// transcribeSingle performs a single transcription HTTP request for the specified model.
+func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, filename string, model string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
@@ -95,11 +157,11 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		return nil, fmt.Errorf("failed to create form file: %w", err)
 	}
 
-	if _, err := io.Copy(part, reader); err != nil {
+	if _, err := io.Copy(part, bytes.NewReader(audioBytes)); err != nil {
 		return nil, fmt.Errorf("failed to copy audio stream to form: %w", err)
 	}
 
-	if err := writer.WriteField("model", o.model); err != nil {
+	if err := writer.WriteField("model", model); err != nil {
 		return nil, err
 	}
 	if err := writer.WriteField("response_format", "verbose_json"); err != nil {

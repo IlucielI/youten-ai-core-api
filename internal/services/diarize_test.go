@@ -179,4 +179,30 @@ func TestMergeConsecutiveSegments_MaxDurationExceeded(t *testing.T) {
 	}
 }
 
+func TestService_DiarizeAndCorrectSegmentsWithLLM_WithAcousticReference(t *testing.T) {
+	mockLLM := &dummyLLM{
+		chatResp: `[
+			{"index": 0, "speaker": "Speaker 1", "speaker_name": "Speaker 1", "text": "Selamat siang, saya terima surat lamaran dan CV-nya."},
+			{"index": 1, "speaker": "Speaker 0", "speaker_name": "Putri", "text": "Terima kasih Pak, nama saya Putri."}
+		]`,
+	}
+	svc := &Service{llm: mockLLM}
+
+	segments := []dtos.SegmentResult{
+		{Text: "Selamat siang saya terima surat lamaran", SpeakerLabel: ""},
+		{Text: "Terima kasih Pak nama saya Putri", SpeakerLabel: ""},
+	}
+
+	deepgramRef := "Speaker 1: Selamat siang saya terima surat lamaran dan CV-nya.\nSpeaker 0: Terima kasih Pak nama saya Putri."
+	svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments, deepgramRef)
+
+	if segments[0].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected Speaker 1 on segment 0, got %s", segments[0].SpeakerLabel)
+	}
+	if segments[1].SpeakerLabel != "Speaker 0" || segments[1].SpeakerName != "Putri" {
+		t.Errorf("expected Speaker 0 and Putri on segment 1, got %+v", segments[1])
+	}
+}
+
+
 

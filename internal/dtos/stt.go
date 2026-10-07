@@ -35,8 +35,9 @@ type SegmentResult struct {
 
 // TranscriptionResult represents the overall transcription output.
 type TranscriptionResult struct {
-	Text     string          `json:"text"`
-	Language string          `json:"language"`
-	Duration float64         `json:"duration"`
-	Segments []SegmentResult `json:"segments"`
+	Text         string          `json:"text"`
+	Language     string          `json:"language"`
+	Duration     float64         `json:"duration"`
+	Segments     []SegmentResult `json:"segments"`
+	DiarizedText string          `json:"diarized_text,omitempty"`
 }

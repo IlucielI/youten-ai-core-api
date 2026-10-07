@@ -504,3 +504,42 @@ func TestService_AdminUpdateRole(t *testing.T) {
 	})
 }
 
+func TestService_AdminListTemplates(t *testing.T) {
+	t.Run("success returns all templates", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		tmplID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT \* FROM "templates" ORDER BY category_key ASC`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "name", "description", "prompt", "output_schema", "version", "is_active", "created_at", "updated_at"}).
+				AddRow(tmplID, "MOM", "Minutes of Meeting", "Standard MOM", "Extract minutes...", []byte(`{}`), 1, true, now, now))
+
+		resp, err := svc.AdminListTemplates(context.Background())
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if len(resp.Items) != 1 {
+			t.Fatalf("expected 1 template, got %d", len(resp.Items))
+		}
+		if resp.Items[0].CategoryKey != "MOM" {
+			t.Errorf("expected CategoryKey MOM, got %s", resp.Items[0].CategoryKey)
+		}
+	})
+
+	t.Run("db failure returns error", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT \* FROM "templates" ORDER BY category_key ASC`).
+			WillReturnError(errors.New("db error"))
+
+		_, err := svc.AdminListTemplates(context.Background())
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+

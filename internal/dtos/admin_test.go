@@ -261,3 +261,37 @@ func TestAdminUpdateRoleRequest_Validate(t *testing.T) {
 	})
 }
 
+func TestAdminTemplateListResponse(t *testing.T) {
+	id := uuid.New()
+	now := time.Now()
+	resp := AdminTemplateListResponse{
+		Items: []AdminTemplateItem{
+			{
+				ID:          id,
+				CategoryKey: "MOM",
+				Name:        "Minutes of Meeting",
+				Description: "Standard meeting minutes",
+				Prompt:      "Analyze meeting notes...",
+				OutputSchema: map[string]interface{}{
+					"type": "object",
+				},
+				Version:   1,
+				IsActive:  true,
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+		},
+	}
+
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].CategoryKey != "MOM" {
+		t.Errorf("expected CategoryKey MOM, got %s", resp.Items[0].CategoryKey)
+	}
+	if !resp.Items[0].IsActive {
+		t.Error("expected IsActive true")
+	}
+}
+
+

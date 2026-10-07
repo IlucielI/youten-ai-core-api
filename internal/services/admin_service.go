@@ -355,3 +355,30 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta AdminActionMeta, rol
 		UpdatedAt:   role.UpdatedAt,
 	}, nil
 }
+
+// AdminListTemplates retrieves all prompt templates for administrative management.
+func (s *Service) AdminListTemplates(ctx context.Context) (*dtos.AdminTemplateListResponse, error) {
+	templates, err := s.repo.ListAllTemplates(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.AdminTemplateItem, 0, len(templates))
+	for _, t := range templates {
+		items = append(items, dtos.AdminTemplateItem{
+			ID:           t.ID,
+			CategoryKey:  t.CategoryKey,
+			Name:         t.Name,
+			Description:  t.Description,
+			Prompt:       t.Prompt,
+			OutputSchema: t.OutputSchema,
+			Version:      t.Version,
+			IsActive:     t.IsActive,
+			CreatedAt:    t.CreatedAt,
+			UpdatedAt:    t.UpdatedAt,
+		})
+	}
+
+	return &dtos.AdminTemplateListResponse{Items: items}, nil
+}
+

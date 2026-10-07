@@ -120,3 +120,20 @@ func (c *Controllers) AdminRevokeUserSessions(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// AdminListRoles handles GET /v1/admin/roles.
+func (c *Controllers) AdminListRoles(ctx *gin.Context) {
+	resp, err := c.svc.AdminListRoles(ctx.Request.Context())
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminRoleListResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}

@@ -322,3 +322,44 @@ func TestService_AdminRevokeUserSessions(t *testing.T) {
 		}
 	})
 }
+
+func TestService_AdminListRoles(t *testing.T) {
+	t.Run("success returns roles with decoded permissions", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		roleID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Super Admin", "Root admin", []byte(`["*"]`), true, now, now))
+
+		resp, err := svc.AdminListRoles(context.Background())
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if len(resp.Items) != 1 {
+			t.Fatalf("expected 1 role, got %d", len(resp.Items))
+		}
+		if resp.Items[0].Name != "Super Admin" {
+			t.Errorf("expected role name Super Admin, got %s", resp.Items[0].Name)
+		}
+		if len(resp.Items[0].Permissions) != 1 || resp.Items[0].Permissions[0] != "*" {
+			t.Errorf("expected permissions [*], got %v", resp.Items[0].Permissions)
+		}
+	})
+
+	t.Run("db failure returns wrapped error", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WillReturnError(errors.New("db error"))
+
+		_, err := svc.AdminListRoles(context.Background())
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}

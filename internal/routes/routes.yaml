@@ -256,3 +256,10 @@ routes:
     handler: AdminRevokeUserSessions
     admin_auth: true
     admin_permission: "users:write"
+
+  # Admin list RBAC roles (CMS).
+  - method: GET
+    path: /v1/admin/roles
+    handler: AdminListRoles
+    admin_auth: true
+    admin_permission: "roles:read"

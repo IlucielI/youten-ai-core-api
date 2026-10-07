@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -180,4 +181,35 @@ func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta AdminActionM
 		Revoked: true,
 		Message: "all active sessions have been successfully revoked",
 	}, nil
+}
+
+// AdminListRoles retrieves all administrative RBAC roles with decoded permission lists.
+func (s *Service) AdminListRoles(ctx context.Context) (*dtos.AdminRoleListResponse, error) {
+	roles, err := s.repo.ListRoles(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.AdminRoleItem, 0, len(roles))
+	for _, r := range roles {
+		rawPerms := r.PermissionsList()
+		perms := make([]string, 0, len(rawPerms))
+		for _, p := range rawPerms {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				perms = append(perms, p)
+			}
+		}
+		items = append(items, dtos.AdminRoleItem{
+			ID:          r.ID,
+			Name:        r.Name,
+			Description: r.Description,
+			Permissions: perms,
+			IsSystem:    r.IsSystem,
+			CreatedAt:   r.CreatedAt,
+			UpdatedAt:   r.UpdatedAt,
+		})
+	}
+
+	return &dtos.AdminRoleListResponse{Items: items}, nil
 }

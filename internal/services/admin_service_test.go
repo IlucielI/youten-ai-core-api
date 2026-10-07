@@ -749,6 +749,123 @@ func TestService_AdminUpdateTemplate(t *testing.T) {
 	})
 }
 
+type mockAdminLLM struct {
+	GenerateStructuredFunc func(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error)
+}
+
+func (m *mockAdminLLM) GenerateStructured(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+	if m.GenerateStructuredFunc != nil {
+		return m.GenerateStructuredFunc(ctx, systemPrompt, userPrompt, schema)
+	}
+	return nil, nil
+}
+
+func (m *mockAdminLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+	return nil, nil
+}
+
+func (m *mockAdminLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+	return nil, nil
+}
+
+func TestService_AdminTestTemplate(t *testing.T) {
+	t.Run("success runs prompt sandbox and returns metrics", func(t *testing.T) {
+		svc, _, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		mockLLM := &mockAdminLLM{
+			GenerateStructuredFunc: func(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+				return &dtos.StructuredResponse{
+					RawJSON: `{"action_items":["Deploy to prod"]}`,
+					Usage: dtos.LLMUsage{
+						PromptTokens:     50,
+						CompletionTokens: 20,
+						TotalTokens:      70,
+					},
+				}, nil
+			},
+		}
+		svc.SetLLM(mockLLM)
+
+		req := dtos.AdminTestTemplateRequest{
+			Prompt:           "Extract action items",
+			SampleTranscript: "Alice: Deploy to prod.",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action_items": map[string]interface{}{"type": "array"},
+				},
+			},
+		}
+
+		resp, err := svc.AdminTestTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.TokensUsed != 70 {
+			t.Errorf("expected 70 tokens used, got %d", resp.TokensUsed)
+		}
+		if resp.RawOutput != `{"action_items":["Deploy to prod"]}` {
+			t.Errorf("expected RawOutput match, got %s", resp.RawOutput)
+		}
+	})
+
+	t.Run("nil LLM provider returns ErrInternal", func(t *testing.T) {
+		svc, _, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		svc.SetLLM(nil)
+
+		req := dtos.AdminTestTemplateRequest{
+			Prompt:           "Prompt",
+			SampleTranscript: "Sample",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+
+		_, err := svc.AdminTestTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		if err == nil {
+			t.Fatal("expected error for nil LLM, got nil")
+		}
+	})
+
+	t.Run("LLM execution error returns error", func(t *testing.T) {
+		svc, _, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		mockLLM := &mockAdminLLM{
+			GenerateStructuredFunc: func(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+				return nil, errors.New("llm provider timeout")
+			},
+		}
+		svc.SetLLM(mockLLM)
+
+		req := dtos.AdminTestTemplateRequest{
+			Prompt:           "Prompt",
+			SampleTranscript: "Sample",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+
+		_, err := svc.AdminTestTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		if err == nil {
+			t.Fatal("expected LLM error, got nil")
+		}
+	})
+}
+
+
 
 
 

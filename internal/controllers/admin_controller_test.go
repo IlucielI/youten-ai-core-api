@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"code-base-golang/internal/adapters/llm"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
@@ -677,6 +679,85 @@ func TestControllers_AdminUpdateTemplate(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_AdminTestTemplate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200 with test results", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		mockLLM := llm.NewMock()
+		mockLLM.GenerateStructuredFunc = func(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+			return &dtos.StructuredResponse{
+				RawJSON: `{"title": "Sample Title"}`,
+				Usage: dtos.LLMUsage{
+					TotalTokens: 42,
+				},
+			}, nil
+		}
+		ctrls.Service().SetLLM(mockLLM)
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/templates/test", ctrls.AdminTestTemplate)
+
+		body := `{"prompt": "Test Prompt", "sample_transcript": "Transcript", "output_schema": {"type": "object", "properties": {"title": {"type": "string"}}}}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/templates/test", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("missing admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/templates/test", ctrls.AdminTestTemplate)
+
+		body := `{"prompt": "Test", "sample_transcript": "Text", "output_schema": {"type": "object", "properties": {"a": {"type": "string"}}}}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/templates/test", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("validation error returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/templates/test", ctrls.AdminTestTemplate)
+
+		body := `{"prompt": "", "sample_transcript": ""}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/templates/test", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+}
+
 
 
 

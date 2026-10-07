@@ -273,5 +273,53 @@ func (r *AdminUpdateTemplateRequest) Validate() error {
 	return nil
 }
 
+// AdminTestTemplateRequest defines the payload for testing prompt templates in sandbox.
+type AdminTestTemplateRequest struct {
+	Prompt           string                 `json:"prompt"`
+	OutputSchema     map[string]interface{} `json:"output_schema"`
+	SampleTranscript string                 `json:"sample_transcript"`
+}
+
+// Validate ensures sandbox test payload has necessary inputs.
+func (r *AdminTestTemplateRequest) Validate() error {
+	r.Prompt = strings.TrimSpace(r.Prompt)
+	if r.Prompt == "" {
+		return errors.New("prompt is required")
+	}
+	if len(r.Prompt) > 20000 {
+		return errors.New("prompt exceeds maximum length of 20000 characters")
+	}
+	r.SampleTranscript = strings.TrimSpace(r.SampleTranscript)
+	if r.SampleTranscript == "" {
+		return errors.New("sample_transcript is required")
+	}
+	if len(r.SampleTranscript) > 100000 {
+		return errors.New("sample_transcript exceeds maximum length of 100000 characters")
+	}
+	if len(r.OutputSchema) == 0 {
+		return errors.New("output_schema is required")
+	}
+
+	schemaType, ok := r.OutputSchema["type"].(string)
+	if !ok || schemaType != "object" {
+		return errors.New("output_schema must have type 'object'")
+	}
+	props, ok := r.OutputSchema["properties"].(map[string]interface{})
+	if !ok || len(props) == 0 {
+		return errors.New("output_schema must define non-empty 'properties'")
+	}
+
+	return nil
+}
+
+// AdminTestTemplateResponse represents the dry run sandbox output and metrics.
+type AdminTestTemplateResponse struct {
+	RawOutput       string      `json:"raw_output"`
+	ParsedJSON      interface{} `json:"parsed_json"`
+	ExecutionTimeMs int64       `json:"execution_time_ms"`
+	TokensUsed      int         `json:"tokens_used"`
+}
+
+
 
 

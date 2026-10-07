@@ -7,6 +7,7 @@ import (
 	"math"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -531,6 +532,37 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta AdminActionMeta,
 		UpdatedAt:    tmpl.UpdatedAt,
 	}, nil
 }
+
+// AdminTestTemplate executes a sandbox dry run of a prompt and schema against a sample transcript.
+func (s *Service) AdminTestTemplate(ctx context.Context, meta AdminActionMeta, req dtos.AdminTestTemplateRequest) (*dtos.AdminTestTemplateResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	if s.llm == nil {
+		return nil, constants.ErrInternalServerError.WithMessage("llm provider is not configured")
+	}
+
+	startTime := time.Now()
+	structuredRes, err := s.llm.GenerateStructured(ctx, req.Prompt, req.SampleTranscript, req.OutputSchema)
+	executionTimeMs := time.Since(startTime).Milliseconds()
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	var parsedJSON interface{}
+	if structuredRes.RawJSON != "" {
+		_ = json.Unmarshal([]byte(structuredRes.RawJSON), &parsedJSON)
+	}
+
+	return &dtos.AdminTestTemplateResponse{
+		RawOutput:       structuredRes.RawJSON,
+		ParsedJSON:      parsedJSON,
+		ExecutionTimeMs: executionTimeMs,
+		TokensUsed:      structuredRes.Usage.TotalTokens,
+	}, nil
+}
+
 
 
 

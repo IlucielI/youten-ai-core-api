@@ -441,6 +441,70 @@ func TestAdminUpdateTemplateRequest_Validate(t *testing.T) {
 	})
 }
 
+func TestAdminTestTemplateRequest_Validate(t *testing.T) {
+	t.Run("valid payload succeeds", func(t *testing.T) {
+		req := AdminTestTemplateRequest{
+			Prompt:           "Extract action items",
+			SampleTranscript: "Speaker A: Let's do this tomorrow.",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action_items": map[string]interface{}{"type": "array"},
+				},
+			},
+		}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected valid payload, got error: %v", err)
+		}
+	})
+
+	t.Run("empty prompt returns error", func(t *testing.T) {
+		req := AdminTestTemplateRequest{
+			Prompt:           "",
+			SampleTranscript: "Sample transcript",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"summary": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty prompt, got nil")
+		}
+	})
+
+	t.Run("empty sample transcript returns error", func(t *testing.T) {
+		req := AdminTestTemplateRequest{
+			Prompt:           "Prompt",
+			SampleTranscript: "",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"summary": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty sample transcript, got nil")
+		}
+	})
+
+	t.Run("invalid schema returns error", func(t *testing.T) {
+		req := AdminTestTemplateRequest{
+			Prompt:           "Prompt",
+			SampleTranscript: "Sample",
+			OutputSchema: map[string]interface{}{
+				"type": "array",
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for non-object schema, got nil")
+		}
+	})
+}
+
+
 
 
 

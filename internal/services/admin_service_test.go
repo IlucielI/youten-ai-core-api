@@ -620,5 +620,135 @@ func TestService_AdminCreateTemplate(t *testing.T) {
 	})
 }
 
+func TestService_AdminUpdateTemplate(t *testing.T) {
+	t.Run("increments version when prompt changes", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		tmplID := uuid.New()
+		now := time.Now()
+
+		req := dtos.AdminUpdateTemplateRequest{
+			Name:        "Minutes of Meeting V2",
+			Description: "Updated description",
+			Prompt:      "New prompt text for meeting minutes",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+
+		// 1. FindTemplateByID
+		mock.ExpectQuery(`SELECT \* FROM "templates" WHERE id = \$1 ORDER BY "templates"\."id" LIMIT \$2`).
+			WithArgs(tmplID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "name", "description", "prompt", "output_schema", "version", "is_active", "created_at", "updated_at"}).
+				AddRow(tmplID, "MOM", "Old Name", "Old Desc", "Old prompt", []byte(`{"type":"object","properties":{"title":{"type":"string"}}}`), 1, true, now, now))
+
+		// 2. UpdateTemplate
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "templates" SET`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// 3. Create audit log
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminUpdateTemplate(context.Background(), AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "127.0.0.1",
+			UserAgent: "test-agent",
+		}, tmplID, req)
+
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Version != 2 {
+			t.Errorf("expected version 2 after prompt change, got %d", resp.Version)
+		}
+		if resp.Name != req.Name {
+			t.Errorf("expected name %s, got %s", req.Name, resp.Name)
+		}
+	})
+
+	t.Run("maintains version when prompt and schema are unchanged", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		tmplID := uuid.New()
+		now := time.Now()
+
+		req := dtos.AdminUpdateTemplateRequest{
+			Name:        "Renamed Template",
+			Description: "New description",
+			Prompt:      "Same prompt",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "templates" WHERE id = \$1 ORDER BY "templates"\."id" LIMIT \$2`).
+			WithArgs(tmplID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "name", "description", "prompt", "output_schema", "version", "is_active", "created_at", "updated_at"}).
+				AddRow(tmplID, "MOM", "Old Name", "Old Desc", "Same prompt", []byte(`{"properties":{"title":{"type":"string"}},"type":"object"}`), 3, true, now, now))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "templates" SET`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminUpdateTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, tmplID, req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Version != 3 {
+			t.Errorf("expected version to remain 3, got %d", resp.Version)
+		}
+	})
+
+	t.Run("template not found returns ErrNotFound", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		tmplID := uuid.New()
+
+		req := dtos.AdminUpdateTemplateRequest{
+			Name:   "Name",
+			Prompt: "Prompt",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "templates" WHERE id = \$1 ORDER BY "templates"\."id" LIMIT \$2`).
+			WithArgs(tmplID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		_, err := svc.AdminUpdateTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, tmplID, req)
+		if err == nil {
+			t.Fatal("expected ErrNotFound, got nil")
+		}
+	})
+}
+
+
 
 

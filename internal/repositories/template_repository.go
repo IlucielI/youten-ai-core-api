@@ -41,6 +41,11 @@ func (r *Repositories) FindTemplateByID(ctx context.Context, id uuid.UUID) (*mod
 	return &tmpl, nil
 }
 
+// UpdateTemplate saves updates to an existing prompt template.
+func (r *Repositories) UpdateTemplate(ctx context.Context, tmpl *models.Template) error {
+	return r.db.WithContext(ctx).Save(tmpl).Error
+}
+
 // ListActiveTemplates lists all enabled prompt templates ordered by name.
 func (r *Repositories) ListActiveTemplates(ctx context.Context) ([]models.Template, error) {
 	var list []models.Template

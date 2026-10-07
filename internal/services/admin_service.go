@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"reflect"
 	"strings"
 
 	"github.com/google/uuid"
@@ -453,5 +454,83 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta AdminActionMeta,
 		UpdatedAt:    tmpl.UpdatedAt,
 	}, nil
 }
+
+// AdminUpdateTemplate modifies an existing prompt template and increments version when prompt or schema changes.
+func (s *Service) AdminUpdateTemplate(ctx context.Context, meta AdminActionMeta, templateID uuid.UUID, req dtos.AdminUpdateTemplateRequest) (*dtos.AdminTemplateItem, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	tmpl, err := s.repo.FindTemplateByID(ctx, templateID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("template not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	promptChanged := tmpl.Prompt != req.Prompt
+	schemaChanged := !reflect.DeepEqual(map[string]interface{}(tmpl.OutputSchema), req.OutputSchema)
+
+	if promptChanged || schemaChanged {
+		tmpl.Version = tmpl.Version + 1
+	}
+
+	tmpl.Name = req.Name
+	tmpl.Description = req.Description
+	tmpl.Prompt = req.Prompt
+	tmpl.OutputSchema = models.JSONMap(req.OutputSchema)
+	if req.IsActive != nil {
+		tmpl.IsActive = *req.IsActive
+	}
+
+	if err := s.repo.UpdateTemplate(ctx, tmpl); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	tmplIDStr := tmpl.ID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "template.update",
+		Entity:   "template",
+		EntityID: &tmplIDStr,
+		Payload: models.JSONMap{
+			"category_key":   tmpl.CategoryKey,
+			"name":           tmpl.Name,
+			"version":        tmpl.Version,
+			"prompt_changed": promptChanged,
+			"schema_changed": schemaChanged,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AdminTemplateItem{
+		ID:           tmpl.ID,
+		CategoryKey:  tmpl.CategoryKey,
+		Name:         tmpl.Name,
+		Description:  tmpl.Description,
+		Prompt:       tmpl.Prompt,
+		OutputSchema: map[string]interface{}(tmpl.OutputSchema),
+		Version:      tmpl.Version,
+		IsActive:     tmpl.IsActive,
+		CreatedAt:    tmpl.CreatedAt,
+		UpdatedAt:    tmpl.UpdatedAt,
+	}, nil
+}
+
 
 

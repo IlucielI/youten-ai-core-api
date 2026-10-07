@@ -292,4 +292,12 @@ routes:
     admin_auth: true
     admin_permission: "templates:write"
 
+  # Admin update prompt template (CMS).
+  - method: PUT
+    path: /v1/admin/templates/:id
+    handler: AdminUpdateTemplate
+    admin_auth: true
+    admin_permission: "templates:write"
+
+
 

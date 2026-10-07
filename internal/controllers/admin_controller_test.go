@@ -530,4 +530,88 @@ func TestControllers_AdminListTemplates(t *testing.T) {
 	})
 }
 
+func TestControllers_AdminCreateTemplate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 201", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "templates" WHERE category_key = \$1 ORDER BY "templates"\."id" LIMIT \$2`).
+			WithArgs("TUTORIAL", 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "templates"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/templates", ctrls.AdminCreateTemplate)
+
+		body := `{"category_key": "TUTORIAL", "name": "Tutorial", "prompt": "Extract steps", "output_schema": {"type": "object", "properties": {"steps": {"type": "array"}}}}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/templates", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("validation error returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/templates", ctrls.AdminCreateTemplate)
+
+		body := `{"category_key": "", "name": ""}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/templates", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("missing admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/templates", ctrls.AdminCreateTemplate)
+
+		body := `{"category_key": "TUTORIAL", "name": "Tutorial", "prompt": "Extract steps", "output_schema": {"type": "object", "properties": {"steps": {"type": "array"}}}}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/templates", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+}
+
+
+
 

@@ -285,3 +285,11 @@ routes:
     admin_auth: true
     admin_permission: "templates:read"
 
+  # Admin create prompt template (CMS).
+  - method: POST
+    path: /v1/admin/templates
+    handler: AdminCreateTemplate
+    admin_auth: true
+    admin_permission: "templates:write"
+
+

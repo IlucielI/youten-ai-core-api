@@ -382,3 +382,76 @@ func (s *Service) AdminListTemplates(ctx context.Context) (*dtos.AdminTemplateLi
 	return &dtos.AdminTemplateListResponse{Items: items}, nil
 }
 
+// AdminCreateTemplate creates a new prompt template and writes an administrative audit log.
+func (s *Service) AdminCreateTemplate(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateTemplateRequest) (*dtos.AdminTemplateItem, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	existing, err := s.repo.FindAnyTemplateByCategoryKey(ctx, req.CategoryKey)
+	if err == nil && existing != nil {
+		return nil, constants.ErrConflict.WithMessage("template with this category key already exists")
+	}
+
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	tmpl := &models.Template{
+		CategoryKey:  req.CategoryKey,
+		Name:         req.Name,
+		Description:  req.Description,
+		Prompt:       req.Prompt,
+		OutputSchema: models.JSONMap(req.OutputSchema),
+		Version:      1,
+		IsActive:     isActive,
+	}
+
+	if err := s.repo.CreateTemplate(ctx, tmpl); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	tmplIDStr := tmpl.ID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "template.create",
+		Entity:   "template",
+		EntityID: &tmplIDStr,
+		Payload: models.JSONMap{
+			"category_key": tmpl.CategoryKey,
+			"name":         tmpl.Name,
+			"version":      tmpl.Version,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AdminTemplateItem{
+		ID:           tmpl.ID,
+		CategoryKey:  tmpl.CategoryKey,
+		Name:         tmpl.Name,
+		Description:  tmpl.Description,
+		Prompt:       tmpl.Prompt,
+		OutputSchema: map[string]interface{}(tmpl.OutputSchema),
+		Version:      tmpl.Version,
+		IsActive:     tmpl.IsActive,
+		CreatedAt:    tmpl.CreatedAt,
+		UpdatedAt:    tmpl.UpdatedAt,
+	}, nil
+}
+
+

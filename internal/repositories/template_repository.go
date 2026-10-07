@@ -18,6 +18,20 @@ func (r *Repositories) FindTemplateByCategoryKey(ctx context.Context, categoryKe
 	return &tmpl, nil
 }
 
+// FindAnyTemplateByCategoryKey retrieves a template by category key regardless of active state.
+func (r *Repositories) FindAnyTemplateByCategoryKey(ctx context.Context, categoryKey string) (*models.Template, error) {
+	var tmpl models.Template
+	if err := r.db.WithContext(ctx).First(&tmpl, "category_key = ?", categoryKey).Error; err != nil {
+		return nil, err
+	}
+	return &tmpl, nil
+}
+
+// CreateTemplate inserts a new prompt template.
+func (r *Repositories) CreateTemplate(ctx context.Context, tmpl *models.Template) error {
+	return r.db.WithContext(ctx).Create(tmpl).Error
+}
+
 // FindTemplateByID retrieves a template by its UUID.
 func (r *Repositories) FindTemplateByID(ctx context.Context, id uuid.UUID) (*models.Template, error) {
 	var tmpl models.Template

@@ -294,4 +294,88 @@ func TestAdminTemplateListResponse(t *testing.T) {
 	}
 }
 
+func TestAdminCreateTemplateRequest_Validate(t *testing.T) {
+	t.Run("valid payload succeeds", func(t *testing.T) {
+		req := AdminCreateTemplateRequest{
+			CategoryKey: "TUTORIAL",
+			Name:        "Tutorial Video",
+			Description: "Educational tutorial",
+			Prompt:      "Extract tutorial steps...",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"steps": map[string]interface{}{"type": "array"},
+				},
+			},
+		}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected valid payload, got error: %v", err)
+		}
+	})
+
+	t.Run("empty category key returns error", func(t *testing.T) {
+		req := AdminCreateTemplateRequest{
+			CategoryKey: "",
+			Name:        "Name",
+			Prompt:      "Prompt",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty category key, got nil")
+		}
+	})
+
+	t.Run("empty prompt returns error", func(t *testing.T) {
+		req := AdminCreateTemplateRequest{
+			CategoryKey: "TEST",
+			Name:        "Name",
+			Prompt:      "   ",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty prompt, got nil")
+		}
+	})
+
+	t.Run("non-object schema type returns error", func(t *testing.T) {
+		req := AdminCreateTemplateRequest{
+			CategoryKey: "TEST",
+			Name:        "Name",
+			Prompt:      "Prompt",
+			OutputSchema: map[string]interface{}{
+				"type": "array",
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for non-object schema type, got nil")
+		}
+	})
+
+	t.Run("empty properties returns error", func(t *testing.T) {
+		req := AdminCreateTemplateRequest{
+			CategoryKey: "TEST",
+			Name:        "Name",
+			Prompt:      "Prompt",
+			OutputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty schema properties, got nil")
+		}
+	})
+}
+
+
 

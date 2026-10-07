@@ -542,4 +542,83 @@ func TestService_AdminListTemplates(t *testing.T) {
 	})
 }
 
+func TestService_AdminCreateTemplate(t *testing.T) {
+	t.Run("success creates template and writes audit log", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		req := dtos.AdminCreateTemplateRequest{
+			CategoryKey: "TUTORIAL",
+			Name:        "Tutorial Video",
+			Description: "Tutorial breakdown",
+			Prompt:      "Extract tutorial steps...",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"steps": map[string]interface{}{"type": "array"},
+				},
+			},
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "templates" WHERE category_key = \$1 ORDER BY "templates"\."id" LIMIT \$2`).
+			WithArgs(req.CategoryKey, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "templates"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminCreateTemplate(context.Background(), AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "127.0.0.1",
+			UserAgent: "test-agent",
+		}, req)
+
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.CategoryKey != req.CategoryKey {
+			t.Errorf("expected CategoryKey %s, got %s", req.CategoryKey, resp.CategoryKey)
+		}
+		if resp.Version != 1 {
+			t.Errorf("expected version 1, got %d", resp.Version)
+		}
+	})
+
+	t.Run("duplicate category key returns ErrConflict", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		req := dtos.AdminCreateTemplateRequest{
+			CategoryKey: "MOM",
+			Name:        "Meeting",
+			Prompt:      "Prompt",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "templates" WHERE category_key = \$1 ORDER BY "templates"\."id" LIMIT \$2`).
+			WithArgs(req.CategoryKey, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key"}).AddRow(uuid.New(), req.CategoryKey))
+
+		_, err := svc.AdminCreateTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		if err == nil {
+			t.Fatal("expected conflict error, got nil")
+		}
+	})
+}
+
+
 

@@ -57,6 +57,25 @@ func (r *Repositories) ListRoles(ctx context.Context) ([]models.AdminRole, error
 	return roles, nil
 }
 
+// FindRoleByName retrieves an administrative role by its unique name.
+func (r *Repositories) FindRoleByName(ctx context.Context, name string) (*models.AdminRole, error) {
+	var role models.AdminRole
+	if err := r.db.WithContext(ctx).First(&role, "name = ?", name).Error; err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
+// CreateRole inserts a new administrative role.
+func (r *Repositories) CreateRole(ctx context.Context, role *models.AdminRole) error {
+	return r.db.WithContext(ctx).Create(role).Error
+}
+
+// UpdateRole saves updates to an existing administrative role.
+func (r *Repositories) UpdateRole(ctx context.Context, role *models.AdminRole) error {
+	return r.db.WithContext(ctx).Save(role).Error
+}
+
 // CreateAdminAuditLog logs an internal CMS administrative staff operation.
 func (r *Repositories) CreateAdminAuditLog(ctx context.Context, log *models.AdminAuditLog) error {
 	return r.db.WithContext(ctx).Create(log).Error

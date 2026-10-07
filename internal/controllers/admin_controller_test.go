@@ -350,3 +350,137 @@ func TestControllers_AdminListRoles(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_AdminCreateRole(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 201", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE name = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs("Support Agent", 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_roles"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/roles", ctrls.AdminCreateRole)
+
+		body := `{"name": "Support Agent", "description": "Support role", "permissions": ["users:read"]}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/roles", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("validation error returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/roles", ctrls.AdminCreateRole)
+
+		body := `{"name": "", "permissions": []}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/roles", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+}
+
+func TestControllers_AdminUpdateRole(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE id = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs(roleID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Role A", "Old", []byte(`["users:read"]`), false, time.Now(), time.Now()))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE name = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs("Role B", 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "admin_roles" SET`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.PUT("/v1/admin/roles/:id", ctrls.AdminUpdateRole)
+
+		body := `{"name": "Role B", "description": "New", "permissions": ["users:read", "users:write"]}`
+		req := httptest.NewRequest(http.MethodPut, "/v1/admin/roles/"+roleID.String(), strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("invalid UUID returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.PUT("/v1/admin/roles/:id", ctrls.AdminUpdateRole)
+
+		req := httptest.NewRequest(http.MethodPut, "/v1/admin/roles/bad-uuid", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+}
+

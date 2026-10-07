@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
@@ -212,4 +213,145 @@ func (s *Service) AdminListRoles(ctx context.Context) (*dtos.AdminRoleListRespon
 	}
 
 	return &dtos.AdminRoleListResponse{Items: items}, nil
+}
+
+// AdminCreateRole creates a new custom administrative role and writes an audit log.
+func (s *Service) AdminCreateRole(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateRoleRequest) (*dtos.AdminRoleItem, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	existing, err := s.repo.FindRoleByName(ctx, req.Name)
+	if err == nil && existing != nil {
+		return nil, constants.ErrConflict.WithMessage("role with this name already exists")
+	}
+
+	permsJSON, err := json.Marshal(req.Permissions)
+	if err != nil {
+		return nil, constants.ErrBadRequest.WithMessage("invalid permissions format")
+	}
+
+	role := &models.AdminRole{
+		Name:        req.Name,
+		Description: req.Description,
+		Permissions: permsJSON,
+		IsSystem:    false,
+	}
+
+	if err := s.repo.CreateRole(ctx, role); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	roleIDStr := role.ID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "role.create",
+		Entity:   "role",
+		EntityID: &roleIDStr,
+		Payload: models.JSONMap{
+			"name":        role.Name,
+			"permissions": req.Permissions,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AdminRoleItem{
+		ID:          role.ID,
+		Name:        role.Name,
+		Description: role.Description,
+		Permissions: req.Permissions,
+		IsSystem:    role.IsSystem,
+		CreatedAt:   role.CreatedAt,
+		UpdatedAt:   role.UpdatedAt,
+	}, nil
+}
+
+// AdminUpdateRole modifies an existing administrative role (protecting system roles).
+func (s *Service) AdminUpdateRole(ctx context.Context, meta AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateRoleRequest) (*dtos.AdminRoleItem, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	role, err := s.repo.FindRoleByID(ctx, roleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("role not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if role.IsSystem {
+		return nil, constants.ErrForbidden.WithMessage("system roles cannot be modified")
+	}
+
+	if role.Name != req.Name {
+		existing, err := s.repo.FindRoleByName(ctx, req.Name)
+		if err == nil && existing != nil && existing.ID != role.ID {
+			return nil, constants.ErrConflict.WithMessage("role with this name already exists")
+		}
+	}
+
+	permsJSON, err := json.Marshal(req.Permissions)
+	if err != nil {
+		return nil, constants.ErrBadRequest.WithMessage("invalid permissions format")
+	}
+
+	role.Name = req.Name
+	role.Description = req.Description
+	role.Permissions = permsJSON
+
+	if err := s.repo.UpdateRole(ctx, role); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	roleIDStr := role.ID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "role.update",
+		Entity:   "role",
+		EntityID: &roleIDStr,
+		Payload: models.JSONMap{
+			"name":        role.Name,
+			"permissions": req.Permissions,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AdminRoleItem{
+		ID:          role.ID,
+		Name:        role.Name,
+		Description: role.Description,
+		Permissions: req.Permissions,
+		IsSystem:    role.IsSystem,
+		CreatedAt:   role.CreatedAt,
+		UpdatedAt:   role.UpdatedAt,
+	}, nil
 }

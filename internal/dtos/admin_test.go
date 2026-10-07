@@ -181,3 +181,83 @@ func TestAdminRoleListResponse(t *testing.T) {
 		t.Error("expected is_system true")
 	}
 }
+
+func TestAdminCreateRoleRequest_Validate(t *testing.T) {
+	t.Run("valid payload succeeds", func(t *testing.T) {
+		req := AdminCreateRoleRequest{
+			Name:        "Support Agent",
+			Description: "Customer support role",
+			Permissions: []string{"users:read", "recordings:read"},
+		}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+		if req.Name != "Support Agent" {
+			t.Errorf("expected trimmed name, got %q", req.Name)
+		}
+	})
+
+	t.Run("empty name returns error", func(t *testing.T) {
+		req := AdminCreateRoleRequest{
+			Name:        "   ",
+			Permissions: []string{"users:read"},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty name, got nil")
+		}
+	})
+
+	t.Run("empty permissions returns error", func(t *testing.T) {
+		req := AdminCreateRoleRequest{
+			Name:        "Editor",
+			Permissions: []string{},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty permissions, got nil")
+		}
+	})
+
+	t.Run("blank permission item returns error", func(t *testing.T) {
+		req := AdminCreateRoleRequest{
+			Name:        "Editor",
+			Permissions: []string{"users:read", "  "},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for blank permission item, got nil")
+		}
+	})
+}
+
+func TestAdminUpdateRoleRequest_Validate(t *testing.T) {
+	t.Run("valid payload succeeds", func(t *testing.T) {
+		req := AdminUpdateRoleRequest{
+			Name:        "Senior Support",
+			Description: "Updated description",
+			Permissions: []string{"users:read", "users:write"},
+		}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+	})
+
+	t.Run("empty name returns error", func(t *testing.T) {
+		req := AdminUpdateRoleRequest{
+			Name:        "",
+			Permissions: []string{"users:read"},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty name, got nil")
+		}
+	})
+
+	t.Run("empty permissions returns error", func(t *testing.T) {
+		req := AdminUpdateRoleRequest{
+			Name:        "Support",
+			Permissions: []string{},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty permissions, got nil")
+		}
+	})
+}
+

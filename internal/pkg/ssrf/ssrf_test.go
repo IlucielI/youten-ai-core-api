@@ -148,3 +148,33 @@ func TestSSRF_FetchMediaStream_BlocksPrivateTarget(t *testing.T) {
 	}
 }
 
+func TestSSRF_IsAllowedDomain(t *testing.T) {
+	allowed := []string{"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+
+	tests := []struct {
+		host     string
+		expected bool
+	}{
+		{"youtube.com", true},
+		{"www.youtube.com", true},
+		{"m.youtube.com", true},
+		{"youtu.be", true},
+		{"youtube.com:443", true},
+		{"attacker-youtube.com", false},
+		{"youtube.com.attacker.com", false},
+		{"sub.youtube.com", false}, // strict exact match prevents arbitrary subdomain hijacking
+		{"google.com", false},
+		{"", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.host, func(t *testing.T) {
+			res := ssrf.IsAllowedDomain(tc.host, allowed)
+			if res != tc.expected {
+				t.Errorf("IsAllowedDomain(%q) = %v; want %v", tc.host, res, tc.expected)
+			}
+		})
+	}
+}
+
+

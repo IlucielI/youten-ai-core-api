@@ -209,7 +209,115 @@ func (s *Service) ImportRecordingFromURL(
 		return nil, err
 	}
 
-	// 3. Securely fetch media stream via SSRF-safe HTTP client
+	// 3. Asynchronous Fast ACK path for supported media links (e.g. YouTube)
+	if s.mediaLinkExtractor != nil && s.mediaLinkExtractor.Supports(req.URL) {
+		canonicalURL := req.URL
+		if norm, err := s.mediaLinkExtractor.NormalizeURL(req.URL); err == nil && norm != "" {
+			canonicalURL = norm
+		}
+
+		// Re-verify normalized/canonical URL against anti-SSRF protections
+		if _, err := ssrf.ValidateURL(ctx, canonicalURL); err != nil {
+			return nil, constants.ErrBadRequest.WithMessage("canonical import URL failed security validation: " + err.Error())
+		}
+
+		recID := uuid.New()
+		now := time.Now().UTC()
+
+		mediaID, err := s.mediaLinkExtractor.ExtractID(canonicalURL)
+		var safeMediaID string
+		if err == nil && mediaID != "" {
+			safeMediaID = sanitizeMediaID(mediaID)
+		}
+
+		title := strings.TrimSpace(req.Title)
+		if title == "" {
+			if safeMediaID != "" {
+				title = fmt.Sprintf("Media Import (%s)", safeMediaID)
+			} else {
+				title = "Media Import"
+			}
+		}
+
+		template := strings.TrimSpace(req.Template)
+		if template == "" {
+			template = constants.TemplateKeyGeneral
+		}
+		language := strings.TrimSpace(req.Language)
+		if language == "" {
+			language = "auto"
+		}
+
+		tokenBytes := make([]byte, 32)
+		if _, err := rand.Read(tokenBytes); err != nil {
+			return nil, fmt.Errorf("failed to generate ownership token: %w", err)
+		}
+		ownershipToken := hex.EncodeToString(tokenBytes)
+
+		safeFilename := fmt.Sprintf("import_%s.m4a", recID.String()[:8])
+		if safeMediaID != "" {
+			safeFilename = fmt.Sprintf("import_%s.m4a", safeMediaID)
+		}
+
+		rec := models.Recording{
+			BaseModel: models.BaseModel{
+				ID:        recID,
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+			Title:            title,
+			OriginalFilename: safeFilename,
+			SourceType:       constants.RecordingSourceTypeLink,
+			Status:           models.RecordingStatusQueued,
+			SelectedTemplate: template,
+			OutputLanguage:   language,
+			OwnershipToken:   ownershipToken,
+			ConsentGiven:     true,
+			ConsentVersion:   "1.0",
+			ConsentAt:        &now,
+		}
+
+		applyRecordingOwnership(ctx, &rec, now)
+
+		if err := s.repo.CreateRecording(ctx, &rec); err != nil {
+			return nil, fmt.Errorf("failed to persist recording: %w", err)
+		}
+
+		if s.publisher != nil {
+			importPayload := payload.RecordingPipelinePayload{
+				RecordingID: rec.ID,
+				URL:         canonicalURL,
+				Template:    rec.SelectedTemplate,
+				Language:    rec.OutputLanguage,
+				Stage:       models.RecordingStatusQueued,
+				Status:      models.RecordingStatusQueued,
+			}
+			if err := s.publisher.Publish(ctx, constants.TopicRecordingImport, importPayload); err != nil {
+				// Compensating transaction: purge un-queued recording if publish fails
+				_ = s.repo.DeleteRecording(ctx, rec.ID)
+				return nil, fmt.Errorf("failed to publish recording import event: %w", err)
+			}
+		}
+
+		respDTO := &dtos.RecordingUploadResponse{
+			ID:               rec.ID.String(),
+			Title:            rec.Title,
+			OriginalFilename: rec.OriginalFilename,
+			FileSizeBytes:    0,
+			Status:           rec.Status,
+			SelectedTemplate: rec.SelectedTemplate,
+			OutputLanguage:   rec.OutputLanguage,
+			IsGuest:          rec.IsGuest,
+			CreatedAt:        rec.CreatedAt,
+		}
+		if rec.IsGuest {
+			respDTO.OwnershipToken = &rec.OwnershipToken
+		}
+
+		return respDTO, nil
+	}
+
+	// 4. Securely fetch direct media stream via SSRF-safe HTTP client
 	fetchCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -468,5 +576,17 @@ func applyRecordingOwnership(ctx context.Context, rec *models.Recording, now tim
 		rec.ExpiresAt = &expiresAt
 	}
 }
+
+// sanitizeMediaID strips any characters not belonging to [a-zA-Z0-9_-] to ensure safe filenames.
+func sanitizeMediaID(raw string) string {
+	var sb strings.Builder
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
 
 

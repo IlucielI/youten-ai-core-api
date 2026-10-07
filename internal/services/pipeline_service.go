@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
+	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/sse"
 	"code-base-golang/internal/templates"
@@ -41,6 +42,80 @@ func (s *Service) failAndLog(ctx context.Context, recordingID uuid.UUID, errCode
 	if failErr := s.FailRecording(ctx, recordingID, errCode, errMsg); failErr != nil {
 		log.Printf("[PIPELINE WARN] recording %s: FailRecording failed: %v", recordingID.String(), failErr)
 	}
+}
+
+// ProcessImport handles asynchronous downloading and extracting of remote media streams (e.g. YouTube).
+func (s *Service) ProcessImport(ctx context.Context, p payload.RecordingPipelinePayload) error {
+	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
+	if err != nil {
+		return fmt.Errorf("failed to find recording: %w", err)
+	}
+
+	// Update status to EXTRACTING and emit progress
+	if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusExtracting, nil, nil); err != nil {
+		return fmt.Errorf("failed to update recording status: %w", err)
+	}
+	s.publishProgress(recording.ID, models.RecordingStatusExtracting, nil, nil)
+
+	targetURL := strings.TrimSpace(p.URL)
+	if targetURL == "" {
+		errMsg := "no remote media URL provided for import"
+		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, errMsg)
+		return errors.New(errMsg)
+	}
+
+	if _, err := ssrf.ValidateURL(ctx, targetURL); err != nil {
+		errMsg := fmt.Sprintf("remote media URL failed security validation: %v", err)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, errMsg)
+		return errors.New(errMsg)
+	}
+
+	if s.mediaLinkExtractor == nil {
+		errMsg := "media link extractor is not configured"
+		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, errMsg)
+		return errors.New(errMsg)
+	}
+
+	importCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	extracted, err := s.mediaLinkExtractor.ExtractAudio(importCtx, targetURL)
+	if err != nil {
+		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, fmt.Sprintf("media import failed: %v", err))
+		return fmt.Errorf("media import failed: %w", err)
+	}
+	defer extracted.Close()
+
+	if extracted.SizeBytes > MaxImportAudioSizeBytes {
+		errMsg := fmt.Sprintf("extracted audio exceeds maximum allowed size (%d bytes)", MaxImportAudioSizeBytes)
+		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, errMsg)
+		return errors.New(errMsg)
+	}
+
+	bucket := s.cfg.S3BucketName
+	destAudioKey := fmt.Sprintf("%s/%s/audio.mp3", constants.StoragePrefixRecordings, recording.ID.String())
+	uploadErr := s.storage.Upload(importCtx, bucket, destAudioKey, extracted.Stream, extracted.SizeBytes, "audio/mpeg")
+	if uploadErr != nil {
+		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, fmt.Sprintf("failed to upload extracted audio: %v", uploadErr))
+		return fmt.Errorf("failed to upload extracted audio: %w", uploadErr)
+	}
+
+	if err := s.repo.UpdateRecordingAudioURL(ctx, recording.ID, destAudioKey, extracted.DurationSeconds); err != nil {
+		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, fmt.Sprintf("failed to update audio url: %v", err))
+		return fmt.Errorf("failed to update audio url: %w", err)
+	}
+
+	// Update title with extracted title if default
+	if extracted.Title != "" && (recording.Title == "" || strings.HasPrefix(recording.Title, "Media Import") || strings.HasPrefix(recording.Title, "YouTube (") || strings.HasPrefix(recording.Title, "YouTube Video")) {
+		recording.Title = extracted.Title
+		_ = s.repo.UpdateRecording(ctx, recording)
+	}
+
+	// Dispatch next stage: TRANSCRIBE
+	nextPayload := p
+	nextPayload.AudioPath = destAudioKey
+	nextPayload.Stage = models.RecordingStatusTranscribing
+	return s.publishEvent(ctx, constants.TopicRecordingTranscribe, nextPayload)
 }
 
 // ProcessExtraction handles the audio extraction stage of the recording pipeline.

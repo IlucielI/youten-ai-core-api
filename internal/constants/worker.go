@@ -9,6 +9,7 @@ const (
 	TopicRecordingIndex      = "recording.index"
 	TopicRecordingAnalytics  = "recording.analytics"
 	TopicRecordingChapterize = "recording.chapterize"
+	TopicRecordingImport     = "recording.import"
 	TopicRecordingCompleted  = "recording.completed"
 	TopicRecordingFailed     = "recording.failed"
 

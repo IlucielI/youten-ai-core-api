@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/adapters/s3"
 	"code-base-golang/internal/adapters/smtp"
 	"code-base-golang/internal/adapters/stt"
+	"code-base-golang/internal/adapters/youtube"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/pkg/migration"
@@ -129,6 +130,11 @@ func main() {
 		audioExtractor = audio.NewMock()
 	}
 
+	ytExtractor, err := youtube.NewExtractor()
+	if err != nil {
+		log.Printf("[WARN] Failed to initialize YouTube media extractor: %v", err)
+	}
+
 	repo := repositories.New(db.DB(), rdb)
 	var publisher services.EventPublisher
 	if broker != nil {
@@ -140,6 +146,9 @@ func main() {
 		WithLLM(llmAdapter).
 		WithEmbedding(embeddingAdapter).
 		WithAudioExtractor(audioExtractor)
+	if ytExtractor != nil {
+		svc.WithMediaLinkExtractor(ytExtractor)
+	}
 	ctrls := controllers.New(cfg, svc)
 	router := routes.NewRouter(cfg, ctrls, svc)
 

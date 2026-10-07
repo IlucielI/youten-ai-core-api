@@ -24,9 +24,10 @@ type Service struct {
 	stt            STTProvider
 	llm            LLMProvider
 	embedding      EmbeddingProvider
-	audioExtractor AudioExtractor
-	mediaFetcher   MediaFetcher
-	sseHub         sse.Hub
+	audioExtractor     AudioExtractor
+	mediaLinkExtractor MediaLinkExtractor
+	mediaFetcher       MediaFetcher
+	sseHub             sse.Hub
 }
 
 // New creates a new unified service container.
@@ -153,6 +154,23 @@ func (s *Service) WithAudioExtractor(ext AudioExtractor) *Service {
 func (s *Service) AudioExtractor() AudioExtractor {
 	return s.audioExtractor
 }
+
+// SetMediaLinkExtractor allows injecting or overriding external media link extractor.
+func (s *Service) SetMediaLinkExtractor(ext MediaLinkExtractor) {
+	s.mediaLinkExtractor = ext
+}
+
+// WithMediaLinkExtractor fluently sets the external media link extractor.
+func (s *Service) WithMediaLinkExtractor(ext MediaLinkExtractor) *Service {
+	s.mediaLinkExtractor = ext
+	return s
+}
+
+// MediaLinkExtractor returns the underlying external media link extractor.
+func (s *Service) MediaLinkExtractor() MediaLinkExtractor {
+	return s.mediaLinkExtractor
+}
+
 
 // SetMediaFetcher allows injecting or overriding external media streaming fetcher (used in testing).
 func (s *Service) SetMediaFetcher(fetcher MediaFetcher) {

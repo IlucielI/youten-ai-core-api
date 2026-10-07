@@ -45,6 +45,7 @@ func TestWorkerServer_RegisterWorker(t *testing.T) {
 	expectedTopics := []string{
 		constants.TopicRecordingUploaded,
 		constants.TopicRecordingExtract,
+		constants.TopicRecordingImport,
 		constants.TopicRecordingTranscribe,
 		constants.TopicRecordingSummarize,
 		constants.TopicRecordingIndex,
@@ -67,6 +68,9 @@ func TestWorkerServer_Handlers_NilServiceOrBadJSON(t *testing.T) {
 	goodJSON := []byte(`{"recording_id":"43af1a3d-7891-4cd2-ad62-f1a9dd823c70"}`)
 
 	// When svc is nil
+	if server.HandleRecordingImport(ctx, goodJSON) {
+		t.Error("expected false when svc is nil")
+	}
 	if server.HandleRecordingExtract(ctx, goodJSON) {
 		t.Error("expected false when svc is nil")
 	}
@@ -87,6 +91,9 @@ func TestWorkerServer_Handlers_NilServiceOrBadJSON(t *testing.T) {
 	}
 
 	// Bad JSON
+	if server.HandleRecordingImport(ctx, badJSON) {
+		t.Error("expected false on bad json")
+	}
 	if server.HandleRecordingExtract(ctx, badJSON) {
 		t.Error("expected false on bad json")
 	}

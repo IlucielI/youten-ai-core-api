@@ -148,6 +148,11 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	sttLang := ""
 	if recording.OutputLanguage != "" && strings.ToLower(recording.OutputLanguage) != "auto" {
 		sttLang = recording.OutputLanguage
+	} else if recording.DetectedLanguage != nil && *recording.DetectedLanguage != "" && strings.ToLower(*recording.DetectedLanguage) != "auto" {
+		sttLang = *recording.DetectedLanguage
+	}
+	if sttLang == "" || strings.ToLower(sttLang) == "auto" {
+		sttLang = "id"
 	}
 
 	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", dtos.STTOptions{
@@ -178,7 +183,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	for _, seg := range sttResult.Segments {
 		cleanText := strings.TrimSpace(seg.Text)
 		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
-		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" {
+		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" || norm == "intro" {
 			continue
 		}
 		prefilteredSegments = append(prefilteredSegments, seg)
@@ -194,10 +199,9 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 	for _, seg := range sttResult.Segments {
 		cleanText := strings.TrimSpace(seg.Text)
 		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
-		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" {
+		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" || norm == "intro" {
 			continue
 		}
-		cleanText = sanitizeEntityNames(cleanText)
 
 		wordsJSON, _ := json.Marshal(seg.Words)
 		speaker := seg.SpeakerLabel
@@ -976,7 +980,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 					}
 					segments[it.Index].SpeakerName = speakerName
 					if strings.TrimSpace(it.Text) != "" {
-						segments[it.Index].Text = sanitizeEntityNames(strings.TrimSpace(it.Text))
+						segments[it.Index].Text = strings.TrimSpace(it.Text)
 					}
 				}
 			}
@@ -1011,28 +1015,6 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			}
 		}
 	}
-}
-
-// sanitizeEntityNames normalizes phonetic mishearings and variations of known official entities.
-func sanitizeEntityNames(text string) string {
-	res := text
-	gunadarmaVariations := []string{
-		"Universitas Bunda Dharma",
-		"Universitas Bunda Darma",
-		"Universitas Bina Dana",
-		"Universitas Bunga dan Rumah",
-		"Universitas Gunadharma",
-		"Universitas Bunga Dharma",
-		"Gunadharma",
-	}
-	for _, v := range gunadarmaVariations {
-		if v == "Gunadharma" {
-			res = strings.ReplaceAll(res, v, "Gunadarma")
-		} else {
-			res = strings.ReplaceAll(res, v, "Universitas Gunadarma")
-		}
-	}
-	return res
 }
 
 // isGenericSpeakerLabel returns true if the name is empty or a generic placeholder (e.g. "Speaker 0", "Pembicara 1").

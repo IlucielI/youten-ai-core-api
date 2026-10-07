@@ -9,12 +9,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"code-base-golang/docs"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/routes"
 	"code-base-golang/internal/services"
+	"gopkg.in/yaml.v3"
 )
 
 func TestRouter_HealthCheck(t *testing.T) {
@@ -660,3 +662,85 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected POST /v1/waitlist/bot to be public and not return 401 Unauthorized, got %d", wWaitlist.Code)
 	}
 }
+
+func TestRouter_OpenAPISpecCompleteness(t *testing.T) {
+	var spec struct {
+		OpenAPI string                            `yaml:"openapi"`
+		Info    map[string]interface{}            `yaml:"info"`
+		Paths   map[string]map[string]interface{} `yaml:"paths"`
+		Components struct {
+			Schemas map[string]interface{} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+
+	if err := yaml.Unmarshal(docs.OpenAPISpec, &spec); err != nil {
+		t.Fatalf("failed to parse openapi.yaml: %v", err)
+	}
+
+	if spec.OpenAPI != "3.0.3" {
+		t.Errorf("expected openapi: 3.0.3, got %s", spec.OpenAPI)
+	}
+	if len(spec.Paths) == 0 {
+		t.Fatalf("expected non-empty paths in openapi.yaml")
+	}
+	if len(spec.Components.Schemas) == 0 {
+		t.Fatalf("expected non-empty components.schemas in openapi.yaml")
+	}
+
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls, services.New(cfg, nil, nil))
+
+	for _, route := range router.Routes() {
+		if route.Path == "/openapi.yaml" || route.Path == "/docs" {
+			continue
+		}
+
+		// Normalize Gin param syntax (:param) to OpenAPI path parameter syntax ({param})
+		openApiPath := route.Path
+		openApiPath = strings.ReplaceAll(openApiPath, ":id", "{id}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":token", "{token}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":segmentId", "{segmentId}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":versionId", "{versionId}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":commentId", "{commentId}")
+
+		methods, exists := spec.Paths[openApiPath]
+		if !exists {
+			t.Errorf("route %s %s is registered in routes.yaml but missing from openapi.yaml (expected path %s)",
+				route.Method, route.Path, openApiPath)
+			continue
+		}
+
+		httpMethod := strings.ToLower(route.Method)
+		if _, ok := methods[httpMethod]; !ok {
+			t.Errorf("route %s %s is missing HTTP method %s in openapi.yaml path %s",
+				route.Method, route.Path, httpMethod, openApiPath)
+		}
+	}
+
+	// Reverse check: verify that every operation in openapi.yaml maps back to a registered Gin route
+	registeredRoutes := make(map[string]map[string]bool)
+	for _, route := range router.Routes() {
+		openApiPath := route.Path
+		openApiPath = strings.ReplaceAll(openApiPath, ":id", "{id}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":token", "{token}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":segmentId", "{segmentId}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":versionId", "{versionId}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":commentId", "{commentId}")
+
+		if registeredRoutes[openApiPath] == nil {
+			registeredRoutes[openApiPath] = make(map[string]bool)
+		}
+		registeredRoutes[openApiPath][strings.ToLower(route.Method)] = true
+	}
+
+	for path, methods := range spec.Paths {
+		for method := range methods {
+			if !registeredRoutes[path][method] {
+				t.Errorf("openapi.yaml documents operation %s %s which is not registered in routes.yaml",
+					strings.ToUpper(method), path)
+			}
+		}
+	}
+}
+

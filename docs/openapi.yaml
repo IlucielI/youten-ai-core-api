@@ -1,27 +1,56 @@
 openapi: 3.0.3
 info:
-  title: Go Core API Boilerplate
+  title: Youten AI Core API
   version: 1.0.0
   description: |
-    Production-grade Go REST API boilerplate built with Gin, GORM, PostgreSQL, Redis, and S3.
+    Enterprise-grade End-to-End AI Audio & Video Intelligence Platform Core API.
     Features:
-    - Clean Architecture with strict separation of concerns
-    - Infrastructure adapters (PostgreSQL, Redis, S3/MinIO)
-    - Comprehensive Health & Diagnostics checks
-    - HTTP Middlewares (JWT Auth, HTTP Basic Auth, Client Metadata, Structured Logger, Panic Recovery)
-    - Unified API Response Envelope & Error Handling
+    - Clean Architecture with strict separation of concerns (Gin, PostgreSQL, Redis, RabbitMQ, S3, MinIO)
+    - User Authentication & Session Security (JWT, Refresh Rotation, Password Recovery, Quotas)
+    - Audio/Video Ingestion (Direct S3 Presigned Uploads, Anti-SSRF URL Import)
+    - Async Processing Pipeline with DLQ Retry and Real-time SSE Typewriter Streaming
+    - Semantic Search & RAG Chat powered by pgvector Cosine Distance Embeddings
+    - Multi-speaker Diarization & Versioned AI Summary Templates
+    - Full Administrative Management & CMS Integration (Users, Quotas, RBAC Roles, Prompt Sandbox, DLQ, System Flags, Abuse Reports, Audit Trails, Cost Oversight)
 
 servers:
   - url: /
     description: Primary API Server
 
+tags:
+  - name: System
+    description: Liveness, readiness, diagnostics, and OpenAPI documentation
+  - name: Auth
+    description: User authentication, JWT tokens, password reset, and profiles
+  - name: Recordings
+    description: Media uploads, metadata ingestion, processing status, and lifecycle
+  - name: Intelligence & Search
+    description: Cross-recording semantic vector search and AI chat with workspace memory
+  - name: Collaboration
+    description: Shared viewing, inline comments, speaker labeling, and exports
+  - name: Admin Users
+    description: Administrative user management, quota overrides, and session revocation
+  - name: Admin RBAC
+    description: Role-based access control definitions and permission assignment
+  - name: Admin Templates
+    description: Management and testing of AI summary prompt templates and sandbox
+  - name: Admin Pipeline
+    description: Dead-letter queue (DLQ) inspection and async job reprocessing
+  - name: Admin System
+    description: Global system configuration, feature toggles, and maintenance mode
+  - name: Admin Moderation
+    description: Abuse report triage, content moderation, and ticket resolution
+  - name: Admin Audit
+    description: Immutable staff audit trails and administrative activity logs
+  - name: Admin Analytics
+    description: System telemetry overview and STT/LLM cost estimation oversight
+
 paths:
   /v1/health:
     get:
+      tags: [System]
       summary: Health & Diagnostics Check
       description: Returns service uptime, application version, git commit hash, and connection status for PostgreSQL, Redis, and S3.
-      tags:
-        - System
       responses:
         '200':
           description: Health check diagnostics payload
@@ -30,8 +59,1398 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
 
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register User
+      description: Creates a new user account and returns the profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login User
+      description: Authenticates user credentials and issues an access and refresh token pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh Access Token
+      description: Rotates an expired access token using a valid refresh token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout User
+      security:
+        - BearerAuth: []
+      description: Terminates the current session and revokes its refresh token.
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Forgot Password
+      description: Dispatches a one-time password reset token to the registered email address.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset instructions sent if account exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset Password
+      description: Updates account password using a valid one-time reset token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get Profile
+      security:
+        - BearerAuth: []
+      description: Returns the authenticated user's profile and quota details.
+      responses:
+        '200':
+          description: User profile details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Auth]
+      summary: Update Profile
+      security:
+        - BearerAuth: []
+      description: Updates display name or profile preferences.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/auth/change-password:
+    put:
+      tags: [Auth]
+      summary: Change Password
+      security:
+        - BearerAuth: []
+      description: Changes the current account password after verifying current credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/recordings/presign-upload:
+    post:
+      tags: [Recordings]
+      summary: Generate Presigned Upload URL
+      description: Generates a direct-to-S3 presigned PUT URL for media uploads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignUploadRequest'
+      responses:
+        '200':
+          description: Presigned URL payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignUploadResponse'
+
+  /v1/recordings/presign:
+    post:
+      tags: [Recordings]
+      summary: Generate Presigned Upload URL (Alias)
+      description: Alias endpoint for generating a direct-to-S3 presigned PUT URL for media uploads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignUploadRequest'
+      responses:
+        '200':
+          description: Presigned URL payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignUploadResponse'
+
+  /v1/recordings/upload:
+    post:
+      tags: [Recordings]
+      summary: Ingest Recording Metadata
+      description: Confirms S3 upload and kicks off the asynchronous processing pipeline.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRecordingRequest'
+      responses:
+        '201':
+          description: Recording ingested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingDetailResponse'
+
+  /v1/recordings/confirm-upload:
+    post:
+      tags: [Recordings]
+      summary: Confirm Recording Upload (Alias)
+      description: Alias endpoint confirming S3 upload and initiating asynchronous processing pipeline.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRecordingRequest'
+      responses:
+        '201':
+          description: Recording ingested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingDetailResponse'
+
+  /v1/recordings/import-url:
+    post:
+      tags: [Recordings]
+      summary: Import Recording from URL
+      description: Downloads external media (YouTube or direct audio/video) with SSRF defense.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportURLRequest'
+      responses:
+        '202':
+          description: Import job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingDetailResponse'
+
+  /v1/recordings/search:
+    get:
+      tags: [Intelligence & Search]
+      summary: Cross-Recording Semantic Vector Search
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Semantic search match results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchRecordingsResponse'
+
+  /v1/recordings/ask:
+    post:
+      tags: [Intelligence & Search]
+      summary: Workspace Memory Multi-Recording AI Chat
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskWorkspaceRequest'
+      responses:
+        '200':
+          description: Grounded workspace answer with source citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskWorkspaceResponse'
+
+  /v1/speakers:
+    get:
+      tags: [Collaboration]
+      summary: Workspace Speakers Directory
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Aggregated speakers directory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeakersListResponse'
+
+  /v1/recordings:
+    get:
+      tags: [Recordings]
+      summary: List User Recordings
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated recordings list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRecordingsResponse'
+
+  /v1/recordings/{id}:
+    get:
+      tags: [Recordings]
+      summary: Get Recording Detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Recording full detail including transcript and summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Recordings]
+      summary: Soft Delete Recording
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Recording deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/claim:
+    post:
+      tags: [Recordings]
+      summary: Claim Guest Recording
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Recording ownership transferred
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/claim:
+    post:
+      tags: [Recordings]
+      summary: Bulk Claim Guest Recordings
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkClaimRequest'
+      responses:
+        '200':
+          description: Recordings claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/share:
+    patch:
+      tags: [Collaboration]
+      summary: Toggle Public Share Link
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleShareRequest'
+      responses:
+        '200':
+          description: Share settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleShareResponse'
+
+  /v1/recordings/shared/{token}:
+    get:
+      tags: [Collaboration]
+      summary: View Shared Recording (Public)
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Read-only recording view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/recordings/{id}/progress:
+    get:
+      tags: [Recordings]
+      summary: Stream Pipeline Progress SSE
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Server-sent event stream (text/event-stream)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/recordings/{id}/retry:
+    post:
+      tags: [Recordings]
+      summary: Smart Retry Failed Pipeline Stage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Pipeline retry queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/chat:
+    post:
+      tags: [Intelligence & Search]
+      summary: Grounded RAG AI Chat (SSE Stream)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingChatRequest'
+      responses:
+        '200':
+          description: Server-sent event typewriter tokens (text/event-stream)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/recordings/{id}/speakers:
+    put:
+      tags: [Collaboration]
+      summary: Rename Transcript Speakers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameSpeakersRequest'
+      responses:
+        '200':
+          description: Speakers renamed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/segments/{segmentId}:
+    patch:
+      tags: [Collaboration]
+      summary: Edit Transcript Segment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: segmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSegmentRequest'
+      responses:
+        '200':
+          description: Segment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/regenerate:
+    post:
+      tags: [Recordings]
+      summary: Regenerate Summary with Template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegenerateSummaryRequest'
+      responses:
+        '202':
+          description: Summary regeneration job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/summaries:
+    get:
+      tags: [Recordings]
+      summary: List Summary Versions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Summary versions list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryVersionsResponse'
+
+  /v1/recordings/{id}/summaries/{versionId}/activate:
+    patch:
+      tags: [Recordings]
+      summary: Activate Summary Version
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active summary version updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/comments:
+    get:
+      tags: [Collaboration]
+      summary: List Inline Comments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Inline comments list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InlineCommentsResponse'
+    post:
+      tags: [Collaboration]
+      summary: Create Inline Comment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInlineCommentRequest'
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InlineCommentItem'
+
+  /v1/recordings/{id}/comments/{commentId}:
+    delete:
+      tags: [Collaboration]
+      summary: Delete Inline Comment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Comment deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/recordings/{id}/export:
+    get:
+      tags: [Collaboration]
+      summary: Export Recording & Summary PDF/Markdown
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [pdf, markdown, json]
+            default: pdf
+      responses:
+        '200':
+          description: Exported document
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: object
+
+  /v1/waitlist/bot:
+    post:
+      tags: [Collaboration]
+      summary: Join Voice Bot Beta Waitlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotWaitlistRequest'
+      responses:
+        '201':
+          description: Waitlist joined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /v1/admin/users:
+    get:
+      tags: [Admin Users]
+      summary: Admin List Users
+      security:
+        - AdminAuth: []
+      description: Returns a paginated list of all users with search and status filtering (requires users:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated users list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/users/{id}/quota:
+    patch:
+      tags: [Admin Users]
+      summary: Admin Override User Quota
+      security:
+        - AdminAuth: []
+      description: Overrides a user's daily transcription quota minutes (requires users:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOverrideQuotaRequest'
+      responses:
+        '200':
+          description: Quota updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/users/{id}/revoke-sessions:
+    post:
+      tags: [Admin Users]
+      summary: Admin Revoke User Sessions
+      security:
+        - AdminAuth: []
+      description: Forces logout by invalidating all active refresh tokens for the given user (requires users:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/roles:
+    get:
+      tags: [Admin RBAC]
+      summary: Admin List Roles
+      security:
+        - AdminAuth: []
+      description: Lists all RBAC roles with associated permissions (requires roles:read).
+      responses:
+        '200':
+          description: Roles list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin RBAC]
+      summary: Admin Create Role
+      security:
+        - AdminAuth: []
+      description: Creates a new RBAC role with permissions (requires roles:write).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateRoleRequest'
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/roles/{id}:
+    put:
+      tags: [Admin RBAC]
+      summary: Admin Update Role
+      security:
+        - AdminAuth: []
+      description: Updates role name, description, and assigned permissions (requires roles:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateRoleRequest'
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/templates:
+    get:
+      tags: [Admin Templates]
+      summary: Admin List Prompt Templates
+      security:
+        - AdminAuth: []
+      description: Lists all AI summary prompt templates (requires templates:read).
+      responses:
+        '200':
+          description: Prompt templates list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTemplateListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin Templates]
+      summary: Admin Create Prompt Template
+      security:
+        - AdminAuth: []
+      description: Creates a new prompt template category (requires templates:write).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateTemplateRequest'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTemplateItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/templates/{id}:
+    put:
+      tags: [Admin Templates]
+      summary: Admin Update Prompt Template
+      security:
+        - AdminAuth: []
+      description: Updates template prompt, schema, and increments version (requires templates:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateTemplateRequest'
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTemplateItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/templates/test:
+    post:
+      tags: [Admin Templates]
+      summary: Admin Test Prompt Template Sandbox
+      security:
+        - AdminAuth: []
+      description: Executes an ephemeral prompt sandbox test against sample transcript text with token and latency metrics (requires templates:write).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTestTemplateRequest'
+      responses:
+        '200':
+          description: Sandbox execution results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTestTemplateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/pipeline/dlq:
+    get:
+      tags: [Admin Pipeline]
+      summary: Admin Inspect DLQ Pipeline
+      security:
+        - AdminAuth: []
+      description: Inspects failed or stuck pipeline jobs across all stages (requires ops:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: stage
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: DLQ pipeline messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDLQResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/pipeline/dlq/retry:
+    post:
+      tags: [Admin Pipeline]
+      summary: Admin Reprocess DLQ Job
+      security:
+        - AdminAuth: []
+      description: Resumes a dead-lettered job from a specified pipeline stage (requires ops:write).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRetryDLQRequest'
+      responses:
+        '200':
+          description: DLQ job re-enqueued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/config:
+    get:
+      tags: [Admin System]
+      summary: Admin Get System Configuration
+      security:
+        - AdminAuth: []
+      description: Returns global maintenance mode status and dynamic feature flags (requires config:read).
+      responses:
+        '200':
+          description: System configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSystemConfigResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [Admin System]
+      summary: Admin Update System Configuration
+      security:
+        - AdminAuth: []
+      description: Updates maintenance mode and feature flags with audit logging (requires config:write).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateSystemConfigRequest'
+      responses:
+        '200':
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSystemConfigResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/reports:
+    get:
+      tags: [Admin Moderation]
+      summary: Admin List Abuse Reports
+      security:
+        - AdminAuth: []
+      description: Lists user-submitted abuse reports and content flags (requires moderation:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, REVIEWED, RESOLVED, DISMISSED]
+      responses:
+        '200':
+          description: Paginated abuse reports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminReportListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/reports/{id}/resolve:
+    post:
+      tags: [Admin Moderation]
+      summary: Admin Resolve Abuse Report
+      security:
+        - AdminAuth: []
+      description: Resolves or dismisses an abuse report with moderation actions (requires moderation:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminResolveReportRequest'
+      responses:
+        '200':
+          description: Report resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/audit-logs:
+    get:
+      tags: [Admin Audit]
+      summary: Admin List Audit Logs
+      security:
+        - AdminAuth: []
+      description: Paginated immutable staff audit trail with filtering by action, admin, and date (requires audit:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: admin_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: entity_type
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Paginated staff audit logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAuditLogListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/stats/overview:
+    get:
+      tags: [Admin Analytics]
+      summary: Admin System Overview Stats
+      security:
+        - AdminAuth: []
+      description: Aggregated telemetry metrics across users, recordings, and storage (requires analytics:read).
+      responses:
+        '200':
+          description: Telemetry overview metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsOverviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/stats/costs:
+    get:
+      tags: [Admin Analytics]
+      summary: Admin Cost Oversight Calculations
+      security:
+        - AdminAuth: []
+      description: Operational cost oversight calculating STT audio duration and LLM token usage estimates (requires analytics:read).
+      responses:
+        '200':
+          description: Cost oversight calculations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCostOversightResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Authenticated user JWT token
+    AdminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Authenticated admin staff JWT token
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters or payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BaseResponse'
+    Unauthorized:
+      description: Missing or expired authentication credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BaseResponse'
+    Forbidden:
+      description: Insufficient RBAC permission
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BaseResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BaseResponse'
+    Conflict:
+      description: Resource already exists or conflict detected
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BaseResponse'
+
   schemas:
+    BaseResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        code:
+          type: string
+          example: SUCCESS
+        message:
+          type: string
+          example: operation completed successfully
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-10-08T00:00:00Z'
+      required:
+        - status
+        - code
+        - message
+        - timestamp
+
     HealthServices:
       type: object
       properties:
@@ -57,7 +1476,7 @@ components:
       properties:
         version:
           type: string
-          example: 0.1.0
+          example: 1.0.0
         git_hash:
           type: string
           example: dev
@@ -73,49 +1492,764 @@ components:
         - services
 
     HealthResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          example: success
-        code:
-          type: string
-          example: SUCCESS
-        message:
-          type: string
-          example: operation completed successfully
-        data:
-          $ref: '#/components/schemas/HealthData'
-        timestamp:
-          type: string
-          format: date-time
-          example: '2026-09-26T12:00:00Z'
-      required:
-        - status
-        - code
-        - message
-        - data
-        - timestamp
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/HealthData'
 
-    BaseResponse:
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: StrongPassw0rd!
+        name:
+          type: string
+          example: Alex Doe
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: StrongPassw0rd!
+
+    RefreshTokenRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          example: eyJhbGciOi...
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token:
+          type: string
+        new_password:
+          type: string
+          format: password
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+
+    UpdateProfileRequest:
       type: object
       properties:
-        status:
+        name:
           type: string
-          example: fail
-          enum: [success, fail, error]
-        code:
+
+    AuthData:
+      type: object
+      properties:
+        access_token:
           type: string
-          example: BAD_REQUEST
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 900
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+            name:
+              type: string
+
+    AuthResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AuthData'
+
+    UserProfileResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                email:
+                  type: string
+                name:
+                  type: string
+                daily_quota_minutes:
+                  type: integer
+                remaining_quota_minutes:
+                  type: integer
+
+    PresignUploadRequest:
+      type: object
+      required: [filename, file_size_bytes, content_type]
+      properties:
+        filename:
+          type: string
+          example: meeting-recording.mp4
+        file_size_bytes:
+          type: integer
+          example: 25000000
+        content_type:
+          type: string
+          example: video/mp4
+
+    PresignUploadResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                upload_url:
+                  type: string
+                s3_key:
+                  type: string
+                expires_in_seconds:
+                  type: integer
+
+    UploadRecordingRequest:
+      type: object
+      required: [s3_key, title]
+      properties:
+        s3_key:
+          type: string
+        title:
+          type: string
+        duration_seconds:
+          type: number
+        file_size_bytes:
+          type: integer
+
+    ImportURLRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          example: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+        title:
+          type: string
+
+    RecordingDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+                status:
+                  type: string
+                  example: COMPLETED
+                duration_seconds:
+                  type: number
+                share_token:
+                  type: string
+                is_share_enabled:
+                  type: boolean
+
+    PaginatedRecordingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    PaginationMeta:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 100
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total_pages:
+          type: integer
+          example: 5
+
+    SearchRecordingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  recording_id:
+                    type: string
+                    format: uuid
+                  recording_title:
+                    type: string
+                  chunk_index:
+                    type: integer
+                  content:
+                    type: string
+                  similarity:
+                    type: number
+
+    AskWorkspaceRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          example: What were the key action items from last week's roadmap discussions?
+
+    AskWorkspaceResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                answer:
+                  type: string
+                citations:
+                  type: array
+                  items:
+                    type: object
+
+    SpeakersListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  total_meetings:
+                    type: integer
+                  total_talk_time_seconds:
+                    type: number
+
+    BulkClaimRequest:
+      type: object
+      required: [recording_ids]
+      properties:
+        recording_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ToggleShareRequest:
+      type: object
+      required: [is_share_enabled]
+      properties:
+        is_share_enabled:
+          type: boolean
+
+    ToggleShareResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                is_share_enabled:
+                  type: boolean
+                share_token:
+                  type: string
+
+    RecordingChatRequest:
+      type: object
+      required: [message]
+      properties:
         message:
           type: string
-          example: invalid request payload
-        timestamp:
+
+    RenameSpeakersRequest:
+      type: object
+      required: [mapping]
+      properties:
+        mapping:
+          type: object
+          additionalProperties:
+            type: string
+
+    UpdateSegmentRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
           type: string
-          format: date-time
-          example: '2026-09-26T12:00:00Z'
-      required:
-        - status
-        - code
-        - message
-        - timestamp
+
+    RegenerateSummaryRequest:
+      type: object
+      properties:
+        template_category:
+          type: string
+          example: EXECUTIVE
+        custom_instructions:
+          type: string
+
+    SummaryVersionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  version:
+                    type: integer
+                  is_active:
+                    type: boolean
+                  category:
+                    type: string
+
+    InlineCommentsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/InlineCommentItem'
+
+    InlineCommentItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        recording_id:
+          type: string
+          format: uuid
+        timestamp_seconds:
+          type: number
+        content:
+          type: string
+        author_name:
+          type: string
+
+    CreateInlineCommentRequest:
+      type: object
+      required: [timestamp_seconds, content]
+      properties:
+        timestamp_seconds:
+          type: number
+        content:
+          type: string
+
+    BotWaitlistRequest:
+      type: object
+      required: [email, platform]
+      properties:
+        email:
+          type: string
+          format: email
+        platform:
+          type: string
+          enum: [google_meet, zoom, microsoft_teams]
+        company_size:
+          type: string
+
+    AdminUserListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                  name:
+                    type: string
+                  status:
+                    type: string
+                  daily_quota_minutes:
+                    type: integer
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    AdminOverrideQuotaRequest:
+      type: object
+      required: [daily_quota_minutes]
+      properties:
+        daily_quota_minutes:
+          type: integer
+          minimum: 0
+
+    AdminRoleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminRoleItem'
+
+    AdminRoleItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    AdminCreateRoleRequest:
+      type: object
+      required: [name, permissions]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    AdminUpdateRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    AdminTemplateListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminTemplateItem'
+
+    AdminTemplateItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        category_key:
+          type: string
+        display_name:
+          type: string
+        system_prompt:
+          type: string
+        schema_definition:
+          type: object
+        version:
+          type: integer
+        is_default:
+          type: boolean
+
+    AdminCreateTemplateRequest:
+      type: object
+      required: [category_key, display_name, system_prompt, schema_definition]
+      properties:
+        category_key:
+          type: string
+        display_name:
+          type: string
+        system_prompt:
+          type: string
+        schema_definition:
+          type: object
+        is_default:
+          type: boolean
+
+    AdminUpdateTemplateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        system_prompt:
+          type: string
+        schema_definition:
+          type: object
+        is_default:
+          type: boolean
+
+    AdminTestTemplateRequest:
+      type: object
+      required: [system_prompt, schema_definition, sample_transcript]
+      properties:
+        system_prompt:
+          type: string
+        schema_definition:
+          type: object
+        sample_transcript:
+          type: string
+
+    AdminTestTemplateResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                output:
+                  type: object
+                latency_ms:
+                  type: integer
+                token_usage:
+                  type: object
+
+    AdminDLQResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  recording_id:
+                    type: string
+                    format: uuid
+                  title:
+                    type: string
+                  status:
+                    type: string
+                  error_reason:
+                    type: string
+                  retry_count:
+                    type: integer
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    AdminRetryDLQRequest:
+      type: object
+      required: [recording_id, stage]
+      properties:
+        recording_id:
+          type: string
+          format: uuid
+        stage:
+          type: string
+          enum: [AUDIO_EXTRACTION, TRANSCRIBING, SUMMARIZING, EMBEDDING, COMPLETED]
+
+    AdminSystemConfigResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                is_maintenance_mode:
+                  type: boolean
+                maintenance_message:
+                  type: string
+                feature_flags:
+                  type: object
+                  additionalProperties:
+                    type: boolean
+
+    AdminUpdateSystemConfigRequest:
+      type: object
+      properties:
+        is_maintenance_mode:
+          type: boolean
+        maintenance_message:
+          type: string
+        feature_flags:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    AdminReportListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  recording_id:
+                    type: string
+                    format: uuid
+                  reason:
+                    type: string
+                  details:
+                    type: string
+                  status:
+                    type: string
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    AdminResolveReportRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [DISMISS, SUSPEND_RECORDING]
+        resolution_notes:
+          type: string
+
+    AdminAuditLogListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  action:
+                    type: string
+                  entity_type:
+                    type: string
+                  entity_id:
+                    type: string
+                  admin_username:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    AdminStatsOverviewResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                total_users:
+                  type: integer
+                active_users:
+                  type: integer
+                total_recordings:
+                  type: integer
+                completed_recordings:
+                  type: integer
+                failed_recordings:
+                  type: integer
+                total_storage_bytes:
+                  type: integer
+                total_duration_seconds:
+                  type: number
+
+    AdminCostOversightResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                total_audio_minutes:
+                  type: number
+                stt_rate_per_minute_usd:
+                  type: number
+                estimated_stt_cost_usd:
+                  type: number
+                estimated_llm_tokens:
+                  type: integer
+                llm_rate_per_1k_tokens_usd:
+                  type: number
+                estimated_llm_cost_usd:
+                  type: number
+                total_estimated_cost_usd:
+                  type: number

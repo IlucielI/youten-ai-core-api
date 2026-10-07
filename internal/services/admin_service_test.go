@@ -1099,6 +1099,78 @@ func TestService_AdminSystemConfig(t *testing.T) {
 	})
 }
 
+func TestService_AdminListReports(t *testing.T) {
+	t.Run("success returns paginated reports", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		recID := uuid.New()
+		adminID := uuid.New()
+		now := time.Now()
+
+		// 1. Count query
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "reports" WHERE status = \$1`).
+			WithArgs("open").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		// 2. Select reports query
+		mock.ExpectQuery(`SELECT \* FROM "reports" WHERE status = \$1 ORDER BY created_at DESC LIMIT \$2`).
+			WithArgs("open", 10).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "recording_id", "reporter_type", "reporter_ref", "reason", "status", "resolution_note", "handled_by", "created_at", "updated_at",
+			}).AddRow(
+				repID, recID, "user", nil, "Abuse content", "open", nil, adminID, now, now,
+			))
+
+		// 3. Preload Handler
+		mock.ExpectQuery(`SELECT \* FROM "admin_users" WHERE "admin_users"\."id" = \$1 AND "admin_users"\."deleted_at" IS NULL`).
+			WithArgs(adminID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name"}).AddRow(adminID, "mod1", "Mod One"))
+
+		// 4. Preload Recording
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE "recordings"\."id" = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(recID, "Suspicious Recording"))
+
+
+		resp, err := svc.AdminListReports(context.Background(), dtos.AdminReportListQuery{
+			Status: "open",
+			Page:   1,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if len(resp.Items) != 1 {
+			t.Fatalf("expected 1 report item, got %d", len(resp.Items))
+		}
+		if resp.Items[0].RecordingTitle != "Suspicious Recording" {
+			t.Errorf("expected recording title 'Suspicious Recording', got %q", resp.Items[0].RecordingTitle)
+		}
+		if resp.Items[0].HandlerName == nil || *resp.Items[0].HandlerName != "Mod One" {
+			t.Errorf("expected handler name 'Mod One', got %v", resp.Items[0].HandlerName)
+		}
+		if resp.Pagination.TotalItems != 1 {
+			t.Errorf("expected total items 1, got %d", resp.Pagination.TotalItems)
+		}
+	})
+
+	t.Run("db failure returns error", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "reports"`).
+			WillReturnError(errors.New("db error"))
+
+		_, err := svc.AdminListReports(context.Background(), dtos.AdminReportListQuery{})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+
 
 
 

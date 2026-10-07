@@ -785,6 +785,60 @@ func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta AdminActionM
 	}, nil
 }
 
+// AdminListReports queries moderation reports with preloaded target and handler metadata.
+func (s *Service) AdminListReports(ctx context.Context, q dtos.AdminReportListQuery) (*dtos.AdminReportListResponse, error) {
+	q.SetDefaults()
+
+	offset := (q.Page - 1) * q.Limit
+	reports, total, err := s.repo.ListReportsByStatus(ctx, q.Status, q.Limit, offset)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.AdminReportListItem, 0, len(reports))
+	for _, r := range reports {
+		item := dtos.AdminReportListItem{
+			ID:             r.ID,
+			RecordingID:    r.RecordingID,
+			ReporterType:   r.ReporterType,
+			ReporterRef:    r.ReporterRef,
+			Reason:         r.Reason,
+			Status:         r.Status,
+			ResolutionNote: r.ResolutionNote,
+			HandledBy:      r.HandledBy,
+			CreatedAt:      r.CreatedAt,
+			UpdatedAt:      r.UpdatedAt,
+		}
+		if r.Recording != nil {
+			item.RecordingTitle = r.Recording.Title
+		}
+		if r.Handler != nil {
+			handlerName := r.Handler.FullName
+			if handlerName == "" {
+				handlerName = r.Handler.Username
+			}
+			item.HandlerName = &handlerName
+		}
+		items = append(items, item)
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	return &dtos.AdminReportListResponse{
+		Items: items,
+		Pagination: dtos.PaginationMeta{
+			CurrentPage: q.Page,
+			PageSize:    q.Limit,
+			TotalItems:  total,
+			TotalPages:  totalPages,
+		},
+	}, nil
+}
+
+
 
 
 

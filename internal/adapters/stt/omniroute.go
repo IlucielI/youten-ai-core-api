@@ -242,10 +242,13 @@ var _ services.STTProvider = (*OmniRouteSTT)(nil)
 
 var speakerPrefixRegex = regexp.MustCompile(`^(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:\s*(.*)$`)
 
+var speakerInlineRegex = regexp.MustCompile(`([^\n])\s*((?:\[)?(?:Speaker|Pembicara)\s*\d+(?:\])?\s*:)`)
+
 // parseDiarizedTextSegments splits text containing "Speaker X:" lines into structured segments
 // and computes proportional timestamps based on audio duration.
 func parseDiarizedTextSegments(fullText string, duration float64) []dtos.SegmentResult {
-	lines := strings.Split(fullText, "\n")
+	normalized := speakerInlineRegex.ReplaceAllString(fullText, "$1\n$2")
+	lines := strings.Split(normalized, "\n")
 	type parsedLine struct {
 		speaker string
 		text    string
@@ -258,10 +261,16 @@ func parseDiarizedTextSegments(fullText string, duration float64) []dtos.Segment
 			continue
 		}
 		if match := speakerPrefixRegex.FindStringSubmatch(trimmed); len(match) == 3 {
-			items = append(items, parsedLine{
-				speaker: strings.TrimSpace(match[1]),
-				text:    strings.TrimSpace(match[2]),
-			})
+			spk := strings.TrimSpace(match[1])
+			txt := strings.TrimSpace(match[2])
+			if len(items) > 0 && items[len(items)-1].speaker == spk {
+				items[len(items)-1].text += " " + txt
+			} else {
+				items = append(items, parsedLine{
+					speaker: spk,
+					text:    txt,
+				})
+			}
 		} else {
 			if len(items) > 0 {
 				items[len(items)-1].text += " " + trimmed

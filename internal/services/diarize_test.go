@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
 )
 
 func TestService_NeedsDiarization(t *testing.T) {
@@ -90,4 +91,56 @@ func TestService_DiarizeAndCorrectSegmentsWithLLM_EmptyOrNil(t *testing.T) {
 		t.Errorf("expected SpeakerLabel to remain unchanged")
 	}
 }
+
+func TestMergeConsecutiveSegments_FragmentedSentence(t *testing.T) {
+	input := []models.TranscriptSegment{
+		{SpeakerLabel: "Speaker 0", SpeakerName: "Putri", StartTime: 306.0, EndTime: 307.0, Text: "Yang saya ingin tanyakan,"},
+		{SpeakerLabel: "Speaker 0", SpeakerName: "Putri", StartTime: 307.0, EndTime: 308.0, Text: "apakah"},
+		{SpeakerLabel: "Speaker 0", SpeakerName: "Putri", StartTime: 308.0, EndTime: 310.0, Text: "job desk yang"},
+		{SpeakerLabel: "Speaker 0", SpeakerName: "Putri", StartTime: 310.0, EndTime: 313.0, Text: "Bapak berikan untuk saya nantinya?"},
+		{SpeakerLabel: "Speaker 1", SpeakerName: "Pewawancara", StartTime: 314.0, EndTime: 320.0, Text: "Untuk job desk kita membuka lowongan staff accounting."},
+	}
+
+	merged := mergeConsecutiveSegments(input, 3.0, 45.0)
+
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 merged segments (1 for Putri, 1 for Pewawancara), got %d", len(merged))
+	}
+
+	// Verify Putri's sentence is unified into one
+	expectedText := "Yang saya ingin tanyakan, apakah job desk yang Bapak berikan untuk saya nantinya?"
+	if merged[0].Text != expectedText {
+		t.Errorf("expected merged text %q, got %q", expectedText, merged[0].Text)
+	}
+	if merged[0].StartTime != 306.0 || merged[0].EndTime != 313.0 {
+		t.Errorf("expected timing 306.0 - 313.0, got %f - %f", merged[0].StartTime, merged[0].EndTime)
+	}
+	if merged[0].SpeakerName != "Putri" {
+		t.Errorf("expected speaker name 'Putri', got %q", merged[0].SpeakerName)
+	}
+	if merged[0].SequenceOrder != 1 {
+		t.Errorf("expected sequence order 1, got %d", merged[0].SequenceOrder)
+	}
+
+	// Verify Pewawancara is preserved as distinct turn
+	if merged[1].SpeakerName != "Pewawancara" || merged[1].SequenceOrder != 2 {
+		t.Errorf("expected Pewawancara with seq 2, got %+v", merged[1])
+	}
+}
+
+func TestMergeConsecutiveSegments_MaxDurationExceeded(t *testing.T) {
+	// If a single speaker talks for longer than maxDuration, split into multiple cards
+	input := []models.TranscriptSegment{
+		{SpeakerLabel: "Speaker 0", SpeakerName: "Putri", StartTime: 0.0, EndTime: 30.0, Text: "Part 1"},
+		{SpeakerLabel: "Speaker 0", SpeakerName: "Putri", StartTime: 30.0, EndTime: 55.0, Text: "Part 2"},
+	}
+
+	merged := mergeConsecutiveSegments(input, 3.0, 45.0)
+
+	// Since 30s + 25s = 55s > 45s, they should not be merged
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 segments due to max duration cap, got %d", len(merged))
+	}
+}
+
 

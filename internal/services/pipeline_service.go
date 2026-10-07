@@ -217,6 +217,9 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		})
 	}
 
+	// Merge consecutive segments from the same speaker to prevent sentence fragmentation
+	modelSegments = mergeConsecutiveSegments(modelSegments, 3.0, 45.0)
+
 	if err := s.repo.SaveTranscriptSegments(ctx, modelSegments); err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to save transcript segments: %v", err))
 		return fmt.Errorf("failed to save transcript segments: %w", err)
@@ -838,7 +841,11 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	for i, seg := range segments {
 		trimmed := strings.TrimSpace(seg.Text)
 		if trimmed != "" {
-			sb.WriteString(fmt.Sprintf("%d: %s\n", i, trimmed))
+			if strings.TrimSpace(seg.SpeakerLabel) != "" && strings.TrimSpace(seg.SpeakerLabel) != constants.DefaultSpeakerLabel {
+				sb.WriteString(fmt.Sprintf("%d [%s]: %s\n", i, strings.TrimSpace(seg.SpeakerLabel), trimmed))
+			} else {
+				sb.WriteString(fmt.Sprintf("%d: %s\n", i, trimmed))
+			}
 		}
 	}
 	if sb.Len() == 0 {
@@ -847,12 +854,12 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 	systemPrompt := "You are an expert audio transcription post-processor and diarization assistant. " +
 		"Given numbered dialogue lines from an audio recording:\n" +
-		"1. Analyze conversational turn-taking and identify speakers ('Speaker 0', 'Speaker 1', etc.).\n" +
-		"2. Detect the actual name of each speaker if introduced or addressed in the conversation (e.g. 'Budi', 'Sarah'). If a speaker's name is not explicitly mentioned or known, fallback exactly to their speaker label (e.g. 'Speaker 0').\n" +
+		"1. Preserve acoustic speaker labels ('Speaker 0', 'Speaker 1', etc.) when provided in brackets like [Speaker X], or analyze conversational turn-taking and assign speaker labels ('Speaker 0', 'Speaker 1', etc.) if brackets are missing.\n" +
+		"2. Detect the actual name of each speaker if introduced or addressed in the conversation (e.g. 'Putri', 'Sarah'). If a speaker's name is not explicitly mentioned or known, fallback exactly to their speaker label (e.g. 'Speaker 0', 'Speaker 1').\n" +
 		"3. Correct obvious phonetic ASR mishearings, slips, and homophones based on conversational context " +
-		"(e.g., 'bekerja di botol kanan' -> 'bekerja di bawah tekanan'). Do NOT alter valid numbers or invent new facts.\n" +
+		"(e.g., 'Universitas Bunda Dharma' -> 'Universitas Gunadarma', 'bekerja di botol kanan' -> 'bekerja di bawah tekanan'). Do NOT alter valid numbers or invent new facts.\n" +
 		"Return ONLY a valid JSON array of objects with keys 'index' (integer), 'speaker' (string), 'speaker_name' (string), and 'text' (string). " +
-		"Example: [{\"index\": 0, \"speaker\": \"Speaker 0\", \"speaker_name\": \"Speaker 0\", \"text\": \"...\"}]. Do not return any other text or markdown."
+		"Example: [{\"index\": 0, \"speaker\": \"Speaker 0\", \"speaker_name\": \"Putri\", \"text\": \"...\"}]. Do not return any other text or markdown."
 
 	temp := 0.0
 	chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
@@ -911,5 +918,65 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			}
 		}
 	}
+}
+
+// mergeConsecutiveSegments combines consecutive segments spoken by the same speaker
+// into a single cohesive utterance if the gap between them is within maxGapSeconds
+// and total merged duration does not exceed maxDurationSeconds.
+func mergeConsecutiveSegments(segments []models.TranscriptSegment, maxGapSeconds float64, maxDurationSeconds float64) []models.TranscriptSegment {
+	if len(segments) <= 1 {
+		return segments
+	}
+
+	var merged []models.TranscriptSegment
+	current := segments[0]
+
+	for i := 1; i < len(segments); i++ {
+		next := segments[i]
+		sameSpeaker := (current.SpeakerLabel != "" && current.SpeakerLabel == next.SpeakerLabel) ||
+			(current.SpeakerName != "" && current.SpeakerName == next.SpeakerName)
+
+		gap := next.StartTime - current.EndTime
+		currDuration := current.EndTime - current.StartTime
+		addedDuration := next.EndTime - next.StartTime
+
+		// Merge if same speaker, duration under limit, and gap is within allowed range (or overlapping)
+		if sameSpeaker && (currDuration+addedDuration <= maxDurationSeconds) && (gap <= maxGapSeconds || next.StartTime <= current.EndTime) {
+			if next.EndTime > current.EndTime {
+				current.EndTime = next.EndTime
+			}
+			current.Text = strings.TrimSpace(current.Text + " " + next.Text)
+			current.WordsData = mergeWordsJSON(current.WordsData, next.WordsData)
+		} else {
+			merged = append(merged, current)
+			current = next
+		}
+	}
+	merged = append(merged, current)
+
+	for i := range merged {
+		merged[i].SequenceOrder = i + 1
+	}
+	return merged
+}
+
+// mergeWordsJSON combines two JSON arrays of dtos.WordResult into one.
+func mergeWordsJSON(w1, w2 json.RawMessage) json.RawMessage {
+	var list1, list2 []dtos.WordResult
+	if len(w1) > 0 {
+		_ = json.Unmarshal(w1, &list1)
+	}
+	if len(w2) > 0 {
+		_ = json.Unmarshal(w2, &list2)
+	}
+	combined := append(list1, list2...)
+	if len(combined) == 0 {
+		return json.RawMessage("[]")
+	}
+	res, err := json.Marshal(combined)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	return json.RawMessage(res)
 }
 

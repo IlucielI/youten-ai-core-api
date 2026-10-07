@@ -938,6 +938,110 @@ func TestControllers_AdminRetryDLQJob(t *testing.T) {
 	})
 }
 
+func TestControllers_AdminSystemConfig(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("AdminGetSystemConfig success returns 200", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  uuid.New(),
+				Username: "sysadmin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.GET("/v1/admin/config", ctrls.AdminGetSystemConfig)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/config", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("AdminGetSystemConfig unauthorized without context", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.GET("/v1/admin/config", ctrls.AdminGetSystemConfig)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/config", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("AdminUpdateSystemConfig success returns 200 and logs audit", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "sysadmin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.PATCH("/v1/admin/config", ctrls.AdminUpdateSystemConfig)
+
+		body := `{"maintenance_mode": true, "allow_guest_uploads": false}`
+		req := httptest.NewRequest(http.MethodPatch, "/v1/admin/config", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("AdminUpdateSystemConfig validation error returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  uuid.New(),
+				Username: "sysadmin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.PATCH("/v1/admin/config", ctrls.AdminUpdateSystemConfig)
+
+		body := `{}`
+		req := httptest.NewRequest(http.MethodPatch, "/v1/admin/config", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+}
+
+
 
 
 

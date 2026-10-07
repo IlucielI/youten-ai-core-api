@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	_ "embed"
 	"log"
 	"reflect"
@@ -95,6 +96,12 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 		MaxAge:           cfg.CORSMaxAge,
 	}
 
+	// Central controllers container
+	if ctrls == nil {
+		ctrls = controllers.New(cfg, nil)
+	}
+	ctrlsVal := reflect.ValueOf(ctrls)
+
 	router.Use(
 		middlewares.StructuredLogger(),
 		middlewares.Recovery(),
@@ -102,13 +109,13 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 		middlewares.RateLimit(cfg.RateLimiterLimit, cfg.RateLimiterBurst, cfg.RateLimiterEnabled),
 		middlewares.ClientMeta(),
 		middlewares.BodyLimit(cfg.MaxRequestBodySize),
+		middlewares.MaintenanceMode(func(ctx context.Context) bool {
+			if ctrls != nil && ctrls.Service() != nil {
+				return ctrls.Service().IsMaintenanceMode(ctx)
+			}
+			return false
+		}),
 	)
-
-	// Central controllers container
-	if ctrls == nil {
-		ctrls = controllers.New(cfg, nil)
-	}
-	ctrlsVal := reflect.ValueOf(ctrls)
 
 	// Auth validator for protected routes
 	var validator middlewares.AuthValidator

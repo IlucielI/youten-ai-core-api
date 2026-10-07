@@ -378,6 +378,29 @@ type DLQRetryResponse struct {
 	RetriedAt   time.Time `json:"retried_at"`
 }
 
+// SystemConfigResponse represents active system feature flags and maintenance settings.
+type SystemConfigResponse struct {
+	MaintenanceMode    bool `json:"maintenance_mode"`
+	AllowGuestUploads  bool `json:"allow_guest_uploads"`
+	BotWaitlistEnabled bool `json:"bot_waitlist_enabled"`
+}
+
+// UpdateSystemConfigRequest defines payload for updating system flags.
+type UpdateSystemConfigRequest struct {
+	MaintenanceMode    *bool `json:"maintenance_mode,omitempty"`
+	AllowGuestUploads  *bool `json:"allow_guest_uploads,omitempty"`
+	BotWaitlistEnabled *bool `json:"bot_waitlist_enabled,omitempty"`
+}
+
+// Validate ensures at least one configuration flag is provided for update.
+func (r *UpdateSystemConfigRequest) Validate() error {
+	if r.MaintenanceMode == nil && r.AllowGuestUploads == nil && r.BotWaitlistEnabled == nil {
+		return errors.New("at least one configuration flag must be provided")
+	}
+	return nil
+}
+
+
 
 
 

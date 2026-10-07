@@ -560,6 +560,38 @@ func TestDLQRetryRequest_Validate(t *testing.T) {
 	})
 }
 
+func TestUpdateSystemConfigRequest_Validate(t *testing.T) {
+	t.Run("valid with flags set", func(t *testing.T) {
+		m := true
+		req := UpdateSystemConfigRequest{
+			MaintenanceMode: &m,
+		}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("empty request returns error", func(t *testing.T) {
+		req := UpdateSystemConfigRequest{}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty request, got nil")
+		}
+	})
+}
+
+func TestSystemConfigResponse(t *testing.T) {
+	resp := SystemConfigResponse{
+		MaintenanceMode:    true,
+		AllowGuestUploads:  false,
+		BotWaitlistEnabled: true,
+	}
+
+	if !resp.MaintenanceMode || resp.AllowGuestUploads || !resp.BotWaitlistEnabled {
+		t.Fatalf("unexpected SystemConfigResponse values: %+v", resp)
+	}
+}
+
+
 
 
 

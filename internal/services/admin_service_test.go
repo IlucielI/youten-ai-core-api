@@ -1042,6 +1042,64 @@ func TestService_AdminRetryDLQJob(t *testing.T) {
 	})
 }
 
+func TestService_AdminSystemConfig(t *testing.T) {
+	t.Run("AdminGetSystemConfig and IsMaintenanceMode", func(t *testing.T) {
+		svc, _, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		resp, err := svc.AdminGetSystemConfig(context.Background(), AdminActionMeta{})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected non-nil config response")
+		}
+
+		isMaint := svc.IsMaintenanceMode(context.Background())
+		if isMaint != resp.MaintenanceMode {
+			t.Errorf("expected isMaintenanceMode %v, got %v", resp.MaintenanceMode, isMaint)
+		}
+	})
+
+	t.Run("AdminUpdateSystemConfig updates flags and writes audit log", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		m := true
+		g := false
+		b := true
+		req := dtos.UpdateSystemConfigRequest{
+			MaintenanceMode:    &m,
+			AllowGuestUploads:  &g,
+			BotWaitlistEnabled: &b,
+		}
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminUpdateSystemConfig(context.Background(), AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "127.0.0.1",
+			UserAgent: "admin-browser",
+		}, req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if !resp.MaintenanceMode || resp.AllowGuestUploads || !resp.BotWaitlistEnabled {
+			t.Fatalf("unexpected updated flags: %+v", resp)
+		}
+
+		// Verify IsMaintenanceMode returns true now
+		if !svc.IsMaintenanceMode(context.Background()) {
+			t.Fatal("expected IsMaintenanceMode to be true after update")
+		}
+	})
+}
+
+
 
 
 

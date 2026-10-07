@@ -93,3 +93,67 @@ func TestGenerateTokenPair_And_Validate(t *testing.T) {
 		t.Fatal("expected error validating expired token, got nil")
 	}
 }
+
+func TestAdminToken(t *testing.T) {
+	cfg := config.Config{
+		AppName:             "YoutenAI",
+		JWTSecret:           "super-secret-admin-jwt-key-32bytes!",
+		JWTAccessExpiration: 15 * time.Minute,
+	}
+
+	adminID := uuid.New()
+	username := "admintest"
+
+	tokenStr, err := GenerateAdminToken(cfg, adminID, username)
+	if err != nil {
+		t.Fatalf("unexpected error generating admin token: %v", err)
+	}
+	if tokenStr == "" {
+		t.Fatal("expected non-empty admin token string")
+	}
+
+	claims, err := ValidateAdminToken(cfg, tokenStr)
+	if err != nil {
+		t.Fatalf("unexpected error validating admin token: %v", err)
+	}
+	if claims.AdminID != adminID {
+		t.Errorf("expected admin ID %s, got %s", adminID, claims.AdminID)
+	}
+	if claims.Username != username {
+		t.Errorf("expected username %s, got %s", username, claims.Username)
+	}
+	if claims.TokenType != constants.JWTTokenTypeAdminAccess {
+		t.Errorf("expected token type %s, got %s", constants.JWTTokenTypeAdminAccess, claims.TokenType)
+	}
+
+	// Validate with wrong secret fails
+	badCfg := cfg
+	badCfg.JWTSecret = "wrong-admin-secret"
+	_, err = ValidateAdminToken(badCfg, tokenStr)
+	if err == nil {
+		t.Fatal("expected error validating admin token with wrong secret, got nil")
+	}
+
+	// Validate expired admin token fails
+	expiredCfg := cfg
+	expiredCfg.JWTAccessExpiration = -1 * time.Minute
+	expiredToken, err := GenerateAdminToken(expiredCfg, adminID, username)
+	if err != nil {
+		t.Fatalf("unexpected error generating expired admin token: %v", err)
+	}
+	_, err = ValidateAdminToken(cfg, expiredToken)
+	if err == nil {
+		t.Fatal("expected error validating expired admin token, got nil")
+	}
+
+	// Passing standard access token to ValidateAdminToken fails
+	pair, err := GenerateTokenPair(cfg, adminID, "admin@test.com", "sess-1")
+	if err != nil {
+		t.Fatalf("unexpected error generating user token pair: %v", err)
+	}
+	_, err = ValidateAdminToken(cfg, pair.AccessToken)
+	if err == nil {
+		t.Fatal("expected error validating user token with ValidateAdminToken, got nil")
+	}
+}
+

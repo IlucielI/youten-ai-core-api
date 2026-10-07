@@ -136,3 +136,121 @@ func TestRequestID(t *testing.T) {
 	}
 }
 
+func TestAdminAuthUser(t *testing.T) {
+	ctx := context.Background()
+
+	// Initial empty
+	if _, ok := GetAdminAuthUser(ctx); ok {
+		t.Fatal("expected no admin user on empty ctx")
+	}
+	if _, ok := GetAdminAuthUserID(ctx); ok {
+		t.Fatal("expected no admin user id on empty ctx")
+	}
+	if IsAdminAuthenticated(ctx) {
+		t.Fatal("expected IsAdminAuthenticated to be false")
+	}
+
+	// Nil context check
+	if _, ok := GetAdminAuthUser(nil); ok {
+		t.Fatal("expected no admin user on nil ctx")
+	}
+	if _, ok := GetAdminAuthUserID(nil); ok {
+		t.Fatal("expected no admin user id on nil ctx")
+	}
+	if IsAdminAuthenticated(nil) {
+		t.Fatal("expected IsAdminAuthenticated(nil) to be false")
+	}
+
+	// Injected
+	adminID := uuid.New()
+	roleID := uuid.New()
+	expectedAdmin := AdminAuthUser{
+		AdminID:     adminID,
+		Username:    "superadmin",
+		FullName:    "Super Administrator",
+		RoleID:      roleID,
+		RoleName:    "Super Admin",
+		Permissions: []string{"*"},
+	}
+
+	ctx = WithAdminAuthUser(ctx, expectedAdmin)
+	admin, ok := GetAdminAuthUser(ctx)
+	if !ok {
+		t.Fatal("expected admin auth user to be present")
+	}
+	if admin.Username != expectedAdmin.Username || admin.AdminID != adminID {
+		t.Fatalf("expected admin %+v, got %+v", expectedAdmin, admin)
+	}
+
+	id, ok := GetAdminAuthUserID(ctx)
+	if !ok || id != adminID {
+		t.Fatalf("expected admin id %s, got %s", adminID, id)
+	}
+	if !IsAdminAuthenticated(ctx) {
+		t.Fatal("expected IsAdminAuthenticated to be true")
+	}
+
+	// Nil context injection
+	nilCtx := WithAdminAuthUser(nil, expectedAdmin)
+	admin, ok = GetAdminAuthUser(nilCtx)
+	if !ok || admin.AdminID != adminID {
+		t.Fatal("expected valid admin from WithAdminAuthUser(nil)")
+	}
+}
+
+func TestHasAdminPermission(t *testing.T) {
+	tests := []struct {
+		name         string
+		permissions  []string
+		requiredPerm string
+		expected     bool
+	}{
+		{
+			name:         "empty required perm always passes",
+			permissions:  []string{},
+			requiredPerm: "",
+			expected:     true,
+		},
+		{
+			name:         "wildcard gives access to all",
+			permissions:  []string{"*"},
+			requiredPerm: "users:read",
+			expected:     true,
+		},
+		{
+			name:         "exact match passes",
+			permissions:  []string{"users:read", "roles:read"},
+			requiredPerm: "users:read",
+			expected:     true,
+		},
+		{
+			name:         "prefix wildcard passes",
+			permissions:  []string{"users:*"},
+			requiredPerm: "users:write",
+			expected:     true,
+		},
+		{
+			name:         "unrelated permission fails",
+			permissions:  []string{"templates:read"},
+			requiredPerm: "users:read",
+			expected:     false,
+		},
+		{
+			name:         "different prefix fails",
+			permissions:  []string{"roles:*"},
+			requiredPerm: "users:delete",
+			expected:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			admin := AdminAuthUser{Permissions: tc.permissions}
+			result := HasAdminPermission(admin, tc.requiredPerm)
+			if result != tc.expected {
+				t.Errorf("HasAdminPermission(%v, %q) = %v; expected %v", tc.permissions, tc.requiredPerm, result, tc.expected)
+			}
+		})
+	}
+}
+

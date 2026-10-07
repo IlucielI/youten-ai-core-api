@@ -370,6 +370,42 @@ func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.A
 	}, nil
 }
 
+// AuthenticateAdmin validates an Admin JWT token, checks its validity and status, and returns the AdminAuthUser context metadata.
+func (s *Service) AuthenticateAdmin(ctx context.Context, tokenStr string) (*ctxmeta.AdminAuthUser, error) {
+	claims, err := jwt.ValidateAdminToken(s.cfg, tokenStr)
+	if err != nil || claims == nil {
+		return nil, constants.ErrInvalidToken
+	}
+	if claims.TokenType != constants.JWTTokenTypeAdminAccess {
+		return nil, constants.ErrInvalidToken
+	}
+
+	// Verify admin exists and is active in database
+	admin, err := s.repo.FindAdminByID(ctx, claims.AdminID)
+	if err != nil || admin == nil {
+		return nil, constants.ErrUnauthorized
+	}
+	if admin.Status != constants.UserStatusActive {
+		return nil, constants.ErrUserInactive
+	}
+
+	var permissions []string
+	roleName := ""
+	if admin.Role != nil {
+		roleName = admin.Role.Name
+		permissions = admin.Role.PermissionsList()
+	}
+
+	return &ctxmeta.AdminAuthUser{
+		AdminID:     admin.ID,
+		Username:    admin.Username,
+		FullName:    admin.FullName,
+		RoleID:      admin.RoleID,
+		RoleName:    roleName,
+		Permissions: permissions,
+	}, nil
+}
+
 // GetProfile retrieves the profile and dynamic daily quota calculation for an authenticated user.
 func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserProfileResponse, error) {
 	user, err := s.repo.FindUserByID(ctx, userID)

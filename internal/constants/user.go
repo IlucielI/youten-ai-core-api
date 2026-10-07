@@ -22,6 +22,7 @@ const (
 type JWTTokenType string
 
 const (
-	JWTTokenTypeAccess  JWTTokenType = "access"
-	JWTTokenTypeRefresh JWTTokenType = "refresh"
+	JWTTokenTypeAccess      JWTTokenType = "access"
+	JWTTokenTypeRefresh     JWTTokenType = "refresh"
+	JWTTokenTypeAdminAccess JWTTokenType = "admin_access"
 )

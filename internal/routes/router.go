@@ -20,12 +20,14 @@ var routesYAML []byte
 // routeItem defines a route mapping from routes.yaml.
 // The schema contract strictly uses lowercase keys: method, path, handler.
 type routeItem struct {
-	Method       string `yaml:"method"`
-	Path         string `yaml:"path"`
-	Handler      string `yaml:"handler"`
-	Auth         bool   `yaml:"auth,omitempty"`
-	OptionalAuth bool   `yaml:"optional_auth,omitempty"`
-	BasicAuth    bool   `yaml:"basic_auth,omitempty"`
+	Method          string `yaml:"method"`
+	Path            string `yaml:"path"`
+	Handler         string `yaml:"handler"`
+	Auth            bool   `yaml:"auth,omitempty"`
+	OptionalAuth    bool   `yaml:"optional_auth,omitempty"`
+	BasicAuth       bool   `yaml:"basic_auth,omitempty"`
+	AdminAuth       bool   `yaml:"admin_auth,omitempty"`
+	AdminPermission string `yaml:"admin_permission,omitempty"`
 }
 
 // UnmarshalYAML implements case-insensitive mapping for route keys (e.g. method/Method, path/Path).
@@ -59,6 +61,14 @@ func (r *routeItem) UnmarshalYAML(value *yaml.Node) error {
 		case "basic_auth":
 			if b, ok := v.(bool); ok {
 				r.BasicAuth = b
+			}
+		case "admin_auth":
+			if b, ok := v.(bool); ok {
+				r.AdminAuth = b
+			}
+		case "admin_permission":
+			if s, ok := v.(string); ok {
+				r.AdminPermission = s
 			}
 		}
 	}
@@ -102,8 +112,12 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 
 	// Auth validator for protected routes
 	var validator middlewares.AuthValidator
+	var adminValidator middlewares.AdminAuthValidator
 	if len(authValidator) > 0 && authValidator[0] != nil {
 		validator = authValidator[0]
+		if av, ok := validator.(middlewares.AdminAuthValidator); ok {
+			adminValidator = av
+		}
 	}
 
 	// Load and parse embedded YAML routes
@@ -135,6 +149,15 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 		}
 		if r.OptionalAuth {
 			handlers = append(handlers, middlewares.OptionalAuth(validator))
+		}
+		if r.AdminAuth || r.AdminPermission != "" {
+			if adminValidator == nil {
+				log.Fatalf("route configuration error: admin validator required for route %s %s", r.Method, r.Path)
+			}
+			handlers = append(handlers, middlewares.RequireAdminAuth(adminValidator))
+		}
+		if r.AdminPermission != "" {
+			handlers = append(handlers, middlewares.RequireAdminPermission(r.AdminPermission))
 		}
 		handlers = append(handlers, fn)
 

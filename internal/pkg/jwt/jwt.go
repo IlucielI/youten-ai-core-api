@@ -93,3 +93,55 @@ func ValidateToken(cfg config.Config, tokenStr string) (*CustomClaims, error) {
 
 	return claims, nil
 }
+
+// AdminClaims encapsulates admin identity payload fields in standard JWT claims.
+type AdminClaims struct {
+	AdminID   uuid.UUID               `json:"sub"`
+	Username  string                  `json:"username"`
+	TokenType constants.JWTTokenType `json:"type"` // "admin_access"
+	jwt.RegisteredClaims
+}
+
+// GenerateAdminToken signs and returns a new Admin Access Token for identity verification.
+func GenerateAdminToken(cfg config.Config, adminID uuid.UUID, username string) (string, error) {
+	now := time.Now()
+	exp := now.Add(cfg.JWTAccessExpiration)
+
+	claims := AdminClaims{
+		AdminID:   adminID,
+		Username:  username,
+		TokenType: constants.JWTTokenTypeAdminAccess,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   adminID.String(),
+			Issuer:    cfg.AppName,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(exp),
+		},
+	}
+	tokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return tokenObj.SignedString([]byte(cfg.JWTSecret))
+}
+
+// ValidateAdminToken parses and verifies the signature and expiration of an Admin JWT token string.
+func ValidateAdminToken(cfg config.Config, tokenStr string) (*AdminClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(cfg.JWTSecret), nil
+	})
+	if err != nil {
+		return nil, constants.ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*AdminClaims)
+	if !ok || !token.Valid {
+		return nil, constants.ErrInvalidToken
+	}
+
+	if claims.TokenType != constants.JWTTokenTypeAdminAccess {
+		return nil, constants.ErrInvalidToken
+	}
+
+	return claims, nil
+}

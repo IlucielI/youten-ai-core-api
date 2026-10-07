@@ -99,3 +99,67 @@ type AdminRoleItem struct {
 type AdminRoleListResponse struct {
 	Items []AdminRoleItem `json:"items"`
 }
+
+// AdminCreateRoleRequest defines the payload for creating a new administrative RBAC role.
+type AdminCreateRoleRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+}
+
+// Validate ensures role creation payload meets domain invariants.
+func (r *AdminCreateRoleRequest) Validate() error {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return errors.New("role name is required")
+	}
+	if len(r.Name) > 100 {
+		return errors.New("role name cannot exceed 100 characters")
+	}
+	r.Description = strings.TrimSpace(r.Description)
+	if len(r.Description) > 500 {
+		return errors.New("role description cannot exceed 500 characters")
+	}
+	if len(r.Permissions) == 0 {
+		return errors.New("at least one permission is required")
+	}
+	for i, p := range r.Permissions {
+		r.Permissions[i] = strings.TrimSpace(p)
+		if r.Permissions[i] == "" {
+			return errors.New("empty permission item is not allowed")
+		}
+	}
+	return nil
+}
+
+// AdminUpdateRoleRequest defines the payload for updating an administrative RBAC role.
+type AdminUpdateRoleRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+}
+
+// Validate ensures role update payload meets domain invariants.
+func (r *AdminUpdateRoleRequest) Validate() error {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return errors.New("role name is required")
+	}
+	if len(r.Name) > 100 {
+		return errors.New("role name cannot exceed 100 characters")
+	}
+	r.Description = strings.TrimSpace(r.Description)
+	if len(r.Description) > 500 {
+		return errors.New("role description cannot exceed 500 characters")
+	}
+	if len(r.Permissions) == 0 {
+		return errors.New("at least one permission is required")
+	}
+	for i, p := range r.Permissions {
+		r.Permissions[i] = strings.TrimSpace(p)
+		if r.Permissions[i] == "" {
+			return errors.New("empty permission item is not allowed")
+		}
+	}
+	return nil
+}

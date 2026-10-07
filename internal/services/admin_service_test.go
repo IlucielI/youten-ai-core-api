@@ -363,3 +363,144 @@ func TestService_AdminListRoles(t *testing.T) {
 		}
 	})
 }
+
+func TestService_AdminCreateRole(t *testing.T) {
+	t.Run("success creates role and logs audit", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		req := dtos.AdminCreateRoleRequest{
+			Name:        "Support Agent",
+			Description: "Customer support staff",
+			Permissions: []string{"users:read"},
+		}
+
+		// 1. FindRoleByName (not found)
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE name = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs(req.Name, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		// 2. Create role
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_roles"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		// 3. Create audit log
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminCreateRole(context.Background(), AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "127.0.0.1",
+			UserAgent: "test-agent",
+		}, req)
+
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Name != req.Name {
+			t.Errorf("expected role name %s, got %s", req.Name, resp.Name)
+		}
+		if resp.IsSystem {
+			t.Error("expected custom role to have IsSystem false")
+		}
+	})
+
+	t.Run("duplicate role name returns ErrConflict", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		req := dtos.AdminCreateRoleRequest{
+			Name:        "Super Admin",
+			Permissions: []string{"*"},
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE name = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs(req.Name, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow(uuid.New(), req.Name))
+
+		_, err := svc.AdminCreateRole(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		if err == nil {
+			t.Fatal("expected conflict error, got nil")
+		}
+	})
+}
+
+func TestService_AdminUpdateRole(t *testing.T) {
+	t.Run("success updates custom role and logs audit", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+		req := dtos.AdminUpdateRoleRequest{
+			Name:        "Updated Role",
+			Description: "Updated description",
+			Permissions: []string{"recordings:read", "recordings:write"},
+		}
+
+		// 1. FindRoleByID
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE id = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs(roleID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Old Role", "Old description", []byte(`["recordings:read"]`), false, time.Now(), time.Now()))
+
+		// 2. FindRoleByName for name check
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE name = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs(req.Name, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		// 3. UpdateRole
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "admin_roles" SET`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// 4. Create audit log
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminUpdateRole(context.Background(), AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "127.0.0.1",
+			UserAgent: "test-agent",
+		}, roleID, req)
+
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Name != req.Name {
+			t.Errorf("expected updated name %s, got %s", req.Name, resp.Name)
+		}
+	})
+
+	t.Run("rejects modifying system role with ErrForbidden", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+		req := dtos.AdminUpdateRoleRequest{
+			Name:        "Super Admin Modified",
+			Permissions: []string{"*"},
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles" WHERE id = \$1 ORDER BY "admin_roles"\."id" LIMIT \$2`).
+			WithArgs(roleID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system"}).
+				AddRow(roleID, "Super Admin", "Root", []byte(`["*"]`), true))
+
+		_, err := svc.AdminUpdateRole(context.Background(), AdminActionMeta{AdminID: adminID}, roleID, req)
+		if err == nil {
+			t.Fatal("expected ErrForbidden for system role modification, got nil")
+		}
+	})
+}
+

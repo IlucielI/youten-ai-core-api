@@ -263,3 +263,17 @@ routes:
     handler: AdminListRoles
     admin_auth: true
     admin_permission: "roles:read"
+
+  # Admin create RBAC role (CMS).
+  - method: POST
+    path: /v1/admin/roles
+    handler: AdminCreateRole
+    admin_auth: true
+    admin_permission: "roles:write"
+
+  # Admin update RBAC role (CMS).
+  - method: PUT
+    path: /v1/admin/roles/:id
+    handler: AdminUpdateRole
+    admin_auth: true
+    admin_permission: "roles:write"

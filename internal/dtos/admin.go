@@ -232,4 +232,46 @@ func (r *AdminCreateTemplateRequest) Validate() error {
 	return nil
 }
 
+// AdminUpdateTemplateRequest defines the payload for updating an existing prompt template.
+type AdminUpdateTemplateRequest struct {
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	Prompt       string                 `json:"prompt"`
+	OutputSchema map[string]interface{} `json:"output_schema"`
+	IsActive     *bool                  `json:"is_active"`
+}
+
+// Validate ensures update payload meets domain invariants and Draft-07 JSON schema rules.
+func (r *AdminUpdateTemplateRequest) Validate() error {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return errors.New("template name is required")
+	}
+	if len(r.Name) > 255 {
+		return errors.New("template name cannot exceed 255 characters")
+	}
+	r.Description = strings.TrimSpace(r.Description)
+	r.Prompt = strings.TrimSpace(r.Prompt)
+	if r.Prompt == "" {
+		return errors.New("prompt is required")
+	}
+
+	if len(r.OutputSchema) == 0 {
+		return errors.New("output_schema is required")
+	}
+
+	// Validate Draft-07 JSON schema structure
+	schemaType, ok := r.OutputSchema["type"].(string)
+	if !ok || schemaType != "object" {
+		return errors.New("output_schema must have type 'object'")
+	}
+	props, ok := r.OutputSchema["properties"].(map[string]interface{})
+	if !ok || len(props) == 0 {
+		return errors.New("output_schema must define non-empty 'properties'")
+	}
+
+	return nil
+}
+
+
 

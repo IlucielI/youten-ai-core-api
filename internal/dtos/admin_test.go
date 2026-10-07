@@ -377,5 +377,70 @@ func TestAdminCreateTemplateRequest_Validate(t *testing.T) {
 	})
 }
 
+func TestAdminUpdateTemplateRequest_Validate(t *testing.T) {
+	t.Run("valid payload succeeds", func(t *testing.T) {
+		req := AdminUpdateTemplateRequest{
+			Name:        "Updated Tutorial",
+			Description: "Updated description",
+			Prompt:      "Updated prompt...",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected valid payload, got error: %v", err)
+		}
+	})
+
+	t.Run("empty name returns error", func(t *testing.T) {
+		req := AdminUpdateTemplateRequest{
+			Name:   "",
+			Prompt: "Prompt",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty name, got nil")
+		}
+	})
+
+	t.Run("empty prompt returns error", func(t *testing.T) {
+		req := AdminUpdateTemplateRequest{
+			Name:   "Name",
+			Prompt: "",
+			OutputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{"type": "string"},
+				},
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for empty prompt, got nil")
+		}
+	})
+
+	t.Run("non-object schema returns error", func(t *testing.T) {
+		req := AdminUpdateTemplateRequest{
+			Name:   "Name",
+			Prompt: "Prompt",
+			OutputSchema: map[string]interface{}{
+				"type": "string",
+			},
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for non-object schema, got nil")
+		}
+	})
+}
+
+
 
 

@@ -171,9 +171,9 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		return fmt.Errorf("failed to clean up transcript segments: %w", err)
 	}
 
-	// If STT returned segments without speaker labels, use LLM to infer turn-taking
-	if len(sttResult.Segments) > 1 && s.needsDiarization(sttResult.Segments) && s.llm != nil {
-		s.diarizeSegmentsWithLLM(ctx, sttResult.Segments)
+	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors
+	if len(sttResult.Segments) > 0 && s.llm != nil {
+		s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments)
 	}
 
 	var modelSegments []models.TranscriptSegment
@@ -183,10 +183,14 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 		if speaker == "" {
 			speaker = constants.DefaultSpeakerLabel
 		}
+		speakerName := seg.SpeakerName
+		if speakerName == "" {
+			speakerName = speaker
+		}
 		modelSegments = append(modelSegments, models.TranscriptSegment{
 			RecordingID:   recording.ID,
 			SpeakerLabel:  speaker,
-			SpeakerName:   speaker,
+			SpeakerName:   speakerName,
 			StartTime:     seg.Start,
 			EndTime:       seg.End,
 			Text:          seg.Text,
@@ -824,9 +828,9 @@ func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 	return true
 }
 
-// diarizeSegmentsWithLLM uses the LLM to infer speaker turn-taking across transcript segments.
-func (s *Service) diarizeSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult) {
-	if len(segments) <= 1 || s.llm == nil {
+// diarizeAndCorrectSegmentsWithLLM uses the LLM to infer speaker turn-taking and correct obvious phonetic ASR slips across transcript segments.
+func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult) {
+	if len(segments) == 0 || s.llm == nil {
 		return
 	}
 
@@ -841,38 +845,70 @@ func (s *Service) diarizeSegmentsWithLLM(ctx context.Context, segments []dtos.Se
 		return
 	}
 
-	systemPrompt := "You are an expert audio dialogue diarization assistant. " +
-		"Given numbered lines from an audio recording, analyze conversational turn-taking and identify speakers. " +
-		"Return ONLY a valid JSON object mapping each line index number as string to its speaker label, e.g. " +
-		`{"0": "Speaker 0", "1": "Speaker 1"}. Do not return any other text or markdown.`
+	systemPrompt := "You are an expert audio transcription post-processor and diarization assistant. " +
+		"Given numbered dialogue lines from an audio recording:\n" +
+		"1. Analyze conversational turn-taking and identify speakers ('Speaker 0', 'Speaker 1', etc.).\n" +
+		"2. Detect the actual name of each speaker if introduced or addressed in the conversation (e.g. 'Budi', 'Sarah'). If a speaker's name is not explicitly mentioned or known, fallback exactly to their speaker label (e.g. 'Speaker 0').\n" +
+		"3. Correct obvious phonetic ASR mishearings, slips, and homophones based on conversational context " +
+		"(e.g., 'bekerja di botol kanan' -> 'bekerja di bawah tekanan'). Do NOT alter valid numbers or invent new facts.\n" +
+		"Return ONLY a valid JSON array of objects with keys 'index' (integer), 'speaker' (string), 'speaker_name' (string), and 'text' (string). " +
+		"Example: [{\"index\": 0, \"speaker\": \"Speaker 0\", \"speaker_name\": \"Speaker 0\", \"text\": \"...\"}]. Do not return any other text or markdown."
 
 	temp := 0.0
 	chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
 		{Role: "user", Content: sb.String()},
 	}, dtos.ChatOptions{Temperature: &temp})
 	if err != nil {
-		log.Printf("[PIPELINE WARN] llm diarization failed: %v", err)
+		log.Printf("[PIPELINE WARN] llm diarization and correction failed: %v", err)
 		return
 	}
 
 	cleanJSON := strings.TrimSpace(chatRes.Content)
-	if idx := strings.Index(cleanJSON, "{"); idx != -1 {
+	if idx := strings.Index(cleanJSON, "["); idx != -1 {
 		cleanJSON = cleanJSON[idx:]
 	}
-	if idx := strings.LastIndex(cleanJSON, "}"); idx != -1 {
+	if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
 		cleanJSON = cleanJSON[:idx+1]
 	}
 
-	var labelMap map[string]string
-	if err := json.Unmarshal([]byte(cleanJSON), &labelMap); err != nil {
-		log.Printf("[PIPELINE WARN] failed to parse diarization json: %v", err)
+	type correctedItem struct {
+		Index       int    `json:"index"`
+		Speaker     string `json:"speaker"`
+		SpeakerName string `json:"speaker_name"`
+		Text        string `json:"text"`
+	}
+
+	var items []correctedItem
+	if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
+		// Fallback: try parsing as map[string]string if LLM returned key-value format
+		var labelMap map[string]string
+		if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
+			for i := range segments {
+				key := strconv.Itoa(i)
+				if val, ok := labelMap[key]; ok && strings.TrimSpace(val) != "" {
+					segments[i].SpeakerLabel = strings.TrimSpace(val)
+					segments[i].SpeakerName = strings.TrimSpace(val)
+				}
+			}
+			return
+		}
+		log.Printf("[PIPELINE WARN] failed to parse diarization and correction json: %v", err)
 		return
 	}
 
-	for i := range segments {
-		key := strconv.Itoa(i)
-		if label, ok := labelMap[key]; ok && strings.TrimSpace(label) != "" {
-			segments[i].SpeakerLabel = strings.TrimSpace(label)
+	for _, it := range items {
+		if it.Index >= 0 && it.Index < len(segments) {
+			if strings.TrimSpace(it.Speaker) != "" {
+				segments[it.Index].SpeakerLabel = strings.TrimSpace(it.Speaker)
+			}
+			speakerName := strings.TrimSpace(it.SpeakerName)
+			if speakerName == "" {
+				speakerName = segments[it.Index].SpeakerLabel
+			}
+			segments[it.Index].SpeakerName = speakerName
+			if strings.TrimSpace(it.Text) != "" {
+				segments[it.Index].Text = strings.TrimSpace(it.Text)
+			}
 		}
 	}
 }

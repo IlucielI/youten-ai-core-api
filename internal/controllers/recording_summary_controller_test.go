@@ -207,6 +207,55 @@ func TestControllers_UpdateTranscriptSpeakers_Success_HeaderToken(t *testing.T) 
 	}
 }
 
+func TestControllers_UpdateTranscriptSegment_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	segID := uuid.New()
+	token := "owner-token"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{
+		{Key: "id", Value: recID.String()},
+		{Key: "segmentId", Value: segID.String()},
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/segments/"+segID.String(),
+		strings.NewReader(`{"text":"Bekerja di bawah tekanan","ownership_token":"`+token+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, token))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE id = \$1 AND recording_id = \$2.*LIMIT \$3`).
+		WithArgs(segID, recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_label", "speaker_name", "start_time", "end_time", "text", "sequence_order"}).
+			AddRow(segID, recID, "Speaker 0", "Speaker 0", 12.0, 15.0, "Bekerja di botol kanan", 1))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "text"=\$1,"updated_at"=\$2 WHERE id = \$3 AND recording_id = \$4`).
+		WithArgs("Bekerja di bawah tekanan", sqlmock.AnyArg(), segID, recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	ctrls.UpdateTranscriptSegment(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.TranscriptSegmentDTO]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse json response: %v", err)
+	}
+	if resp.Data.Text != "Bekerja di bawah tekanan" {
+		t.Errorf("expected updated text, got %s", resp.Data.Text)
+	}
+}
+
 func TestControllers_RegenerateSummary_InvalidUUID(t *testing.T) {
 	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
 	defer cleanup()

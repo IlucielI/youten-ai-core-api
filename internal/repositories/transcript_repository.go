@@ -64,6 +64,28 @@ func (r *Repositories) UpdateTranscriptSpeakerNames(ctx context.Context, recordi
 	return totalUpdated, nil
 }
 
+// UpdateTranscriptSegmentText updates the text of a single transcript segment by ID and recording ID.
+func (r *Repositories) UpdateTranscriptSegmentText(ctx context.Context, recordingID uuid.UUID, segmentID uuid.UUID, newText string) (*models.TranscriptSegment, error) {
+	var segment models.TranscriptSegment
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND recording_id = ?", segmentID, recordingID).
+		First(&segment).Error
+	if err != nil {
+		return nil, err
+	}
+
+	err = r.db.WithContext(ctx).
+		Model(&models.TranscriptSegment{}).
+		Where("id = ? AND recording_id = ?", segmentID, recordingID).
+		Update("text", newText).Error
+	if err != nil {
+		return nil, err
+	}
+
+	segment.Text = newText
+	return &segment, nil
+}
+
 
 // SaveTranscriptChunks batch-inserts semantic text chunks with vector embeddings.
 func (r *Repositories) SaveTranscriptChunks(ctx context.Context, chunks []models.TranscriptChunk) error {

@@ -57,6 +57,54 @@ func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
 	c.respondOK(ctx, "transcript speaker labels updated successfully", resp)
 }
 
+// UpdateTranscriptSegment handles updating the text of an individual transcript segment.
+func (c *Controllers) UpdateTranscriptSegment(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	segmentIDParam := ctx.Param("segmentId")
+	segmentID, err := uuid.Parse(segmentIDParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	var req dtos.UpdateTranscriptSegmentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	if err := validations.ValidateUpdateTranscriptSegmentRequest(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
+			Status:    constants.ResponseStatusFail,
+			Code:      constants.ResponseCodeBadRequest,
+			Message:   err.Error(),
+			Timestamp: time.Now(),
+		})
+		return
+	}
+
+	ownershipToken := c.extractOwnershipToken(ctx, req.OwnershipToken)
+
+	resp, err := c.svc.UpdateTranscriptSegment(ctx.Request.Context(), id, segmentID, ownershipToken, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "transcript segment updated successfully", resp)
+}
+
 // RegenerateSummary handles generating a new summary version with optional template and custom angle.
 func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 

@@ -356,3 +356,43 @@ func TestRecordingDTO_CreateCommentRequest_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateUpdateTranscriptSegmentRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.UpdateTranscriptSegmentRequest
+		wantErr bool
+	}{
+		{
+			name: "valid text",
+			req: dtos.UpdateTranscriptSegmentRequest{
+				Text: "Bisa, saya siap bekerja di bawah tekanan.",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty text",
+			req: dtos.UpdateTranscriptSegmentRequest{
+				Text: "   ",
+			},
+			wantErr: true,
+		},
+		{
+			name: "too long text",
+			req: dtos.UpdateTranscriptSegmentRequest{
+				Text: strings.Repeat("a", 10001),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validations.ValidateUpdateTranscriptSegmentRequest(&tc.req)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+

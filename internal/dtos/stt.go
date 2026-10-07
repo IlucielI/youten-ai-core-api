@@ -24,6 +24,7 @@ type SegmentResult struct {
 	End              float64      `json:"end"`
 	Text             string       `json:"text"`
 	SpeakerLabel     string       `json:"speaker_label,omitempty"`
+	SpeakerName      string       `json:"speaker_name,omitempty"`
 	Tokens           []int        `json:"tokens,omitempty"`
 	Temperature      float64      `json:"temperature,omitempty"`
 	AvgLogprob       float64      `json:"avg_logprob,omitempty"`

@@ -29,7 +29,36 @@ func TestService_NeedsDiarization(t *testing.T) {
 	}
 }
 
-func TestService_DiarizeSegmentsWithLLM(t *testing.T) {
+func TestService_DiarizeAndCorrectSegmentsWithLLM_ArrayFormat(t *testing.T) {
+	mockLLM := &dummyLLM{
+		chatResp: `[
+			{"index": 0, "speaker": "Speaker 1", "speaker_name": "Pak Budi", "text": "Bisakah anda bekerja di bawah tekanan?"},
+			{"index": 1, "speaker": "Speaker 0", "speaker_name": "Speaker 0", "text": "Bisa, siap bekerja di bawah tekanan."},
+			{"index": 2, "speaker": "Speaker 0", "speaker_name": "Speaker 0", "text": "Gaji 5 sampai 6 juta."}
+		]`,
+	}
+	svc := &Service{llm: mockLLM}
+
+	segments := []dtos.SegmentResult{
+		{Text: "Bisakah anda bekerja di botol kanan?", SpeakerLabel: ""},
+		{Text: "Bisa, siap bekerja di botol kanan.", SpeakerLabel: ""},
+		{Text: "Gaji 56 juta.", SpeakerLabel: ""},
+	}
+
+	svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments)
+
+	if segments[0].SpeakerLabel != "Speaker 1" || segments[0].SpeakerName != "Pak Budi" || segments[0].Text != "Bisakah anda bekerja di bawah tekanan?" {
+		t.Errorf("unexpected segment 0: %+v", segments[0])
+	}
+	if segments[1].SpeakerLabel != "Speaker 0" || segments[1].SpeakerName != "Speaker 0" || segments[1].Text != "Bisa, siap bekerja di bawah tekanan." {
+		t.Errorf("unexpected segment 1: %+v", segments[1])
+	}
+	if segments[2].SpeakerLabel != "Speaker 0" || segments[2].SpeakerName != "Speaker 0" || segments[2].Text != "Gaji 5 sampai 6 juta." {
+		t.Errorf("unexpected segment 2: %+v", segments[2])
+	}
+}
+
+func TestService_DiarizeAndCorrectSegmentsWithLLM_MapFormatFallback(t *testing.T) {
 	mockLLM := &dummyLLM{
 		chatResp: `{"0": "Speaker 0", "1": "Speaker 1"}`,
 	}
@@ -40,7 +69,7 @@ func TestService_DiarizeSegmentsWithLLM(t *testing.T) {
 		{Text: "Selamat pagi silakan duduk", SpeakerLabel: ""},
 	}
 
-	svc.diarizeSegmentsWithLLM(context.Background(), segments)
+	svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments)
 
 	if segments[0].SpeakerLabel != "Speaker 0" {
 		t.Errorf("expected Speaker 0, got %s", segments[0].SpeakerLabel)
@@ -50,14 +79,15 @@ func TestService_DiarizeSegmentsWithLLM(t *testing.T) {
 	}
 }
 
-func TestService_DiarizeSegmentsWithLLM_EmptyOrNil(t *testing.T) {
+func TestService_DiarizeAndCorrectSegmentsWithLLM_EmptyOrNil(t *testing.T) {
 	svc := &Service{llm: nil}
 	segments := []dtos.SegmentResult{
 		{Text: "Halo", SpeakerLabel: ""},
 	}
-	// Should not panic when LLM is nil or segments <= 1
-	svc.diarizeSegmentsWithLLM(context.Background(), segments)
+	// Should not panic when LLM is nil
+	svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments)
 	if segments[0].SpeakerLabel != "" {
 		t.Errorf("expected SpeakerLabel to remain unchanged")
 	}
 }
+

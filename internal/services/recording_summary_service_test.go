@@ -136,6 +136,58 @@ func TestService_UpdateTranscriptSpeakers_Success_AuthenticatedOwner(t *testing.
 	}
 }
 
+func TestService_UpdateTranscriptSegment_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	segID := uuid.New()
+	guestToken := "guest-token-123"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE id = \$1 AND recording_id = \$2.*LIMIT \$3`).
+		WithArgs(segID, recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_label", "speaker_name", "start_time", "end_time", "text", "sequence_order"}).
+			AddRow(segID, recID, "Speaker 0", "Speaker 0", 12.0, 15.0, "Bekerja di botol kanan", 1))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "text"=\$1,"updated_at"=\$2 WHERE id = \$3 AND recording_id = \$4`).
+		WithArgs("Bekerja di bawah tekanan", sqlmock.AnyArg(), segID, recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	resp, err := svc.UpdateTranscriptSegment(ctx, recID, segID, guestToken, dtos.UpdateTranscriptSegmentRequest{
+		Text: "Bekerja di bawah tekanan",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Text != "Bekerja di bawah tekanan" {
+		t.Errorf("expected updated text 'Bekerja di bawah tekanan', got %s", resp.Text)
+	}
+}
+
+func TestService_UpdateTranscriptSegment_NotFound(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	segID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.UpdateTranscriptSegment(ctx, recID, segID, "", dtos.UpdateTranscriptSegmentRequest{
+		Text: "Valid text",
+	})
+	if !errors.Is(err, constants.ErrRecordingNotFound) {
+		t.Fatalf("expected ErrRecordingNotFound, got %v", err)
+	}
+}
+
 func TestService_RegenerateSummary_NotFound(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 	recID := uuid.New()

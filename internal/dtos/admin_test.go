@@ -90,3 +90,44 @@ func TestAdminUserListResponse(t *testing.T) {
 		t.Errorf("expected total_items 1, got %d", resp.Pagination.TotalItems)
 	}
 }
+
+func TestAdminUserQuotaOverrideRequest_Validate(t *testing.T) {
+	t.Run("nil override is valid (reset)", func(t *testing.T) {
+		req := AdminUserQuotaOverrideRequest{DailyQuotaOverride: nil}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("positive override is valid", func(t *testing.T) {
+		v := 25
+		req := AdminUserQuotaOverrideRequest{DailyQuotaOverride: &v}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("zero override is valid", func(t *testing.T) {
+		v := 0
+		req := AdminUserQuotaOverrideRequest{DailyQuotaOverride: &v}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("negative override returns error", func(t *testing.T) {
+		v := -1
+		req := AdminUserQuotaOverrideRequest{DailyQuotaOverride: &v}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for negative override, got nil")
+		}
+	})
+
+	t.Run("exceeding max override returns error", func(t *testing.T) {
+		v := 10001
+		req := AdminUserQuotaOverrideRequest{DailyQuotaOverride: &v}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for override exceeding 10000, got nil")
+		}
+	})
+}

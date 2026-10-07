@@ -1,6 +1,7 @@
 package dtos
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -49,4 +50,29 @@ type AdminUserListItem struct {
 type AdminUserListResponse struct {
 	Items      []AdminUserListItem `json:"items"`
 	Pagination PaginationMeta      `json:"pagination"`
+}
+
+// AdminUserQuotaOverrideRequest defines the payload for setting or resetting a user's daily quota override.
+type AdminUserQuotaOverrideRequest struct {
+	DailyQuotaOverride *int `json:"daily_quota_override"`
+}
+
+// Validate ensures daily quota override is non-negative and bounded.
+func (r *AdminUserQuotaOverrideRequest) Validate() error {
+	if r.DailyQuotaOverride != nil {
+		if *r.DailyQuotaOverride < 0 {
+			return errors.New("daily_quota_override must be non-negative or null")
+		}
+		if *r.DailyQuotaOverride > 10000 {
+			return errors.New("daily_quota_override cannot exceed 10000")
+		}
+	}
+	return nil
+}
+
+// AdminUserQuotaResponse represents the result of a daily quota override mutation.
+type AdminUserQuotaResponse struct {
+	UserID             uuid.UUID `json:"user_id"`
+	DailyQuotaOverride *int      `json:"daily_quota_override"`
+	EffectiveQuota     int       `json:"effective_quota"`
 }

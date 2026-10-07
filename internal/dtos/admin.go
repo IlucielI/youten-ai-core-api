@@ -183,3 +183,53 @@ type AdminTemplateListResponse struct {
 	Items []AdminTemplateItem `json:"items"`
 }
 
+// AdminCreateTemplateRequest defines the payload for creating a new prompt template.
+type AdminCreateTemplateRequest struct {
+	CategoryKey  string                 `json:"category_key"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	Prompt       string                 `json:"prompt"`
+	OutputSchema map[string]interface{} `json:"output_schema"`
+	IsActive     *bool                  `json:"is_active"`
+}
+
+// Validate ensures template creation payload meets domain invariants and Draft-07 JSON schema rules.
+func (r *AdminCreateTemplateRequest) Validate() error {
+	r.CategoryKey = strings.TrimSpace(r.CategoryKey)
+	if r.CategoryKey == "" {
+		return errors.New("category_key is required")
+	}
+	if len(r.CategoryKey) > 100 {
+		return errors.New("category_key cannot exceed 100 characters")
+	}
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return errors.New("template name is required")
+	}
+	if len(r.Name) > 255 {
+		return errors.New("template name cannot exceed 255 characters")
+	}
+	r.Description = strings.TrimSpace(r.Description)
+	r.Prompt = strings.TrimSpace(r.Prompt)
+	if r.Prompt == "" {
+		return errors.New("prompt is required")
+	}
+
+	if len(r.OutputSchema) == 0 {
+		return errors.New("output_schema is required")
+	}
+
+	// Validate Draft-07 JSON schema structure
+	schemaType, ok := r.OutputSchema["type"].(string)
+	if !ok || schemaType != "object" {
+		return errors.New("output_schema must have type 'object'")
+	}
+	props, ok := r.OutputSchema["properties"].(map[string]interface{})
+	if !ok || len(props) == 0 {
+		return errors.New("output_schema must define non-empty 'properties'")
+	}
+
+	return nil
+}
+
+

@@ -23,7 +23,7 @@ func TestRouter_HealthCheck(t *testing.T) {
 	// every dependency as disconnected without a backing infrastructure.
 	svc := services.New(cfg, nil, nil)
 	ctrls := controllers.New(cfg, svc)
-	router := routes.NewRouter(cfg, ctrls)
+	router := routes.NewRouter(cfg, ctrls, svc)
 
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest(http.MethodGet, "/v1/health", nil)
@@ -74,7 +74,7 @@ func TestRouter_HealthCheck(t *testing.T) {
 func TestRouter_PanicRecovery(t *testing.T) {
 	cfg := config.Load()
 	ctrls := controllers.New(cfg, nil)
-	router := routes.NewRouter(cfg, ctrls)
+	router := routes.NewRouter(cfg, ctrls, services.New(cfg, nil, nil))
 
 	// Register an endpoint that panics
 	router.GET("/v1/panic-test", func(c *gin.Context) {
@@ -125,7 +125,7 @@ func TestRouter_PanicRecovery(t *testing.T) {
 func TestRouter_DocsEndpoints(t *testing.T) {
 	cfg := config.Load()
 	ctrls := controllers.New(cfg, nil)
-	router := routes.NewRouter(cfg, ctrls)
+	router := routes.NewRouter(cfg, ctrls, services.New(cfg, nil, nil))
 
 	tests := []struct {
 		path        string
@@ -165,7 +165,7 @@ func TestRouter_DocsEndpoints(t *testing.T) {
 func TestRouter_AuthEndpoints(t *testing.T) {
 	cfg := config.Load()
 	ctrls := controllers.New(cfg, nil)
-	router := routes.NewRouter(cfg, ctrls)
+	router := routes.NewRouter(cfg, ctrls, services.New(cfg, nil, nil))
 
 	// Verify POST /v1/auth/login route is registered and resolves to handler (returns 400 for empty body, not 404)
 	w := httptest.NewRecorder()
@@ -252,7 +252,7 @@ func TestRouter_AuthEndpoints(t *testing.T) {
 func TestRouter_RoutesRegistration(t *testing.T) {
 	cfg := config.Load()
 	ctrls := controllers.New(cfg, nil)
-	router := routes.NewRouter(cfg, ctrls)
+	router := routes.NewRouter(cfg, ctrls, services.New(cfg, nil, nil))
 
 	expectedRoutePairs := []struct {
 		method string

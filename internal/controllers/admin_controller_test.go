@@ -1104,6 +1104,134 @@ func TestControllers_AdminListReports(t *testing.T) {
 	})
 }
 
+func TestControllers_AdminResolveReport(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		recID := uuid.New()
+		adminID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT \* FROM "reports" WHERE id = \$1 ORDER BY "reports"\."id" LIMIT \$2`).
+			WithArgs(repID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "recording_id", "reporter_type", "reason", "status", "created_at", "updated_at",
+			}).AddRow(repID, recID, "guest", "spam", "open", now, now))
+
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE "recordings"\."id" = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(recID, "Target"))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "reports" SET .* WHERE id = .*`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "moderator",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/reports/:id/resolve", ctrls.AdminResolveReport)
+
+		body := `{"action": "DISMISS", "resolution_note": "Spam dismiss"}`
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/v1/admin/reports/%s/resolve", repID.String()), strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("validation error returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  uuid.New(),
+				Username: "moderator",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/reports/:id/resolve", ctrls.AdminResolveReport)
+
+		body := `{"action": "INVALID_ACTION"}`
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/v1/admin/reports/%s/resolve", repID.String()), strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("invalid id param returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  uuid.New(),
+				Username: "moderator",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/reports/:id/resolve", ctrls.AdminResolveReport)
+
+		body := `{"action": "DISMISS"}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/reports/invalid-uuid/resolve", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("unauthorized without admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		r := gin.New()
+		r.POST("/v1/admin/reports/:id/resolve", ctrls.AdminResolveReport)
+
+		body := `{"action": "DISMISS"}`
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/v1/admin/reports/%s/resolve", repID.String()), strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+}
+
+
 
 
 

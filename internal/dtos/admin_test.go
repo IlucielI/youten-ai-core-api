@@ -660,6 +660,45 @@ func TestAdminReportListResponse(t *testing.T) {
 	}
 }
 
+func TestResolveReportRequest_Validate(t *testing.T) {
+	t.Run("valid actions succeed", func(t *testing.T) {
+		valid := []string{"DISMISS", "SUSPEND_RECORDING", "BAN_USER", "dismiss", "suspend_recording", "ban_user"}
+		for _, a := range valid {
+			req := ResolveReportRequest{Action: a, ResolutionNote: "Resolved"}
+			if err := req.Validate(); err != nil {
+				t.Errorf("expected action %q to be valid, got %v", a, err)
+			}
+		}
+	})
+
+	t.Run("invalid action returns error", func(t *testing.T) {
+		req := ResolveReportRequest{Action: "INVALID_ACTION"}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for invalid action, got nil")
+		}
+	})
+}
+
+func TestResolveReportResponse(t *testing.T) {
+	repID := uuid.New()
+	adminID := uuid.New()
+	now := time.Now()
+
+	resp := ResolveReportResponse{
+		ReportID:       repID,
+		Status:         "resolved",
+		Action:         "SUSPEND_RECORDING",
+		HandledBy:      adminID,
+		ResolutionNote: "Takedown completed",
+		ResolvedAt:     now,
+	}
+
+	if resp.ReportID != repID || resp.Status != "resolved" || resp.Action != "SUSPEND_RECORDING" {
+		t.Fatalf("unexpected ResolveReportResponse values: %+v", resp)
+	}
+}
+
+
 
 
 

@@ -74,6 +74,18 @@ func (r *Repositories) UpdateUserFullName(ctx context.Context, id uuid.UUID, ful
 	return nil
 }
 
+// UpdateUserStatus updates account status (e.g. active, suspended) for a user.
+func (r *Repositories) UpdateUserStatus(ctx context.Context, id uuid.UUID, status models.UserStatus) error {
+	res := r.db.WithContext(ctx).Model(&models.User{}).Where("id = ? AND deleted_at IS NULL", id).Update("status", status)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // ListUsersQuery holds filter criteria for listing users.
 type ListUsersQuery struct {
 	Search string

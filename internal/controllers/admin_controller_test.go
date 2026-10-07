@@ -19,6 +19,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/services"
@@ -757,6 +758,77 @@ func TestControllers_AdminTestTemplate(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_AdminGetDLQPipeline(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200 with DLQ items", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		recID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = 'FAILED' AND "recordings"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(status IN \('QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING'\) AND updated_at < \$1\) AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(\(status = 'FAILED'\) OR \(status IN \('QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING'\) AND updated_at < \$1\)\) AND "recordings"\."deleted_at" IS NULL ORDER BY updated_at DESC LIMIT \$2`).
+			WithArgs(sqlmock.AnyArg(), 20).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "title", "original_filename", "status", "source_type", "created_at", "updated_at",
+			}).
+				AddRow(recID, "Failed Meeting", "meeting.mp4", models.RecordingStatusFailed, "UPLOAD", now, now))
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "ops_admin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.GET("/v1/admin/pipeline/dlq", ctrls.AdminGetDLQPipeline)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/pipeline/dlq?page=1&limit=20", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+		}
+
+		var apiResp dtos.APIResponse[dtos.DLQMessagesResponse]
+		if err := json.Unmarshal(w.Body.Bytes(), &apiResp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		if apiResp.Data.Total != 1 {
+			t.Fatalf("expected total 1, got %d", apiResp.Data.Total)
+		}
+	})
+
+	t.Run("unauthorized returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.GET("/v1/admin/pipeline/dlq", ctrls.AdminGetDLQPipeline)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/pipeline/dlq", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+}
+
 
 
 

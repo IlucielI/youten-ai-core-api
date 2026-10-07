@@ -330,3 +330,40 @@ func (r *Repositories) FindExpiredRecordings(ctx context.Context, limit int) ([]
 func (r *Repositories) HardDeleteRecording(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Unscoped().Delete(&models.Recording{}, "id = ?", id).Error
 }
+
+// ListDLQRecordings queries failed and stuck pipeline recordings with preloaded users.
+func (r *Repositories) ListDLQRecordings(ctx context.Context, stuckThreshold time.Duration, limit, offset int) ([]models.Recording, int64, int64, int64, error) {
+	thresholdTime := time.Now().UTC().Add(-stuckThreshold)
+
+	stuckCondition := "status IN ('QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING') AND updated_at < ?"
+	failedCondition := "status = 'FAILED'"
+
+	var failedCount, stuckCount int64
+
+	// Count failed
+	if err := r.db.WithContext(ctx).Model(&models.Recording{}).Where(failedCondition).Count(&failedCount).Error; err != nil {
+		return nil, 0, 0, 0, err
+	}
+
+	// Count stuck
+	if err := r.db.WithContext(ctx).Model(&models.Recording{}).Where(stuckCondition, thresholdTime).Count(&stuckCount).Error; err != nil {
+		return nil, 0, 0, 0, err
+	}
+
+	total := failedCount + stuckCount
+
+	var recordings []models.Recording
+	err := r.db.WithContext(ctx).
+		Preload("User").
+		Where("(status = 'FAILED') OR (status IN ('QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING') AND updated_at < ?)", thresholdTime).
+		Order("updated_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&recordings).Error
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
+
+	return recordings, total, failedCount, stuckCount, nil
+}
+

@@ -14,6 +14,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
 	"code-base-golang/internal/repositories"
 )
 
@@ -864,6 +865,83 @@ func TestService_AdminTestTemplate(t *testing.T) {
 		}
 	})
 }
+
+func TestService_AdminGetDLQMessages(t *testing.T) {
+	t.Run("success returns dlq items with counts", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		recID1 := uuid.New()
+		recID2 := uuid.New()
+		userID := uuid.New()
+		now := time.Now()
+		errMsg := "transcription timeout"
+		errCode := "ERR_TRANSCRIPTION_FAILED"
+
+		// 1. Count failed
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = 'FAILED' AND "recordings"\."deleted_at" IS NULL`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		// 2. Count stuck
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(status IN \('QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING'\) AND updated_at < \$1\) AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		// 3. Query recordings
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(\(status = 'FAILED'\) OR \(status IN \('QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING'\) AND updated_at < \$1\)\) AND "recordings"\."deleted_at" IS NULL ORDER BY updated_at DESC LIMIT \$2`).
+			WithArgs(sqlmock.AnyArg(), 20).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "user_id", "title", "original_filename", "status", "source_type", "error_code", "error_message", "created_at", "updated_at",
+			}).
+				AddRow(recID1, userID, "Failed Video", "video.mp4", models.RecordingStatusFailed, "UPLOAD", errCode, errMsg, now, now).
+				AddRow(recID2, nil, "Stuck Import", "import.mp4", models.RecordingStatusExtracting, constants.RecordingSourceTypeLink, nil, nil, now, now))
+
+		// Preload users for recID1
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE "users"\."id" = \$1`).
+			WithArgs(userID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name"}).
+				AddRow(userID, "user@example.com", "Jane Doe"))
+
+		resp, err := svc.AdminGetDLQMessages(context.Background(), AdminActionMeta{AdminID: adminID}, 1, 20)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Total != 2 {
+			t.Errorf("expected total 2, got %d", resp.Total)
+		}
+		if resp.FailedCount != 1 || resp.StuckCount != 1 {
+			t.Errorf("expected failed=1, stuck=1, got failed=%d, stuck=%d", resp.FailedCount, resp.StuckCount)
+		}
+		if len(resp.Items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(resp.Items))
+		}
+		if resp.Items[0].Queue != "recording.dlq" {
+			t.Errorf("expected recording.dlq, got %s", resp.Items[0].Queue)
+		}
+		if resp.Items[0].UserEmail != "user@example.com" {
+			t.Errorf("expected user@example.com, got %s", resp.Items[0].UserEmail)
+		}
+		if resp.Items[1].Queue != constants.TopicRecordingImport {
+			t.Errorf("expected import topic, got %s", resp.Items[1].Queue)
+		}
+	})
+
+	t.Run("database error returns error", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = 'FAILED'`).
+			WillReturnError(errors.New("db disconnect"))
+
+		_, err := svc.AdminGetDLQMessages(context.Background(), AdminActionMeta{AdminID: adminID}, 1, 20)
+		if err == nil {
+			t.Fatal("expected database error, got nil")
+		}
+	})
+}
+
 
 
 

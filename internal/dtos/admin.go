@@ -320,6 +320,33 @@ type AdminTestTemplateResponse struct {
 	TokensUsed      int         `json:"tokens_used"`
 }
 
+// DLQMessageItem represents a single dead-letter or stuck pipeline item.
+type DLQMessageItem struct {
+	RecordingID  uuid.UUID `json:"recording_id"`
+	Queue        string    `json:"queue"`
+	RoutingKey   string    `json:"routing_key"`
+	Stage        string    `json:"stage"`
+	Status       string    `json:"status"`
+	ErrorCode    string    `json:"error_code,omitempty"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	RetryCount   int       `json:"retry_count"`
+	FailedAt     time.Time `json:"failed_at"`
+	Title        string    `json:"title"`
+	UserName     string    `json:"user_name,omitempty"`
+	UserEmail    string    `json:"user_email,omitempty"`
+}
+
+// DLQMessagesResponse represents the monitor output for DLQ pipeline messages and stuck recordings.
+type DLQMessagesResponse struct {
+	Total       int64            `json:"total"`
+	FailedCount int64            `json:"failed_count"`
+	StuckCount  int64            `json:"stuck_count"`
+	Page        int              `json:"page"`
+	Limit       int              `json:"limit"`
+	Items       []DLQMessageItem `json:"items"`
+}
+
+
 
 
 

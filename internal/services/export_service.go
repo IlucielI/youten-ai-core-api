@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -22,8 +25,8 @@ import (
 )
 
 // ExportRecordingMOM generates a multi-format export of a meeting recording's executive summary,
-// action items, chapter breakdown, and diarized transcript.
-func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershipToken string, format string) (*dtos.ExportResult, error) {
+// action items, chapter breakdown, and diarized transcript for a specific or active summary version.
+func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershipToken string, format string, version string) (*dtos.ExportResult, error) {
 	rec, err := s.repo.FindRecordingByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -69,10 +72,29 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 		return nil, constants.ErrBadRequest
 	}
 
-	// Fetch related entities (gracefully handling missing or empty records)
-	summary, err := s.repo.FindActiveSummaryByRecordingID(ctx, id)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("failed to fetch active summary: %w", err)
+	// Fetch requested summary version (or fallback to active summary)
+	var summary *models.Summary
+	if strings.TrimSpace(version) != "" {
+		vStr := strings.TrimSpace(version)
+		if targetUUID, err := uuid.Parse(vStr); err == nil {
+			sum, err := s.repo.FindSummaryByRecordingAndID(ctx, id, targetUUID)
+			if err == nil {
+				summary = sum
+			}
+		} else if targetVer, err := strconv.Atoi(vStr); err == nil {
+			sum, err := s.repo.FindSummaryByRecordingAndVersion(ctx, id, targetVer)
+			if err == nil {
+				summary = sum
+			}
+		}
+	}
+
+	if summary == nil {
+		activeSummary, err := s.repo.FindActiveSummaryByRecordingID(ctx, id)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to fetch active summary: %w", err)
+		}
+		summary = activeSummary
 	}
 
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, id)
@@ -91,6 +113,9 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 	}
 
 	baseName := strutil.SanitizeFilename(rec.Title, fmt.Sprintf("recording_%s", rec.ID.String()[:8]))
+	if summary != nil && summary.Version > 0 {
+		baseName = fmt.Sprintf("%s_v%d", baseName, summary.Version)
+	}
 
 	switch expFormat {
 	case constants.ExportFormatMarkdown:
@@ -133,6 +158,335 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 	return nil, constants.ErrBadRequest
 }
 
+type formattedSection struct {
+	Heading string
+	Items   []string
+}
+
+type formattedSummary struct {
+	Overview    string
+	Sections    []formattedSection
+	ActionItems []string
+}
+
+func parseSummaryData(summary *models.Summary) (map[string]interface{}, string) {
+	if summary == nil {
+		return nil, ""
+	}
+
+	data := make(map[string]interface{})
+	if summary.StructuredData != nil {
+		for k, v := range summary.StructuredData {
+			data[k] = v
+		}
+	}
+
+	rawMd := strings.TrimSpace(summary.MarkdownContent)
+	// If StructuredData is empty or contains only meta keys, but MarkdownContent is JSON, parse it
+	if (len(data) == 0 || (len(data) == 1 && (data["invalid_key"] != nil || data["$schema"] != nil))) && strings.HasPrefix(rawMd, "{") {
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(rawMd), &parsed); err == nil {
+			for k, v := range parsed {
+				data[k] = v
+			}
+		}
+	}
+
+	return data, rawMd
+}
+
+func formatSummaryContent(summary *models.Summary) formattedSummary {
+	var res formattedSummary
+	if summary == nil {
+		return res
+	}
+
+	data, rawMd := parseSummaryData(summary)
+
+	// 1. Daily Standup Schema
+	if sh, ok := data["sprint_health"].(map[string]interface{}); ok {
+		status, _ := sh["status"].(string)
+		sum, _ := sh["summary"].(string)
+		if status != "" && sum != "" {
+			res.Overview = fmt.Sprintf("Status Sprint: %s\n%s", status, sum)
+		} else if sum != "" {
+			res.Overview = sum
+		}
+	}
+
+	if mu, ok := data["member_updates"].([]interface{}); ok && len(mu) > 0 {
+		var items []string
+		for _, item := range mu {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			name, _ := m["member_name"].(string)
+			if name == "" {
+				name = "Anggota Tim"
+			}
+			items = append(items, fmt.Sprintf("• %s:", name))
+			if y, ok := m["yesterday"].([]interface{}); ok && len(y) > 0 {
+				items = append(items, "  - Kemarin:")
+				for _, val := range y {
+					items = append(items, fmt.Sprintf("    * %v", val))
+				}
+			}
+			if t, ok := m["today"].([]interface{}); ok && len(t) > 0 {
+				items = append(items, "  - Hari Ini:")
+				for _, val := range t {
+					items = append(items, fmt.Sprintf("    * %v", val))
+				}
+			}
+			if b, ok := m["blockers"].([]interface{}); ok && len(b) > 0 {
+				items = append(items, "  - Kendala:")
+				for _, val := range b {
+					items = append(items, fmt.Sprintf("    * %v", val))
+					res.ActionItems = append(res.ActionItems, fmt.Sprintf("Kendala (%s): %v", name, val))
+				}
+			}
+		}
+		if len(items) > 0 {
+			res.Sections = append(res.Sections, formattedSection{
+				Heading: "Pembaruan Anggota (Member Updates)",
+				Items:   items,
+			})
+		}
+	}
+
+	if cb, ok := data["critical_blockers"].([]interface{}); ok && len(cb) > 0 {
+		var items []string
+		for _, b := range cb {
+			items = append(items, fmt.Sprintf("• %v", b))
+			res.ActionItems = append(res.ActionItems, fmt.Sprintf("Kendala Kritis: %v", b))
+		}
+		res.Sections = append(res.Sections, formattedSection{
+			Heading: "Kendala Kritis (Critical Blockers)",
+			Items:   items,
+		})
+	}
+
+	if pld, ok := data["parking_lot_discussions"].([]interface{}); ok && len(pld) > 0 {
+		var items []string
+		for _, p := range pld {
+			if pm, ok := p.(map[string]interface{}); ok {
+				topic, _ := pm["topic"].(string)
+				parts, _ := pm["participants"].([]interface{})
+				partStr := ""
+				if len(parts) > 0 {
+					var pNames []string
+					for _, pt := range parts {
+						pNames = append(pNames, fmt.Sprint(pt))
+					}
+					partStr = fmt.Sprintf(" (Peserta: %s)", strings.Join(pNames, ", "))
+				}
+				items = append(items, fmt.Sprintf("• %s%s", topic, partStr))
+			} else {
+				items = append(items, fmt.Sprintf("• %v", p))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{
+			Heading: "Diskusi Lanjutan (Parking Lot)",
+			Items:   items,
+		})
+	}
+
+	// 2. Interview Schema
+	if cand, ok := data["candidate_name"].(string); ok && cand != "" {
+		role, _ := data["target_role"].(string)
+		rec, _ := data["recommendation"].(string)
+		just, _ := data["justification"].(string)
+		res.Overview = fmt.Sprintf("Kandidat: %s | Posisi: %s\nRekomendasi: %s\n\n%s", cand, role, rec, just)
+	}
+	if str, ok := data["strengths"].([]interface{}); ok && len(str) > 0 {
+		var items []string
+		for _, s := range str {
+			items = append(items, fmt.Sprintf("• %v", s))
+		}
+		res.Sections = append(res.Sections, formattedSection{
+			Heading: "Kekuatan Utama (Strengths)",
+			Items:   items,
+		})
+	}
+	if con, ok := data["concerns"].([]interface{}); ok && len(con) > 0 {
+		var items []string
+		for _, c := range con {
+			items = append(items, fmt.Sprintf("• %v", c))
+		}
+		res.Sections = append(res.Sections, formattedSection{
+			Heading: "Catatan & Kekhawatiran (Concerns)",
+			Items:   items,
+		})
+	}
+	if cs, ok := data["competency_scores"].([]interface{}); ok && len(cs) > 0 {
+		var items []string
+		for _, c := range cs {
+			if cm, ok := c.(map[string]interface{}); ok {
+				comp, _ := cm["competency"].(string)
+				rating, _ := cm["rating"].(string)
+				evidence, _ := cm["evidence"].(string)
+				items = append(items, fmt.Sprintf("• %s [%s]: %s", comp, rating, evidence))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{
+			Heading: "Penilaian Kompetensi",
+			Items:   items,
+		})
+	}
+
+	// 3. One on One Schema
+	if wb, ok := data["wellbeing_assessment"].(map[string]interface{}); ok {
+		score, _ := wb["sentiment_score"].(string)
+		sum, _ := wb["summary"].(string)
+		if res.Overview == "" {
+			res.Overview = fmt.Sprintf("Sentimen Kesejahteraan: %s\n%s", score, sum)
+		}
+	}
+	if kw, ok := data["key_wins"].([]interface{}); ok && len(kw) > 0 {
+		var items []string
+		for _, w := range kw {
+			items = append(items, fmt.Sprintf("• %v", w))
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Pencapaian Utama (Key Wins)", Items: items})
+	}
+	if bl, ok := data["blockers"].([]interface{}); ok && len(bl) > 0 {
+		var items []string
+		for _, b := range bl {
+			items = append(items, fmt.Sprintf("• %v", b))
+			res.ActionItems = append(res.ActionItems, fmt.Sprintf("Kendala 1-on-1: %v", b))
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Kendala (Blockers)", Items: items})
+	}
+	if com, ok := data["commitments"].([]interface{}); ok && len(com) > 0 {
+		for _, c := range com {
+			if cm, ok := c.(map[string]interface{}); ok {
+				act, _ := cm["action_item"].(string)
+				party, _ := cm["party"].(string)
+				tl, _ := cm["timeline"].(string)
+				res.ActionItems = append(res.ActionItems, fmt.Sprintf("[%s] %s (%s)", party, act, tl))
+			}
+		}
+	}
+
+	// 4. MOM / Standard Meeting Schema
+	if mg, ok := data["meeting_goal"].(string); ok && strings.TrimSpace(mg) != "" {
+		if res.Overview == "" {
+			res.Overview = fmt.Sprintf("Tujuan Rapat: %s", mg)
+		} else {
+			res.Overview = fmt.Sprintf("Tujuan Rapat: %s\n\n%s", mg, res.Overview)
+		}
+	}
+	if es, ok := data["executive_summary"].(string); ok && strings.TrimSpace(es) != "" {
+		if res.Overview == "" {
+			res.Overview = strings.TrimSpace(es)
+		} else if !strings.Contains(res.Overview, strings.TrimSpace(es)) {
+			res.Overview = res.Overview + "\n\n" + strings.TrimSpace(es)
+		}
+	}
+	if kd, ok := data["key_decisions"].([]interface{}); ok && len(kd) > 0 {
+		var items []string
+		for _, d := range kd {
+			if dm, ok := d.(map[string]interface{}); ok {
+				dec, _ := dm["decision"].(string)
+				app, _ := dm["approved_by"].(string)
+				if app != "" {
+					items = append(items, fmt.Sprintf("• %s (Disetujui: %s)", dec, app))
+				} else {
+					items = append(items, fmt.Sprintf("• %s", dec))
+				}
+			} else {
+				items = append(items, fmt.Sprintf("• %v", d))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Keputusan Kunci (Key Decisions)", Items: items})
+	}
+	if oi, ok := data["open_issues"].([]interface{}); ok && len(oi) > 0 {
+		var items []string
+		for _, o := range oi {
+			items = append(items, fmt.Sprintf("• %v", o))
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Isu Terbuka (Open Issues)", Items: items})
+	}
+
+	// 5. Tech Review Schema
+	if ctxStr, ok := data["context"].(string); ok && ctxStr != "" && res.Overview == "" {
+		res.Overview = ctxStr
+	}
+	if da, ok := data["decisions_adopted"].([]interface{}); ok && len(da) > 0 {
+		var items []string
+		for _, d := range da {
+			if dm, ok := d.(map[string]interface{}); ok {
+				dec, _ := dm["decision"].(string)
+				just, _ := dm["technical_justification"].(string)
+				items = append(items, fmt.Sprintf("• %s: %s", dec, just))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Keputusan Diadopsi", Items: items})
+	}
+
+	// 6. Sales Discovery Schema
+	if pc, ok := data["prospect_company"].(string); ok && pc != "" && res.Overview == "" {
+		st, _ := data["deal_stage_suggested"].(string)
+		res.Overview = fmt.Sprintf("Perusahaan Prospek: %s (Tahap: %s)", pc, st)
+	}
+	if pp, ok := data["pain_points"].([]interface{}); ok && len(pp) > 0 {
+		var items []string
+		for _, p := range pp {
+			if pm, ok := p.(map[string]interface{}); ok {
+				pain, _ := pm["pain"].(string)
+				cost, _ := pm["cost_of_inaction"].(string)
+				items = append(items, fmt.Sprintf("• %s (Biaya Inaksi: %s)", pain, cost))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Titik Kendala (Pain Points)", Items: items})
+	}
+	if ns, ok := data["next_steps"].([]interface{}); ok && len(ns) > 0 {
+		for _, n := range ns {
+			if nm, ok := n.(map[string]interface{}); ok {
+				act, _ := nm["action"].(string)
+				own, _ := nm["owner"].(string)
+				dt, _ := nm["target_date"].(string)
+				res.ActionItems = append(res.ActionItems, fmt.Sprintf("%s (PIC: %s, Target: %s)", act, own, dt))
+			}
+		}
+	}
+
+	// Action Items from standard fields
+	for _, item := range extractActionItems(summary) {
+		found := false
+		for _, existing := range res.ActionItems {
+			if existing == item {
+				found = true
+				break
+			}
+		}
+		if !found {
+			res.ActionItems = append(res.ActionItems, item)
+		}
+	}
+
+	// Fallback for Overview: use MarkdownContent only if it is NOT a JSON string
+	if res.Overview == "" {
+		if rawMd != "" && !strings.HasPrefix(rawMd, "{") {
+			res.Overview = rawMd
+		} else if len(data) > 0 {
+			var fallbackItems []string
+			for k, v := range data {
+				if k == "$schema" || k == "invalid_key" {
+					continue
+				}
+				if str, ok := v.(string); ok && strings.TrimSpace(str) != "" {
+					fallbackItems = append(fallbackItems, fmt.Sprintf("%s: %s", strings.ReplaceAll(k, "_", " "), str))
+				}
+			}
+			if len(fallbackItems) > 0 {
+				res.Overview = strings.Join(fallbackItems, "\n\n")
+			}
+		}
+	}
+
+	return res
+}
 
 func extractActionItems(summary *models.Summary) []string {
 	if summary == nil || summary.StructuredData == nil {
@@ -159,9 +513,14 @@ func extractActionItems(summary *models.Summary) []string {
 				}
 			case map[string]interface{}:
 				if task, ok := v["task"].(string); ok && strings.TrimSpace(task) != "" {
+					pic, _ := v["pic"].(string)
 					assignee, _ := v["assignee"].(string)
-					if assignee != "" {
-						results = append(results, fmt.Sprintf("%s (Assignee: %s)", task, assignee))
+					owner := pic
+					if owner == "" {
+						owner = assignee
+					}
+					if owner != "" {
+						results = append(results, fmt.Sprintf("%s (PIC: %s)", task, owner))
 					} else {
 						results = append(results, task)
 					}
@@ -178,68 +537,136 @@ func extractExecutiveSummary(summary *models.Summary) string {
 	if summary == nil {
 		return ""
 	}
-	if summary.StructuredData != nil {
-		if es, ok := summary.StructuredData["executive_summary"].(string); ok && strings.TrimSpace(es) != "" {
-			return strings.TrimSpace(es)
-		}
+	formatted := formatSummaryContent(summary)
+	if formatted.Overview != "" {
+		return formatted.Overview
 	}
-	if strings.TrimSpace(summary.MarkdownContent) != "" {
-		return strings.TrimSpace(summary.MarkdownContent)
+	if len(formatted.Sections) > 0 {
+		return strings.Join(formatted.Sections[0].Items, "\n")
 	}
 	return ""
 }
 
+func computeExportAnalytics(segments []models.TranscriptSegment) *dtos.JSONExportAnalytics {
+	if len(segments) == 0 {
+		return nil
+	}
+
+	type spkStat struct {
+		speaker   string
+		duration  float64
+		wordCount int
+		turnCount int
+	}
+
+	spkMap := make(map[string]*spkStat)
+	var order []string
+	var totalDuration float64
+	var totalWords int
+	var totalTurns int
+
+	for _, seg := range segments {
+		dur := seg.EndTime - seg.StartTime
+		if dur < 0 {
+			dur = 0
+		}
+		words := len(strings.Fields(seg.Text))
+		spk := seg.SpeakerName
+		if spk == "" {
+			spk = seg.SpeakerLabel
+		}
+		if spk == "" {
+			spk = "Speaker"
+		}
+
+		totalDuration += dur
+		totalWords += words
+		totalTurns++
+
+		stat, ok := spkMap[spk]
+		if !ok {
+			stat = &spkStat{speaker: spk}
+			spkMap[spk] = stat
+			order = append(order, spk)
+		}
+		stat.duration += dur
+		stat.wordCount += words
+		stat.turnCount++
+	}
+
+	sort.SliceStable(order, func(i, j int) bool {
+		return spkMap[order[i]].duration > spkMap[order[j]].duration
+	})
+
+	var speakerStats []dtos.JSONExportSpeakerStat
+	for _, name := range order {
+		st := spkMap[name]
+		var ratio float64
+		if totalDuration > 0 {
+			ratio = (st.duration / totalDuration) * 100.0
+		}
+		speakerStats = append(speakerStats, dtos.JSONExportSpeakerStat{
+			Speaker:       st.speaker,
+			Duration:      st.duration,
+			TalkTimeRatio: math.Round(ratio*10) / 10,
+			TurnCount:     st.turnCount,
+			WordCount:     st.wordCount,
+		})
+	}
+
+	return &dtos.JSONExportAnalytics{
+		TotalSpeechDuration: totalDuration,
+		TotalWords:          totalWords,
+		TotalTurns:          totalTurns,
+		SpeakerStats:        speakerStats,
+	}
+}
+
+// buildMarkdownExport renders the document strictly in the requested order:
+// 1. Ringkasan (Summary & Action Items)
+// 2. Transkrip (Diarized Transcript)
+// 3. Sorotan & Bab (Highlights & Chapter Breakdown)
+// 4. Analitik (Conversation & Speaker Analytics)
 func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapters []models.Chapter, highlights []models.Highlight, segments []models.TranscriptSegment) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("# %s\n\n", rec.Title))
-	sb.WriteString(fmt.Sprintf("- **Date:** %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
-	sb.WriteString(fmt.Sprintf("- **Duration:** %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
-	sb.WriteString(fmt.Sprintf("- **Status:** %s\n\n", rec.Status))
-
-	execSummary := extractExecutiveSummary(summary)
-	if execSummary != "" {
-		sb.WriteString("## Executive Summary\n\n")
-		sb.WriteString(execSummary + "\n\n")
+	sb.WriteString(fmt.Sprintf("- **Tanggal:** %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
+	sb.WriteString(fmt.Sprintf("- **Durasi:** %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
+	sb.WriteString(fmt.Sprintf("- **Status:** %s\n", rec.Status))
+	if summary != nil && summary.Version > 0 {
+		templateLabel := summary.TemplateCategory
+		if templateLabel == "" {
+			templateLabel = "General"
+		}
+		sb.WriteString(fmt.Sprintf("- **Versi Ringkasan:** Versi %d (%s)\n", summary.Version, templateLabel))
 	}
+	sb.WriteString("\n")
 
-	actionItems := extractActionItems(summary)
-	if len(actionItems) > 0 {
-		sb.WriteString("## Key Action Items\n\n")
-		for _, item := range actionItems {
+	// 1. RINGKASAN
+	sb.WriteString("## 1. Ringkasan Pertemuan (Summary)\n\n")
+	formatted := formatSummaryContent(summary)
+	if formatted.Overview != "" {
+		sb.WriteString(formatted.Overview + "\n\n")
+	}
+	for _, sec := range formatted.Sections {
+		sb.WriteString(fmt.Sprintf("### %s\n\n", sec.Heading))
+		for _, item := range sec.Items {
+			sb.WriteString(item + "\n")
+		}
+		sb.WriteString("\n")
+	}
+	if len(formatted.ActionItems) > 0 {
+		sb.WriteString("### Tindak Lanjut & Action Items\n\n")
+		for _, item := range formatted.ActionItems {
 			sb.WriteString(fmt.Sprintf("- [ ] %s\n", item))
 		}
 		sb.WriteString("\n")
 	}
 
-	if len(chapters) > 0 {
-		sb.WriteString("## Chapter Breakdown\n\n")
-		for i, ch := range chapters {
-			sb.WriteString(fmt.Sprintf("### %d. %s (%s - %s)\n\n", i+1, ch.Title, timeutil.FormatTimestamp(ch.StartTime), timeutil.FormatTimestamp(ch.EndTime)))
-			if ch.Summary != "" {
-				sb.WriteString(ch.Summary + "\n\n")
-			}
-		}
-	}
-
-	if len(highlights) > 0 {
-		sb.WriteString("## Key Highlights\n\n")
-		for _, h := range highlights {
-			title := "Highlight"
-			if h.Title != nil && *h.Title != "" {
-				title = *h.Title
-			}
-			note := ""
-			if h.Note != nil && *h.Note != "" {
-				note = fmt.Sprintf(": %s", *h.Note)
-			}
-			sb.WriteString(fmt.Sprintf("- **[%s] %s**%s\n", timeutil.FormatTimestamp(h.StartTime), title, note))
-		}
-		sb.WriteString("\n")
-	}
-
+	// 2. TRANSKRIP
 	if len(segments) > 0 {
-		sb.WriteString("## Diarized Transcript\n\n")
+		sb.WriteString("## 2. Transkrip Percakapan (Diarized Transcript)\n\n")
 		for _, seg := range segments {
 			speaker := seg.SpeakerName
 			if speaker == "" {
@@ -253,9 +680,68 @@ func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapter
 		}
 	}
 
+	// 3. SOROTAN & BAB
+	if len(highlights) > 0 || len(chapters) > 0 {
+		sb.WriteString("## 3. Sorotan & Pembahasan Bab (Highlights & Chapters)\n\n")
+		if len(highlights) > 0 {
+			sb.WriteString("### Sorotan Utama (Key Highlights)\n\n")
+			for _, h := range highlights {
+				title := "Sorotan"
+				if h.Title != nil && *h.Title != "" {
+					title = *h.Title
+				}
+				note := ""
+				if h.Note != nil && *h.Note != "" {
+					note = fmt.Sprintf(": %s", *h.Note)
+				}
+				sb.WriteString(fmt.Sprintf("- **[%s] %s**%s\n", timeutil.FormatTimestamp(h.StartTime), title, note))
+			}
+			sb.WriteString("\n")
+		}
+		if len(chapters) > 0 {
+			sb.WriteString("### Pembahasan Bab (Chapter Breakdown)\n\n")
+			for i, ch := range chapters {
+				sb.WriteString(fmt.Sprintf("#### %d. %s (%s - %s)\n\n", i+1, ch.Title, timeutil.FormatTimestamp(ch.StartTime), timeutil.FormatTimestamp(ch.EndTime)))
+				if ch.Summary != "" {
+					sb.WriteString(ch.Summary + "\n\n")
+				}
+			}
+		}
+	}
+
+	// 4. ANALITIK
+	analytics := computeExportAnalytics(segments)
+	if analytics != nil {
+		sb.WriteString("## 4. Analitik Percakapan (Conversation Analytics)\n\n")
+		sb.WriteString(fmt.Sprintf("- **Total Durasi Bicara:** %s\n", timeutil.FormatTimestamp(analytics.TotalSpeechDuration)))
+		sb.WriteString(fmt.Sprintf("- **Total Kata:** %d kata\n", analytics.TotalWords))
+		sb.WriteString(fmt.Sprintf("- **Total Giliran Bicara:** %d giliran\n\n", analytics.TotalTurns))
+
+		if len(analytics.SpeakerStats) > 0 {
+			sb.WriteString("### Partisipasi Pembicara\n\n")
+			sb.WriteString("| Pembicara | Durasi Bicara | Porsi Bicara | Giliran | Jumlah Kata |\n")
+			sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
+			for _, st := range analytics.SpeakerStats {
+				sb.WriteString(fmt.Sprintf("| %s | %s | %.1f%% | %d | %d |\n",
+					st.Speaker,
+					timeutil.FormatTimestamp(st.Duration),
+					st.TalkTimeRatio,
+					st.TurnCount,
+					st.WordCount,
+				))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
 	return sb.String()
 }
 
+// buildTextExport renders plain text strictly in the requested order:
+// 1. Ringkasan (Summary & Action Items)
+// 2. Transkrip (Diarized Transcript)
+// 3. Sorotan & Bab (Highlights & Chapters)
+// 4. Analitik (Conversation & Speaker Analytics)
 func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []models.Chapter, highlights []models.Highlight, segments []models.TranscriptSegment) string {
 	var sb strings.Builder
 
@@ -266,63 +752,45 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 	sb.WriteString("MINUTES OF MEETING: " + strings.ToUpper(rec.Title) + "\n")
 	sb.WriteString(border + "\n\n")
 
-	sb.WriteString(fmt.Sprintf("Date:     %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
-	sb.WriteString(fmt.Sprintf("Duration: %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
-	sb.WriteString(fmt.Sprintf("Status:   %s\n\n", rec.Status))
-
-	execSummary := extractExecutiveSummary(summary)
-	if execSummary != "" {
-		sb.WriteString(divider + "\n")
-		sb.WriteString("EXECUTIVE SUMMARY\n")
-		sb.WriteString(divider + "\n")
-		sb.WriteString(execSummary + "\n\n")
+	sb.WriteString(fmt.Sprintf("Tanggal:  %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
+	sb.WriteString(fmt.Sprintf("Durasi:   %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
+	sb.WriteString(fmt.Sprintf("Status:   %s\n", rec.Status))
+	if summary != nil && summary.Version > 0 {
+		templateLabel := summary.TemplateCategory
+		if templateLabel == "" {
+			templateLabel = "General"
+		}
+		sb.WriteString(fmt.Sprintf("Versi:    Versi %d (%s)\n", summary.Version, templateLabel))
 	}
+	sb.WriteString("\n")
 
-	actionItems := extractActionItems(summary)
-	if len(actionItems) > 0 {
-		sb.WriteString(divider + "\n")
-		sb.WriteString("ACTION ITEMS\n")
-		sb.WriteString(divider + "\n")
-		for _, item := range actionItems {
+	// 1. RINGKASAN
+	sb.WriteString(divider + "\n")
+	sb.WriteString("1. RINGKASAN PERTEMUAN (SUMMARY)\n")
+	sb.WriteString(divider + "\n")
+	formatted := formatSummaryContent(summary)
+	if formatted.Overview != "" {
+		sb.WriteString(formatted.Overview + "\n\n")
+	}
+	for _, sec := range formatted.Sections {
+		sb.WriteString(strings.ToUpper(sec.Heading) + ":\n")
+		for _, item := range sec.Items {
+			sb.WriteString(item + "\n")
+		}
+		sb.WriteString("\n")
+	}
+	if len(formatted.ActionItems) > 0 {
+		sb.WriteString("TINDAK LANJUT & ACTION ITEMS:\n")
+		for _, item := range formatted.ActionItems {
 			sb.WriteString(fmt.Sprintf("[ ] %s\n", item))
 		}
 		sb.WriteString("\n")
 	}
 
-	if len(chapters) > 0 {
-		sb.WriteString(divider + "\n")
-		sb.WriteString("CHAPTERS\n")
-		sb.WriteString(divider + "\n")
-		for i, ch := range chapters {
-			sb.WriteString(fmt.Sprintf("%d. %s [%s - %s]\n", i+1, ch.Title, timeutil.FormatTimestamp(ch.StartTime), timeutil.FormatTimestamp(ch.EndTime)))
-			if ch.Summary != "" {
-				sb.WriteString(fmt.Sprintf("   %s\n", ch.Summary))
-			}
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(highlights) > 0 {
-		sb.WriteString(divider + "\n")
-		sb.WriteString("KEY HIGHLIGHTS\n")
-		sb.WriteString(divider + "\n")
-		for _, h := range highlights {
-			title := "Highlight"
-			if h.Title != nil && *h.Title != "" {
-				title = *h.Title
-			}
-			note := ""
-			if h.Note != nil && *h.Note != "" {
-				note = " - " + *h.Note
-			}
-			sb.WriteString(fmt.Sprintf("* [%s] %s%s\n", timeutil.FormatTimestamp(h.StartTime), title, note))
-		}
-		sb.WriteString("\n")
-	}
-
+	// 2. TRANSKRIP
 	if len(segments) > 0 {
 		sb.WriteString(divider + "\n")
-		sb.WriteString("DIARIZED TRANSCRIPT\n")
+		sb.WriteString("2. TRANSKRIP PERCAKAPAN (DIARIZED TRANSCRIPT)\n")
 		sb.WriteString(divider + "\n")
 		for _, seg := range segments {
 			speaker := seg.SpeakerName
@@ -332,7 +800,69 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 			if speaker == "" {
 				speaker = "Speaker"
 			}
-			sb.WriteString(fmt.Sprintf("[%s - %s] %s: %s\n\n", timeutil.FormatTimestamp(seg.StartTime), timeutil.FormatTimestamp(seg.EndTime), speaker, seg.Text))
+			sb.WriteString(fmt.Sprintf("[%s - %s] %s: %s\n\n",
+				timeutil.FormatTimestamp(seg.StartTime),
+				timeutil.FormatTimestamp(seg.EndTime),
+				speaker,
+				seg.Text,
+			))
+		}
+	}
+
+	// 3. SOROTAN & BAB
+	if len(highlights) > 0 || len(chapters) > 0 {
+		sb.WriteString(divider + "\n")
+		sb.WriteString("3. SOROTAN & PEMBAHASAN BAB (HIGHLIGHTS & CHAPTERS)\n")
+		sb.WriteString(divider + "\n")
+		if len(highlights) > 0 {
+			sb.WriteString("SOROTAN UTAMA (KEY HIGHLIGHTS):\n")
+			for _, h := range highlights {
+				title := "Sorotan"
+				if h.Title != nil && *h.Title != "" {
+					title = *h.Title
+				}
+				note := ""
+				if h.Note != nil && *h.Note != "" {
+					note = " - " + *h.Note
+				}
+				sb.WriteString(fmt.Sprintf("* [%s] %s%s\n", timeutil.FormatTimestamp(h.StartTime), title, note))
+			}
+			sb.WriteString("\n")
+		}
+		if len(chapters) > 0 {
+			sb.WriteString("PEMBAHASAN BAB (CHAPTER BREAKDOWN):\n")
+			for i, ch := range chapters {
+				sb.WriteString(fmt.Sprintf("%d. %s [%s - %s]\n", i+1, ch.Title, timeutil.FormatTimestamp(ch.StartTime), timeutil.FormatTimestamp(ch.EndTime)))
+				if ch.Summary != "" {
+					sb.WriteString(fmt.Sprintf("   %s\n", ch.Summary))
+				}
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	// 4. ANALITIK
+	analytics := computeExportAnalytics(segments)
+	if analytics != nil {
+		sb.WriteString(divider + "\n")
+		sb.WriteString("4. ANALITIK PERCAKAPAN (CONVERSATION ANALYTICS)\n")
+		sb.WriteString(divider + "\n")
+		sb.WriteString(fmt.Sprintf("Total Durasi Bicara: %s\n", timeutil.FormatTimestamp(analytics.TotalSpeechDuration)))
+		sb.WriteString(fmt.Sprintf("Total Kata:          %d kata\n", analytics.TotalWords))
+		sb.WriteString(fmt.Sprintf("Total Giliran:       %d giliran\n\n", analytics.TotalTurns))
+
+		if len(analytics.SpeakerStats) > 0 {
+			sb.WriteString("PARTISIPASI PEMBICARA:\n")
+			for _, st := range analytics.SpeakerStats {
+				sb.WriteString(fmt.Sprintf("- %s: %s (%.1f%%) | %d giliran | %d kata\n",
+					st.Speaker,
+					timeutil.FormatTimestamp(st.Duration),
+					st.TalkTimeRatio,
+					st.TurnCount,
+					st.WordCount,
+				))
+			}
+			sb.WriteString("\n")
 		}
 	}
 
@@ -340,14 +870,25 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 }
 
 func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []models.Chapter, highlights []models.Highlight, segments []models.TranscriptSegment) ([]byte, error) {
+	formatted := formatSummaryContent(summary)
+	summaryVersion := 0
+	templateCategory := ""
+	if summary != nil {
+		summaryVersion = summary.Version
+		templateCategory = summary.TemplateCategory
+	}
+
 	payload := dtos.JSONExportPayload{
 		RecordingID:      rec.ID.String(),
 		Title:            rec.Title,
 		DurationSeconds:  rec.DurationSeconds,
 		Status:           rec.Status,
 		CreatedAt:        rec.CreatedAt,
-		ExecutiveSummary: extractExecutiveSummary(summary),
-		ActionItems:      extractActionItems(summary),
+		ExecutiveSummary: formatted.Overview,
+		SummaryVersion:   summaryVersion,
+		TemplateCategory: templateCategory,
+		ActionItems:      formatted.ActionItems,
+		Analytics:        computeExportAnalytics(segments),
 	}
 
 	for _, ch := range chapters {
@@ -395,24 +936,68 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 	return json.MarshalIndent(payload, "", "  ")
 }
 
+// WrapTextLine cleanly wraps lines at whitespace boundaries without mid-word splits.
+func WrapTextLine(line string, maxLen int) []string {
+	line = strings.TrimRight(line, " \r\t")
+	if len(line) <= maxLen {
+		return []string{line}
+	}
+
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	var lines []string
+	var current strings.Builder
+
+	for _, w := range words {
+		for len(w) > maxLen {
+			if current.Len() > 0 {
+				lines = append(lines, current.String())
+				current.Reset()
+			}
+			lines = append(lines, w[:maxLen])
+			w = w[maxLen:]
+		}
+
+		if w == "" {
+			continue
+		}
+
+		if current.Len() == 0 {
+			current.WriteString(w)
+		} else if current.Len()+1+len(w) <= maxLen {
+			current.WriteString(" ")
+			current.WriteString(w)
+		} else {
+			lines = append(lines, current.String())
+			current.Reset()
+			current.WriteString(w)
+		}
+	}
+
+	if current.Len() > 0 {
+		lines = append(lines, current.String())
+	}
+
+	return lines
+}
+
 // generateStandardPDF constructs a valid, dependency-free PDF 1.4 byte document containing
-// the exported MOM text.
+// the exported MOM text with neat word wrapping and margins.
 func generateStandardPDF(title string, textContent string) []byte {
-	// Clean text and break into lines
+	// Clean text and break into lines safely
 	sanitized := regexp.MustCompile(`[^\x20-\x7E\n]`).ReplaceAllString(textContent, " ")
 	rawLines := strings.Split(sanitized, "\n")
 
 	var wrappedLines []string
 	for _, l := range rawLines {
-		line := strings.TrimRight(l, " \r")
-		for len(line) > 85 {
-			wrappedLines = append(wrappedLines, line[:85])
-			line = line[85:]
-		}
-		wrappedLines = append(wrappedLines, line)
+		wrapped := WrapTextLine(l, 80)
+		wrappedLines = append(wrappedLines, wrapped...)
 	}
 
-	// Maximum 50 lines per page
+	// Maximum 48 lines per page for comfortable letter margins
 	const linesPerPage = 48
 	var pages [][]string
 	for i := 0; i < len(wrappedLines); i += linesPerPage {
@@ -496,3 +1081,4 @@ func generateStandardPDF(title string, textContent string) []byte {
 
 	return buf.Bytes()
 }
+

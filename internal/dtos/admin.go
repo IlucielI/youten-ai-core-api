@@ -83,3 +83,19 @@ type AdminRevokeUserSessionsResponse struct {
 	Revoked bool      `json:"revoked"`
 	Message string    `json:"message"`
 }
+
+// AdminRoleItem represents an administrative RBAC role with decoded permissions.
+type AdminRoleItem struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Permissions []string  `json:"permissions"`
+	IsSystem    bool      `json:"is_system"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// AdminRoleListResponse encapsulates a list of administrative roles.
+type AdminRoleListResponse struct {
+	Items []AdminRoleItem `json:"items"`
+}

@@ -150,3 +150,34 @@ func TestAdminRevokeUserSessionsResponse(t *testing.T) {
 		t.Errorf("expected message, got %s", resp.Message)
 	}
 }
+
+func TestAdminRoleListResponse(t *testing.T) {
+	id := uuid.New()
+	now := time.Now()
+	resp := AdminRoleListResponse{
+		Items: []AdminRoleItem{
+			{
+				ID:          id,
+				Name:        "Super Admin",
+				Description: "Root administrator",
+				Permissions: []string{"*"},
+				IsSystem:    true,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+		},
+	}
+
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].Name != "Super Admin" {
+		t.Errorf("expected name Super Admin, got %s", resp.Items[0].Name)
+	}
+	if len(resp.Items[0].Permissions) != 1 || resp.Items[0].Permissions[0] != "*" {
+		t.Errorf("expected permissions [*], got %v", resp.Items[0].Permissions)
+	}
+	if !resp.Items[0].IsSystem {
+		t.Error("expected is_system true")
+	}
+}

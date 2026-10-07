@@ -304,3 +304,49 @@ func TestControllers_AdminRevokeUserSessions(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_AdminListRoles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200 with role list", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		roleID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Support", "Support Staff", []byte(`["users:read"]`), false, now, now))
+
+		r := gin.New()
+		r.GET("/v1/admin/roles", ctrls.AdminListRoles)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/roles", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("service failure returns 500", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WillReturnError(gorm.ErrInvalidDB)
+
+		r := gin.New()
+		r.GET("/v1/admin/roles", ctrls.AdminListRoles)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/roles", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("expected status 500, got %d", w.Code)
+		}
+	})
+}

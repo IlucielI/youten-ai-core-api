@@ -519,4 +519,64 @@ func TestService_ExportRecordingMOM_SpecificVersion(t *testing.T) {
 	}
 }
 
+func TestService_ExportRecordingMOM_ExtendedTemplates(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+
+	userID := uuid.New()
+	recID := uuid.New()
+	sumID := uuid.New()
+	now := time.Now().UTC()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	podcastJSON := `{
+		"episode_title": "AI in Production",
+		"show_notes": "Deep dive into production LLM orchestration and deployment.",
+		"topic_chapters": [
+			{"timestamp": "05:00", "topic": "Model Quantization", "summary": "Benefits of FP8 and INT4."}
+		],
+		"golden_quotes": [
+			{"quote": "Shipping is a feature.", "speaker": "Jane Doe"}
+		]
+	}`
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "status", "created_at", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, "Podcast Episode 42", 3600.0, "COMPLETED", now, &userID, "token", false))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE ORDER BY version DESC.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "is_active", "markdown_content", "structured_data"}).
+			AddRow(sumID, recID, 1, true, "Podcast Markdown", podcastJSON))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "markdown", "")
+	if err != nil {
+		t.Fatalf("unexpected export error: %v", err)
+	}
+
+	content := string(res.Data)
+	if !strings.Contains(content, "Deep dive into production LLM orchestration") {
+		t.Errorf("expected show notes in markdown export, got: %s", content)
+	}
+	if !strings.Contains(content, "Model Quantization") {
+		t.Errorf("expected chapters in markdown export, got: %s", content)
+	}
+	if !strings.Contains(content, "Shipping is a feature.") {
+		t.Errorf("expected golden quotes in markdown export, got: %s", content)
+	}
+}
+
+
 

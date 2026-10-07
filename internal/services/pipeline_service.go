@@ -416,6 +416,8 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	}
 	if template != nil && template.Prompt != "" {
 		systemPrompt = template.Prompt
+	} else if defPrompt := templates.DefaultPromptForTemplate(templateKey); defPrompt != "" {
+		systemPrompt = defPrompt
 	}
 
 	targetLang := recording.OutputLanguage
@@ -437,6 +439,8 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	var schema map[string]interface{}
 	if template != nil && len(template.OutputSchema) > 0 {
 		schema = map[string]interface{}(template.OutputSchema)
+	} else {
+		schema = templates.DefaultSchemaForTemplate(templateKey)
 	}
 
 	if s.llm == nil {

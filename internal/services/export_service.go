@@ -451,6 +451,97 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 		}
 	}
 
+	// 7. Podcast Schema
+	if sn, ok := data["show_notes"].(string); ok && sn != "" && res.Overview == "" {
+		res.Overview = sn
+	}
+	if tc, ok := data["topic_chapters"].([]interface{}); ok && len(tc) > 0 {
+		var items []string
+		for _, c := range tc {
+			if cm, ok := c.(map[string]interface{}); ok {
+				ts, _ := cm["timestamp"].(string)
+				top, _ := cm["topic"].(string)
+				sm, _ := cm["summary"].(string)
+				items = append(items, fmt.Sprintf("[%s] %s: %s", ts, top, sm))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Topik Pembahasan (Chapters)", Items: items})
+	}
+	if gq, ok := data["golden_quotes"].([]interface{}); ok && len(gq) > 0 {
+		var items []string
+		for _, q := range gq {
+			if qm, ok := q.(map[string]interface{}); ok {
+				quote, _ := qm["quote"].(string)
+				spk, _ := qm["speaker"].(string)
+				items = append(items, fmt.Sprintf("\"%s\" — %s", quote, spk))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Kutipan Berkesan (Golden Quotes)", Items: items})
+	}
+
+	// 8. Lecture Schema
+	if cs, ok := data["course_summary"].(string); ok && cs != "" && res.Overview == "" {
+		res.Overview = cs
+	}
+	if cc, ok := data["core_concepts"].([]interface{}); ok && len(cc) > 0 {
+		var items []string
+		for _, c := range cc {
+			if cm, ok := c.(map[string]interface{}); ok {
+				cp, _ := cm["concept"].(string)
+				exp, _ := cm["explanation"].(string)
+				items = append(items, fmt.Sprintf("• %s: %s", cp, exp))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Konsep & Teori Utama", Items: items})
+	}
+	if tg, ok := data["technical_glossary"].([]interface{}); ok && len(tg) > 0 {
+		var items []string
+		for _, g := range tg {
+			if gm, ok := g.(map[string]interface{}); ok {
+				term, _ := gm["term"].(string)
+				def, _ := gm["definition"].(string)
+				items = append(items, fmt.Sprintf("• %s: %s", term, def))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Glosarium Istilah Teknis", Items: items})
+	}
+	if erq, ok := data["exam_review_questions"].([]interface{}); ok && len(erq) > 0 {
+		var items []string
+		for _, q := range erq {
+			if qm, ok := q.(map[string]interface{}); ok {
+				ques, _ := qm["question"].(string)
+				items = append(items, fmt.Sprintf("• %s", ques))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Pertanyaan Ujian & Diskusi", Items: items})
+	}
+
+	// 9. Music Lyrics Schema
+	if cm, ok := data["core_message"].(string); ok && cm != "" && res.Overview == "" {
+		res.Overview = cm
+	}
+	if sl, ok := data["structured_lyrics"].([]interface{}); ok && len(sl) > 0 {
+		var items []string
+		for _, l := range sl {
+			if lm, ok := l.(map[string]interface{}); ok {
+				sec, _ := lm["section"].(string)
+				lyr, _ := lm["lyrics"].(string)
+				items = append(items, fmt.Sprintf("[%s]\n%s", sec, lyr))
+			}
+		}
+		res.Sections = append(res.Sections, formattedSection{Heading: "Struktur Lirik Lagu", Items: items})
+	}
+	if et, ok := data["emotional_tone"].(map[string]interface{}); ok {
+		mood, _ := et["primary_mood"].(string)
+		energy, _ := et["energy_level"].(string)
+		if mood != "" {
+			res.Sections = append(res.Sections, formattedSection{
+				Heading: "Analisis Suasana & Emosi",
+				Items:   []string{fmt.Sprintf("Suasana Hati: %s, Tingkat Energi: %s", mood, energy)},
+			})
+		}
+	}
+
 	// Action Items from standard fields
 	for _, item := range extractActionItems(summary) {
 		found := false

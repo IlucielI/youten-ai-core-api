@@ -131,3 +131,22 @@ func TestAdminUserQuotaOverrideRequest_Validate(t *testing.T) {
 		}
 	})
 }
+
+func TestAdminRevokeUserSessionsResponse(t *testing.T) {
+	id := uuid.New()
+	resp := AdminRevokeUserSessionsResponse{
+		UserID:  id,
+		Revoked: true,
+		Message: "all sessions revoked",
+	}
+
+	if resp.UserID != id {
+		t.Errorf("expected userID %v, got %v", id, resp.UserID)
+	}
+	if !resp.Revoked {
+		t.Error("expected revoked true")
+	}
+	if resp.Message != "all sessions revoked" {
+		t.Errorf("expected message, got %s", resp.Message)
+	}
+}

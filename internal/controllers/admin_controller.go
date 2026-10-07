@@ -84,3 +84,39 @@ func (c *Controllers) AdminOverrideUserQuota(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
+// AdminRevokeUserSessions handles POST /v1/admin/users/:id/revoke-sessions.
+func (c *Controllers) AdminRevokeUserSessions(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid user ID"))
+		return
+	}
+
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminRevokeUserSessions(ctx.Request.Context(), meta, userID)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminRevokeUserSessionsResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}

@@ -224,3 +224,83 @@ func TestControllers_AdminOverrideUserQuota(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_AdminRevokeUserSessions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status"}).
+				AddRow(userID, "testuser@example.com", "Test User", "active"))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE user_id = \$3 AND revoked_at IS NULL`).
+			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 2))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/users/:id/revoke-sessions", ctrls.AdminRevokeUserSessions)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/users/"+userID.String()+"/revoke-sessions", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("invalid UUID returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/users/:id/revoke-sessions", ctrls.AdminRevokeUserSessions)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/users/invalid-uuid/revoke-sessions", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("missing admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		userID := uuid.New()
+		r := gin.New()
+		r.POST("/v1/admin/users/:id/revoke-sessions", ctrls.AdminRevokeUserSessions)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/users/"+userID.String()+"/revoke-sessions", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+}

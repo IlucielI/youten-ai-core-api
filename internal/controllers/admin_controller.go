@@ -510,5 +510,36 @@ func (c *Controllers) AdminUpdateSystemConfig(ctx *gin.Context) {
 	})
 }
 
+// AdminListReports handles GET /v1/admin/reports.
+func (c *Controllers) AdminListReports(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	var q dtos.AdminReportListQuery
+	if err := ctx.ShouldBindQuery(&q); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
+		return
+	}
+	q.SetDefaults()
+
+	resp, err := c.svc.AdminListReports(ctx.Request.Context(), q)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminReportListResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 

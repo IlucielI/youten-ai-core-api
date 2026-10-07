@@ -400,6 +400,50 @@ func (r *UpdateSystemConfigRequest) Validate() error {
 	return nil
 }
 
+// AdminReportListQuery defines filter and pagination parameters for the abuse reports queue.
+type AdminReportListQuery struct {
+	Status string `form:"status"`
+	Page   int    `form:"page"`
+	Limit  int    `form:"limit"`
+}
+
+// SetDefaults sanitizes pagination values and status filter.
+func (q *AdminReportListQuery) SetDefaults() {
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Limit < 1 {
+		q.Limit = 10
+	}
+	if q.Limit > 100 {
+		q.Limit = 100
+	}
+	q.Status = strings.ToLower(strings.TrimSpace(q.Status))
+}
+
+// AdminReportListItem contains summarized abuse report and target metadata.
+type AdminReportListItem struct {
+	ID             uuid.UUID  `json:"id"`
+	RecordingID    uuid.UUID  `json:"recording_id"`
+	RecordingTitle string     `json:"recording_title,omitempty"`
+	ReporterType   string     `json:"reporter_type"`
+	ReporterRef    *string    `json:"reporter_ref,omitempty"`
+	Reason         string     `json:"reason"`
+	Status         string     `json:"status"`
+	ResolutionNote *string    `json:"resolution_note,omitempty"`
+	HandledBy      *uuid.UUID `json:"handled_by,omitempty"`
+	HandlerName    *string    `json:"handler_name,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+// AdminReportListResponse represents a paginated list of moderation reports.
+type AdminReportListResponse struct {
+	Items      []AdminReportListItem `json:"items"`
+	Pagination PaginationMeta        `json:"pagination"`
+}
+
+
 
 
 

@@ -1041,6 +1041,70 @@ func TestControllers_AdminSystemConfig(t *testing.T) {
 	})
 }
 
+func TestControllers_AdminListReports(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		recID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "reports"`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(`SELECT \* FROM "reports" ORDER BY created_at DESC LIMIT \$1`).
+			WithArgs(10).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "recording_id", "reporter_type", "reason", "status", "created_at", "updated_at",
+			}).AddRow(
+				repID, recID, "guest", "spam", "open", now, now,
+			))
+
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE "recordings"\."id" = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(recID, "Target Recording"))
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  uuid.New(),
+				Username: "moderator",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.GET("/v1/admin/reports", ctrls.AdminListReports)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/reports?page=1&limit=10", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("unauthorized without admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.GET("/v1/admin/reports", ctrls.AdminListReports)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/reports", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+}
+
+
 
 
 

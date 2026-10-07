@@ -591,6 +591,76 @@ func TestSystemConfigResponse(t *testing.T) {
 	}
 }
 
+func TestAdminReportListQuery_SetDefaults(t *testing.T) {
+	t.Run("defaults invalid values", func(t *testing.T) {
+		q := AdminReportListQuery{
+			Page:  0,
+			Limit: -1,
+		}
+		q.SetDefaults()
+
+		if q.Page != 1 {
+			t.Errorf("expected page 1, got %d", q.Page)
+		}
+		if q.Limit != 10 {
+			t.Errorf("expected limit 10, got %d", q.Limit)
+		}
+	})
+
+	t.Run("caps limit at 100 and trims status", func(t *testing.T) {
+		q := AdminReportListQuery{
+			Page:   2,
+			Limit:  200,
+			Status: "  OPEN  ",
+		}
+		q.SetDefaults()
+
+		if q.Limit != 100 {
+			t.Errorf("expected limit 100, got %d", q.Limit)
+		}
+		if q.Status != "open" {
+			t.Errorf("expected status open, got %q", q.Status)
+		}
+	})
+}
+
+func TestAdminReportListResponse(t *testing.T) {
+	id := uuid.New()
+	recID := uuid.New()
+	handler := "Admin Moderator"
+	now := time.Now()
+
+	resp := AdminReportListResponse{
+		Items: []AdminReportListItem{
+			{
+				ID:             id,
+				RecordingID:    recID,
+				RecordingTitle: "Abusive Title",
+				ReporterType:   "guest",
+				Reason:         "Spam content",
+				Status:         "open",
+				HandlerName:    &handler,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+		},
+		Pagination: PaginationMeta{
+			CurrentPage: 1,
+			PageSize:    10,
+			TotalItems:  1,
+			TotalPages:  1,
+		},
+	}
+
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].RecordingTitle != "Abusive Title" {
+		t.Errorf("expected title 'Abusive Title', got %q", resp.Items[0].RecordingTitle)
+	}
+}
+
+
 
 
 

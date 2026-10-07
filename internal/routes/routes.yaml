@@ -334,6 +334,14 @@ routes:
     admin_auth: true
     admin_permission: "config:write"
 
+  # Admin list moderation abuse reports (CMS).
+  - method: GET
+    path: /v1/admin/reports
+    handler: AdminListReports
+    admin_auth: true
+    admin_permission: "moderation:read"
+
+
 
 
 

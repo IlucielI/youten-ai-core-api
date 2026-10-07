@@ -2,9 +2,10 @@ package dtos
 
 // STTOptions contains configuration options for a transcription request.
 type STTOptions struct {
-	Language    string  `json:"language,omitempty"`
-	Prompt      string  `json:"prompt,omitempty"`
-	Temperature float64 `json:"temperature,omitempty"`
+	Language      string  `json:"language,omitempty"`
+	Prompt        string  `json:"prompt,omitempty"`
+	Temperature   float64 `json:"temperature,omitempty"`
+	AudioDuration float64 `json:"audio_duration,omitempty"`
 }
 
 // WordResult represents word-level karaoke timing.

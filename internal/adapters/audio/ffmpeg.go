@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"code-base-golang/internal/dtos"
@@ -100,12 +102,28 @@ func (f *FFmpegExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader,
 		return nil, fmt.Errorf("failed to read converted audio file: %w", err)
 	}
 
+	durationSeconds := ParseDuration(stderr.String())
+
 	return &dtos.AudioExtractionResult{
 		Reader:          io.NopCloser(bytes.NewReader(outputData)),
 		Format:          "mp3",
-		DurationSeconds: 0, // Duration will be extracted via STT or metadata
+		DurationSeconds: durationSeconds,
 		SizeBytes:       int64(len(outputData)),
 	}, nil
+}
+
+var durationRegex = regexp.MustCompile(`Duration:\s*(\d{2,}):(\d{2}):(\d{2}(?:\.\d+)?)`)
+
+// ParseDuration extracts the media duration in seconds from ffmpeg log output.
+func ParseDuration(output string) float64 {
+	matches := durationRegex.FindStringSubmatch(output)
+	if len(matches) != 4 {
+		return 0
+	}
+	hours, _ := strconv.ParseFloat(matches[1], 64)
+	minutes, _ := strconv.ParseFloat(matches[2], 64)
+	seconds, _ := strconv.ParseFloat(matches[3], 64)
+	return hours*3600 + minutes*60 + seconds
 }
 
 // Ensure FFmpegExtractor satisfies services.AudioExtractor at compile time.

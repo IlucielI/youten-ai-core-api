@@ -201,16 +201,21 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		}
 	}
 
+	duration := parsed.Duration
+	if duration <= 0 && opts.AudioDuration > 0 {
+		duration = opts.AudioDuration
+	}
+
 	// Defensive fallback if audio returned single text without segmented array or diarized text block
 	if len(segments) == 0 && parsed.Text != "" {
-		diarized := parseDiarizedTextSegments(parsed.Text, parsed.Duration)
+		diarized := parseDiarizedTextSegments(parsed.Text, duration)
 		if len(diarized) > 0 {
 			segments = diarized
 		} else {
 			segments = append(segments, dtos.SegmentResult{
 				ID:           0,
 				Start:        0,
-				End:          parsed.Duration,
+				End:          duration,
 				Text:         parsed.Text,
 				SpeakerLabel: "Speaker 0",
 			})
@@ -227,7 +232,7 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 	return &dtos.TranscriptionResult{
 		Text:     parsed.Text,
 		Language: lang,
-		Duration: parsed.Duration,
+		Duration: duration,
 		Segments: segments,
 	}, nil
 }

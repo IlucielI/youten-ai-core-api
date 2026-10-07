@@ -346,6 +346,39 @@ type DLQMessagesResponse struct {
 	Items       []DLQMessageItem `json:"items"`
 }
 
+// DLQRetryRequest defines the payload for an admin to reprocess a dead-lettered or stuck pipeline job.
+type DLQRetryRequest struct {
+	RecordingID uuid.UUID `json:"recording_id"`
+	Stage       string    `json:"stage,omitempty"`
+}
+
+// Validate ensures recording_id is provided and optional stage is valid.
+func (r *DLQRetryRequest) Validate() error {
+	if r.RecordingID == uuid.Nil {
+		return errors.New("recording_id is required")
+	}
+	r.Stage = strings.ToUpper(strings.TrimSpace(r.Stage))
+	if r.Stage != "" {
+		switch r.Stage {
+		case "QUEUED", "EXTRACTING", "TRANSCRIBING", "SUMMARIZING", "INDEXING":
+			// valid
+		default:
+			return errors.New("invalid stage, allowed values: QUEUED, EXTRACTING, TRANSCRIBING, SUMMARIZING, INDEXING")
+		}
+	}
+	return nil
+}
+
+// DLQRetryResponse returns details of the re-initiated pipeline job.
+type DLQRetryResponse struct {
+	RecordingID uuid.UUID `json:"recording_id"`
+	Status      string    `json:"status"`
+	Stage       string    `json:"stage"`
+	Message     string    `json:"message"`
+	RetriedAt   time.Time `json:"retried_at"`
+}
+
+
 
 
 

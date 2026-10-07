@@ -539,6 +539,28 @@ func TestDLQMessagesResponse(t *testing.T) {
 	}
 }
 
+func TestDLQRetryRequest_Validate(t *testing.T) {
+	t.Run("valid request succeeds", func(t *testing.T) {
+		req := DLQRetryRequest{
+			RecordingID: uuid.New(),
+			Stage:       "TRANSCRIBING",
+		}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("nil recording ID returns error", func(t *testing.T) {
+		req := DLQRetryRequest{
+			RecordingID: uuid.Nil,
+		}
+		if err := req.Validate(); err == nil {
+			t.Fatal("expected error for nil recording ID, got nil")
+		}
+	})
+}
+
+
 
 
 

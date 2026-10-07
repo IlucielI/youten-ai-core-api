@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -828,6 +829,115 @@ func TestControllers_AdminGetDLQPipeline(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_AdminRetryDLQJob(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("success returns 200 with retry response", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		recID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "status", "title", "original_filename", "selected_template", "output_language", "audio_url", "created_at", "updated_at",
+			}).
+				AddRow(recID, models.RecordingStatusFailed, "Meeting", "meet.mp4", "GENERAL", "id", nil, now, now))
+
+		mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+		mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE`).
+			WithArgs(recID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectQuery(`SELECT .* FROM "transcript_chunks" WHERE recording_id = \$1 ORDER BY chunk_index ASC`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+			WithArgs(models.RecordingStatusQueued, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "ops_admin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/pipeline/dlq/retry", ctrls.AdminRetryDLQJob)
+
+		body := fmt.Sprintf(`{"recording_id": "%s"}`, recID.String())
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/pipeline/dlq/retry", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("unauthorized returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/pipeline/dlq/retry", ctrls.AdminRetryDLQJob)
+
+		body := fmt.Sprintf(`{"recording_id": "%s"}`, uuid.New().String())
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/pipeline/dlq/retry", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("validation error returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  uuid.New(),
+				Username: "ops_admin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/pipeline/dlq/retry", ctrls.AdminRetryDLQJob)
+
+		body := `{"recording_id": "00000000-0000-0000-0000-000000000000"}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/pipeline/dlq/retry", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+}
+
 
 
 

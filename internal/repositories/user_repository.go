@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -72,4 +73,54 @@ func (r *Repositories) UpdateUserFullName(ctx context.Context, id uuid.UUID, ful
 	}
 	return nil
 }
+
+// ListUsersQuery holds filter criteria for listing users.
+type ListUsersQuery struct {
+	Search string
+	Status models.UserStatus
+	Offset int
+	Limit  int
+}
+
+// ListUsers retrieves paginated registered users matching search query and status filter.
+func (r *Repositories) ListUsers(ctx context.Context, q ListUsersQuery) ([]models.User, int64, error) {
+	var users []models.User
+	var total int64
+
+	// Guardrails: validate and cap pagination bounds to prevent denial-of-service
+	if q.Limit <= 0 {
+		q.Limit = 20
+	} else if q.Limit > 100 {
+		q.Limit = 100
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+
+	db := r.db.WithContext(ctx).Model(&models.User{}).Where("deleted_at IS NULL")
+
+	if q.Status != "" {
+		db = db.Where("status = ?", q.Status)
+	}
+
+	cleanSearch := strings.TrimSpace(q.Search)
+	if cleanSearch != "" {
+		if len(cleanSearch) > 100 {
+			cleanSearch = cleanSearch[:100]
+		}
+		searchPattern := "%" + cleanSearch + "%"
+		db = db.Where("email ILIKE ? OR full_name ILIKE ?", searchPattern, searchPattern)
+	}
+
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := db.Order("created_at DESC").Limit(q.Limit).Offset(q.Offset).Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
+}
+
 

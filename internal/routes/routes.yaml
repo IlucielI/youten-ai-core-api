@@ -235,3 +235,10 @@ routes:
   - method: POST
     path: /v1/waitlist/bot
     handler: JoinBotWaitlist
+
+  # Admin list registered users (CMS).
+  - method: GET
+    path: /v1/admin/users
+    handler: AdminListUsers
+    admin_auth: true
+    admin_permission: "users:read"

@@ -986,6 +986,56 @@ func (s *Service) AdminListAuditLogs(ctx context.Context, q dtos.AdminAuditLogLi
 	}, nil
 }
 
+// AdminGetOverviewStats returns system-wide metrics across users, recordings, and storage.
+func (s *Service) AdminGetOverviewStats(ctx context.Context) (*dtos.SystemOverviewStatsResponse, error) {
+	stats, err := s.repo.GetSystemOverviewStats(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.SystemOverviewStatsResponse{
+		TotalUsers:           stats.TotalUsers,
+		ActiveUsers:          stats.ActiveUsers,
+		TotalRecordings:      stats.TotalRecordings,
+		CompletedRecordings:  stats.CompletedRecordings,
+		FailedRecordings:     stats.FailedRecordings,
+		TotalStorageBytes:    stats.TotalStorageBytes,
+		TotalDurationSeconds: stats.TotalDurationSeconds,
+	}, nil
+}
+
+// AdminGetCostOversight calculates estimates for transcription (STT) and intelligence (LLM) expenses.
+func (s *Service) AdminGetCostOversight(ctx context.Context) (*dtos.CostOversightResponse, error) {
+	stats, err := s.repo.GetSystemOverviewStats(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	totalMinutes := stats.TotalDurationSeconds / 60.0
+
+	// Whisper/Deepgram STT cost benchmark: ~$0.006 per audio minute
+	sttRatePerMinute := 0.006
+	sttCost := math.Round(totalMinutes*sttRatePerMinute*1000) / 1000
+
+	// LLM benchmark estimate: ~150 words/min = ~200 tokens/min input + ~100 tokens/min output = ~300 tokens/min
+	// GPT-4o-mini / Gemini Flash blended cost: ~$0.0003 per 1K tokens
+	estimatedTokens := int64(math.Round(totalMinutes * 300))
+	llmRatePer1kTokens := 0.0003
+	llmCost := math.Round((float64(estimatedTokens)/1000.0)*llmRatePer1kTokens*1000) / 1000
+
+	totalCost := math.Round((sttCost+llmCost)*1000) / 1000
+
+	return &dtos.CostOversightResponse{
+		TotalAudioMinutes:     math.Round(totalMinutes*100) / 100,
+		EstimatedSTTCostUSD:   sttCost,
+		TotalLLMTokens:        estimatedTokens,
+		EstimatedLLMCostUSD:   llmCost,
+		TotalEstimatedCostUSD: totalCost,
+		Currency:              "USD",
+	}, nil
+}
+
+
 
 
 

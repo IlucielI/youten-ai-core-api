@@ -23,6 +23,24 @@ type JSONExportPayload struct {
 	Chapters         []JSONExportChapter       `json:"chapters,omitempty"`
 	Highlights       []JSONExportHighlight     `json:"highlights,omitempty"`
 	Transcript       []JSONExportTranscriptSeg `json:"transcript,omitempty"`
+	Analytics        *JSONExportAnalytics      `json:"analytics,omitempty"`
+}
+
+// JSONExportAnalytics contains computed conversation metrics.
+type JSONExportAnalytics struct {
+	TotalSpeechDuration float64                 `json:"total_speech_duration"`
+	TotalWords          int                     `json:"total_words"`
+	TotalTurns          int                     `json:"total_turns"`
+	SpeakerStats        []JSONExportSpeakerStat `json:"speaker_stats,omitempty"`
+}
+
+// JSONExportSpeakerStat contains metrics for a single speaker.
+type JSONExportSpeakerStat struct {
+	Speaker       string  `json:"speaker"`
+	Duration      float64 `json:"duration"`
+	TalkTimeRatio float64 `json:"talk_time_ratio"`
+	TurnCount     int     `json:"turn_count"`
+	WordCount     int     `json:"word_count"`
 }
 
 // JSONExportChapter represents a single discussion chapter within an exported JSON document.

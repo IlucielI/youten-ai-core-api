@@ -52,7 +52,15 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 	if appErr.HTTPStatus >= 400 && appErr.HTTPStatus < 500 {
 		status = constants.ResponseStatusFail
 	} else if appErr.HTTPStatus >= 500 {
-		log.Printf("[API ERROR %d] %s %s: %v", appErr.HTTPStatus, ctx.Request.Method, ctx.Request.URL.Path, err)
+		reqMethod := "UNKNOWN"
+		reqPath := "UNKNOWN"
+		if ctx.Request != nil {
+			reqMethod = ctx.Request.Method
+			if ctx.Request.URL != nil {
+				reqPath = ctx.Request.URL.Path
+			}
+		}
+		log.Printf("[API ERROR %d] %s %s: %v", appErr.HTTPStatus, reqMethod, reqPath, err)
 	}
 
 	ctx.JSON(appErr.HTTPStatus, dtos.BaseResponse{

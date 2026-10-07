@@ -20,6 +20,9 @@ var (
 	ErrInvalidYouTubeURL = ErrInvalidMediaURL
 	// ErrVideoIDNotFound aliases ErrMediaIDNotFound for YouTube video ID resolution.
 	ErrVideoIDNotFound = ErrMediaIDNotFound
+
+	// MaxImportAudioSizeBytes sets the hard ceiling on imported audio size (500MB).
+	MaxImportAudioSizeBytes int64 = 500 * 1024 * 1024
 )
 
 // MediaMetadata represents provider-neutral descriptive attributes of an external media stream.

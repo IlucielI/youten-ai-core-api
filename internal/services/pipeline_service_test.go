@@ -295,3 +295,160 @@ func TestPipelineService_CheckAndCompleteRecording(t *testing.T) {
 		t.Errorf("expected TopicRecordingCompleted, got %v", pub.publishedTopics)
 	}
 }
+
+type mockPipelineLinkExtractor struct {
+	supportsFunc      func(rawURL string) bool
+	extractIDFunc     func(rawURL string) (string, error)
+	normalizeURLFunc  func(rawURL string) (string, error)
+	fetchMetadataFunc func(ctx context.Context, rawURL string) (*services.MediaMetadata, error)
+	extractAudioFunc  func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error)
+}
+
+func (m *mockPipelineLinkExtractor) Supports(rawURL string) bool {
+	if m.supportsFunc != nil {
+		return m.supportsFunc(rawURL)
+	}
+	return true
+}
+
+func (m *mockPipelineLinkExtractor) ExtractID(rawURL string) (string, error) {
+	if m.extractIDFunc != nil {
+		return m.extractIDFunc(rawURL)
+	}
+	return "dQw4w9WgXcQ", nil
+}
+
+func (m *mockPipelineLinkExtractor) NormalizeURL(rawURL string) (string, error) {
+	if m.normalizeURLFunc != nil {
+		return m.normalizeURLFunc(rawURL)
+	}
+	return rawURL, nil
+}
+
+func (m *mockPipelineLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*services.MediaMetadata, error) {
+	if m.fetchMetadataFunc != nil {
+		return m.fetchMetadataFunc(ctx, rawURL)
+	}
+	return &services.MediaMetadata{ID: "dQw4w9WgXcQ", Title: "Extracted Video Title"}, nil
+}
+
+func (m *mockPipelineLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+	if m.extractAudioFunc != nil {
+		return m.extractAudioFunc(ctx, rawURL)
+	}
+	return &services.ExtractedAudio{
+		Title:           "Extracted Video Title",
+		DurationSeconds: 180.0,
+		SizeBytes:       512,
+		Stream:          io.NopCloser(strings.NewReader("dummy audio stream")),
+		ContentType:     "audio/mpeg",
+	}, nil
+}
+
+func TestPipelineService_ProcessImport_Success(t *testing.T) {
+	svc, mock, pub, cleanup := setupTestPipelineService(t)
+	defer cleanup()
+
+	mockExt := &mockPipelineLinkExtractor{}
+	svc.WithMediaLinkExtractor(mockExt)
+
+	recID := uuid.New()
+	targetURL := "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "original_filename", "audio_url", "status"}).
+			AddRow(recID, "YouTube (dQw4w9WgXcQ)", "youtube_dQw4w9WgXcQ.m4a", "", models.RecordingStatusQueued))
+
+	// 2. UpdateRecordingStatus -> EXTRACTING
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusExtracting, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. UpdateRecordingAudioURL
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs("recordings/"+recID.String()+"/audio.mp3", 180.0, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. UpdateRecording (title updated)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE .*`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	p := payload.RecordingPipelinePayload{
+		RecordingID: recID,
+		URL:         targetURL,
+		Template:    "GENERAL",
+		Language:    "en",
+	}
+
+	err := svc.ProcessImport(context.Background(), p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(pub.publishedTopics) == 0 || pub.publishedTopics[len(pub.publishedTopics)-1] != constants.TopicRecordingTranscribe {
+		t.Errorf("expected TopicRecordingTranscribe published, got %v", pub.publishedTopics)
+	}
+}
+
+func TestPipelineService_ProcessImport_ExtractorFailure(t *testing.T) {
+	svc, mock, pub, cleanup := setupTestPipelineService(t)
+	defer cleanup()
+
+	mockExt := &mockPipelineLinkExtractor{
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+			return nil, errors.New("yt-dlp binary crash")
+		},
+	}
+	svc.WithMediaLinkExtractor(mockExt)
+
+	recID := uuid.New()
+	targetURL := "https://www.youtube.com/watch?v=bad"
+
+	// 1. FindRecordingByID
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "original_filename", "audio_url", "status"}).
+			AddRow(recID, "YouTube Video", "youtube_bad.m4a", "", models.RecordingStatusQueued))
+
+	// 2. UpdateRecordingStatus -> EXTRACTING
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusExtracting, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. FailRecording -> FAILED
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.ErrCodeImportFetchFailed, sqlmock.AnyArg(), models.RecordingStatusFailed, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	p := payload.RecordingPipelinePayload{
+		RecordingID: recID,
+		URL:         targetURL,
+	}
+
+	err := svc.ProcessImport(context.Background(), p)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	foundFailed := false
+	for _, topic := range pub.publishedTopics {
+		if topic == constants.TopicRecordingFailed {
+			foundFailed = true
+		}
+	}
+	if !foundFailed {
+		t.Errorf("expected TopicRecordingFailed published, got %v", pub.publishedTopics)
+	}
+}

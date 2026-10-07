@@ -37,6 +37,7 @@ func (w *WorkerServer) RegisterWorker() {
 
 	w.sub.MustSubscribe(constants.TopicRecordingUploaded, w.HandleRecordingExtract)
 	w.sub.MustSubscribe(constants.TopicRecordingExtract, w.HandleRecordingExtract)
+	w.sub.MustSubscribe(constants.TopicRecordingImport, w.HandleRecordingImport)
 	w.sub.MustSubscribe(constants.TopicRecordingTranscribe, w.HandleRecordingTranscribe)
 	w.sub.MustSubscribe(constants.TopicRecordingSummarize, w.HandleRecordingSummarize)
 	w.sub.MustSubscribe(constants.TopicRecordingIndex, w.HandleRecordingIndex)
@@ -68,6 +69,26 @@ func (w *WorkerServer) StartCleanupTicker(ctx context.Context, interval time.Dur
 			}
 		}
 	}()
+}
+
+// HandleRecordingImport handles asynchronous remote media link imports (e.g. YouTube).
+func (w *WorkerServer) HandleRecordingImport(ctx context.Context, msg []byte) bool {
+	if w.svc == nil {
+		return false
+	}
+	var p payload.RecordingPipelinePayload
+	if err := payload.Parse(msg, &p); err != nil {
+		log.Printf("[WORKER ERROR] failed to parse import payload: %v", err)
+		return false
+	}
+
+	log.Printf("[WORKER] Started Media Link Import for recording %s", p.RecordingID.String())
+	if err := w.svc.ProcessImport(ctx, p); err != nil {
+		log.Printf("[WORKER ERROR] Media link import failed for recording %s: %v", p.RecordingID.String(), err)
+		return false
+	}
+	log.Printf("[WORKER] Finished Media Link Import for recording %s", p.RecordingID.String())
+	return true
 }
 
 // HandleRecordingExtract handles audio extraction from uploaded video/audio files.

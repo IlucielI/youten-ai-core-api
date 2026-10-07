@@ -58,6 +58,49 @@ func (m *testEventPublisher) MustPublish(ctx context.Context, topic string, payl
 	m.publishedTopics = append(m.publishedTopics, topic)
 }
 
+type mockMediaLinkExtractor struct {
+	supportsFunc      func(rawURL string) bool
+	extractIDFunc     func(rawURL string) (string, error)
+	normalizeURLFunc  func(rawURL string) (string, error)
+	fetchMetadataFunc func(ctx context.Context, rawURL string) (*services.MediaMetadata, error)
+	extractAudioFunc  func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error)
+}
+
+func (m *mockMediaLinkExtractor) Supports(rawURL string) bool {
+	if m.supportsFunc != nil {
+		return m.supportsFunc(rawURL)
+	}
+	return false
+}
+
+func (m *mockMediaLinkExtractor) ExtractID(rawURL string) (string, error) {
+	if m.extractIDFunc != nil {
+		return m.extractIDFunc(rawURL)
+	}
+	return "", nil
+}
+
+func (m *mockMediaLinkExtractor) NormalizeURL(rawURL string) (string, error) {
+	if m.normalizeURLFunc != nil {
+		return m.normalizeURLFunc(rawURL)
+	}
+	return rawURL, nil
+}
+
+func (m *mockMediaLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*services.MediaMetadata, error) {
+	if m.fetchMetadataFunc != nil {
+		return m.fetchMetadataFunc(ctx, rawURL)
+	}
+	return &services.MediaMetadata{ID: "test-id", Title: "Test Title"}, nil
+}
+
+func (m *mockMediaLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+	if m.extractAudioFunc != nil {
+		return m.extractAudioFunc(ctx, rawURL)
+	}
+	return nil, nil
+}
+
 func setupRecordingTestService(t *testing.T) (*services.Service, sqlmock.Sqlmock, *testRecordingStorage, *testEventPublisher) {
 	t.Helper()
 	db, mock, err := sqlmock.New()

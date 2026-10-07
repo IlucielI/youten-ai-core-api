@@ -1170,6 +1170,120 @@ func TestService_AdminListReports(t *testing.T) {
 	})
 }
 
+func TestService_AdminResolveReport(t *testing.T) {
+	t.Run("DISMISS action updates report and writes audit log", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		recID := uuid.New()
+		adminID := uuid.New()
+		now := time.Now()
+
+		// 1. FindReportByID
+		mock.ExpectQuery(`SELECT \* FROM "reports" WHERE id = \$1 ORDER BY "reports"\."id" LIMIT \$2`).
+			WithArgs(repID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "recording_id", "reporter_type", "reason", "status", "created_at", "updated_at",
+			}).AddRow(repID, recID, "guest", "spam", "open", now, now))
+
+		// Preload Recording
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE "recordings"\."id" = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(recID, "Target"))
+
+		// 2. UpdateReportResolution
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "reports" SET .* WHERE id = .*`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// 3. CreateAdminAuditLog
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminResolveReport(context.Background(), AdminActionMeta{AdminID: adminID}, repID, dtos.ResolveReportRequest{
+			Action:         "DISMISS",
+			ResolutionNote: "False report",
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Status != "dismissed" {
+			t.Errorf("expected status 'dismissed', got %s", resp.Status)
+		}
+	})
+
+	t.Run("SUSPEND_RECORDING revokes share settings and resolves ticket", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		recID := uuid.New()
+		adminID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT \* FROM "reports" WHERE id = \$1 ORDER BY "reports"\."id" LIMIT \$2`).
+			WithArgs(repID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id", "recording_id", "reporter_type", "reason", "status", "created_at", "updated_at",
+			}).AddRow(repID, recID, "guest", "abuse", "open", now, now))
+
+		mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE "recordings"\."id" = \$1 AND "recordings"\."deleted_at" IS NULL`).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(recID, "Bad Media"))
+
+		// UpdateRecordingShareSettings
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// UpdateReportResolution
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "reports" SET .* WHERE id = .*`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// CreateAdminAuditLog
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminResolveReport(context.Background(), AdminActionMeta{AdminID: adminID}, repID, dtos.ResolveReportRequest{
+			Action:         "SUSPEND_RECORDING",
+			ResolutionNote: "Takedown approved",
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Status != "resolved" || resp.Action != "SUSPEND_RECORDING" {
+			t.Errorf("expected resolved SUSPEND_RECORDING, got %+v", resp)
+		}
+	})
+
+	t.Run("report not found returns ErrNotFound", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		repID := uuid.New()
+		mock.ExpectQuery(`SELECT \* FROM "reports" WHERE id = \$1 ORDER BY "reports"\."id" LIMIT \$2`).
+			WithArgs(repID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		_, err := svc.AdminResolveReport(context.Background(), AdminActionMeta{}, repID, dtos.ResolveReportRequest{
+			Action: "DISMISS",
+		})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+
 
 
 

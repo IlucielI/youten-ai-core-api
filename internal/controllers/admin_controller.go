@@ -540,6 +540,53 @@ func (c *Controllers) AdminListReports(ctx *gin.Context) {
 	})
 }
 
+// AdminResolveReport handles POST /v1/admin/reports/:id/resolve.
+func (c *Controllers) AdminResolveReport(ctx *gin.Context) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	reportIDStr := ctx.Param("id")
+	reportID, err := uuid.Parse(reportIDStr)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid report ID"))
+		return
+	}
+
+	var req dtos.ResolveReportRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid JSON payload"))
+		return
+	}
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminResolveReport(ctx.Request.Context(), meta, reportID, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ResolveReportResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+
 
 
 

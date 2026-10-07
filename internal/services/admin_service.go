@@ -838,6 +838,99 @@ func (s *Service) AdminListReports(ctx context.Context, q dtos.AdminReportListQu
 	}, nil
 }
 
+// AdminResolveReport executes administrative resolution on a reported recording ticket.
+func (s *Service) AdminResolveReport(ctx context.Context, meta AdminActionMeta, reportID uuid.UUID, req dtos.ResolveReportRequest) (*dtos.ResolveReportResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	report, err := s.repo.FindReportByID(ctx, reportID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("report ticket not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	var status string
+	switch req.Action {
+	case "DISMISS":
+		status = "dismissed"
+	case "SUSPEND_RECORDING":
+		status = "resolved"
+		if report.RecordingID != uuid.Nil {
+			if err := s.repo.UpdateRecordingShareSettings(ctx, report.RecordingID, false, nil); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, s.wrapError(ctx, err)
+			}
+		}
+	case "BAN_USER":
+		status = "resolved"
+		if report.Recording != nil && report.Recording.UserID != nil {
+			if err := s.repo.UpdateUserStatus(ctx, *report.Recording.UserID, models.UserStatusSuspended); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, s.wrapError(ctx, err)
+			}
+		}
+		if report.RecordingID != uuid.Nil {
+			if err := s.repo.UpdateRecordingShareSettings(ctx, report.RecordingID, false, nil); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, s.wrapError(ctx, err)
+			}
+		}
+	}
+
+	resolvedAt := time.Now()
+	var notePtr *string
+	if req.ResolutionNote != "" {
+		notePtr = &req.ResolutionNote
+	}
+
+	if err := s.repo.UpdateReportResolution(ctx, reportID, status, notePtr, meta.AdminID); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// Persist admin audit log
+	adminIDVal := meta.AdminID
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	payload := models.JSONMap{
+		"report_id":       reportID.String(),
+		"recording_id":    report.RecordingID.String(),
+		"action":          req.Action,
+		"resolution_note": req.ResolutionNote,
+		"status":          status,
+	}
+
+	entityIDStr := reportID.String()
+	auditLog := &models.AdminAuditLog{
+		AdminID:   &adminIDVal,
+		Action:    "report.resolve",
+		Entity:    "report",
+		EntityID:  &entityIDStr,
+		Payload:   payload,
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.ResolveReportResponse{
+		ReportID:       reportID,
+		Status:         status,
+		Action:         req.Action,
+		HandledBy:      meta.AdminID,
+		ResolutionNote: req.ResolutionNote,
+		ResolvedAt:     resolvedAt,
+	}, nil
+}
+
+
 
 
 

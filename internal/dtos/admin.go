@@ -443,6 +443,36 @@ type AdminReportListResponse struct {
 	Pagination PaginationMeta        `json:"pagination"`
 }
 
+// ResolveReportRequest defines moderation action on an abuse ticket.
+type ResolveReportRequest struct {
+	Action         string `json:"action"` // DISMISS | SUSPEND_RECORDING | BAN_USER
+	ResolutionNote string `json:"resolution_note"`
+}
+
+// Validate ensures resolution action is one of DISMISS, SUSPEND_RECORDING, BAN_USER.
+func (r *ResolveReportRequest) Validate() error {
+	r.Action = strings.ToUpper(strings.TrimSpace(r.Action))
+	switch r.Action {
+	case "DISMISS", "SUSPEND_RECORDING", "BAN_USER":
+		// valid
+	default:
+		return errors.New("action must be DISMISS, SUSPEND_RECORDING, or BAN_USER")
+	}
+	r.ResolutionNote = strings.TrimSpace(r.ResolutionNote)
+	return nil
+}
+
+// ResolveReportResponse represents outcome of report resolution.
+type ResolveReportResponse struct {
+	ReportID       uuid.UUID `json:"report_id"`
+	Status         string    `json:"status"` // resolved | dismissed
+	Action         string    `json:"action"`
+	HandledBy      uuid.UUID `json:"handled_by"`
+	ResolutionNote string    `json:"resolution_note,omitempty"`
+	ResolvedAt     time.Time `json:"resolved_at"`
+}
+
+
 
 
 

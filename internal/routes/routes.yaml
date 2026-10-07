@@ -341,6 +341,14 @@ routes:
     admin_auth: true
     admin_permission: "moderation:read"
 
+  # Admin resolve moderation abuse report (CMS).
+  - method: POST
+    path: /v1/admin/reports/:id/resolve
+    handler: AdminResolveReport
+    admin_auth: true
+    admin_permission: "moderation:write"
+
+
 
 
 

@@ -13,6 +13,7 @@ import (
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/services"
 )
 
@@ -105,6 +106,12 @@ type openAIStreamChunk struct {
 
 // GenerateStructured requests the LLM to populate a structured output guaranteed to match the given JSON schema.
 func (o *OmniRouteLLM) GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+	if schema != nil {
+		schemaBytes, _ := json.Marshal(schema)
+		schemaInstruction := fmt.Sprintf("\n\nCRITICAL REQUIREMENT: You MUST respond with ONLY a valid raw JSON object strictly conforming to the following JSON schema:\n%s\nDo NOT include any explanation or markdown formatting outside the JSON object.", string(schemaBytes))
+		systemPrompt += schemaInstruction
+	}
+
 	var messages []openAIChatMessage
 	if systemPrompt != "" {
 		messages = append(messages, openAIChatMessage{
@@ -117,20 +124,8 @@ func (o *OmniRouteLLM) GenerateStructured(ctx context.Context, systemPrompt stri
 		Content: userPrompt,
 	})
 
-	var respFormat *openAIResponseFormat
-	if schema != nil {
-		respFormat = &openAIResponseFormat{
-			Type: "json_schema",
-			JSONSchema: &openAIJSONSchemaField{
-				Name:   "structured_output",
-				Strict: true,
-				Schema: schema,
-			},
-		}
-	} else {
-		respFormat = &openAIResponseFormat{
-			Type: "json_object",
-		}
+	respFormat := &openAIResponseFormat{
+		Type: "json_object",
 	}
 
 	temp := 0.1
@@ -150,8 +145,10 @@ func (o *OmniRouteLLM) GenerateStructured(ctx context.Context, systemPrompt stri
 		return nil, fmt.Errorf("llm returned no choices")
 	}
 
+	cleanedJSON := jsonutil.CleanMarkdownJSON(rawResp.Choices[0].Message.Content)
+
 	return &dtos.StructuredResponse{
-		RawJSON: rawResp.Choices[0].Message.Content,
+		RawJSON: cleanedJSON,
 		Usage: dtos.LLMUsage{
 			PromptTokens:     rawResp.Usage.PromptTokens,
 			CompletionTokens: rawResp.Usage.CompletionTokens,

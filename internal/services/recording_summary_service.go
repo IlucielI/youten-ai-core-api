@@ -17,6 +17,7 @@ import (
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
 	"code-base-golang/internal/pkg/apperror"
+	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/templates"
 )
 
@@ -194,8 +195,9 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		return nil, fmt.Errorf("llm generation failed: %w", err)
 	}
 
+	cleanedJSON := jsonutil.CleanMarkdownJSON(structuredRes.RawJSON)
 	var structMap map[string]interface{}
-	if err := json.Unmarshal([]byte(structuredRes.RawJSON), &structMap); err != nil {
+	if err := json.Unmarshal([]byte(cleanedJSON), &structMap); err != nil {
 		return nil, fmt.Errorf("invalid structured response JSON: %w", err)
 	}
 
@@ -204,8 +206,10 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		markdownContent = md
 	} else if md, ok := structMap["executive_summary"].(string); ok && md != "" {
 		markdownContent = md
+	} else if md, ok := structMap["executive_overview"].(string); ok && md != "" {
+		markdownContent = md
 	} else {
-		markdownContent = structuredRes.RawJSON
+		markdownContent = cleanedJSON
 	}
 
 	var customAnglePtr *string

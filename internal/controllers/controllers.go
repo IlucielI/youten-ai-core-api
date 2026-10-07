@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -50,6 +51,8 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 	status := constants.ResponseStatusError
 	if appErr.HTTPStatus >= 400 && appErr.HTTPStatus < 500 {
 		status = constants.ResponseStatusFail
+	} else if appErr.HTTPStatus >= 500 {
+		log.Printf("[API ERROR %d] %s %s: %v", appErr.HTTPStatus, ctx.Request.Method, ctx.Request.URL.Path, err)
 	}
 
 	ctx.JSON(appErr.HTTPStatus, dtos.BaseResponse{

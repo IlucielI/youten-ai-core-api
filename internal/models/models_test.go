@@ -27,6 +27,7 @@ func TestTableNames(t *testing.T) {
 		{model: Notification{}, expected: "notifications"},
 		{model: Report{}, expected: "reports"},
 		{model: BotWaitlist{}, expected: "bot_waitlists"},
+		{model: ClientApp{}, expected: "client_apps"},
 	}
 
 	for _, tc := range testCases {
@@ -169,3 +170,34 @@ func TestVector_ValueAndScan(t *testing.T) {
 		t.Fatal("expected error on Vector.Scan with unsupported type, got nil")
 	}
 }
+
+func TestClientApp_ScopesList(t *testing.T) {
+	// Nil receiver
+	var nilApp *ClientApp
+	if nilApp.ScopesList() != nil {
+		t.Error("expected nil for nil receiver")
+	}
+
+	// Empty scopes
+	app := &ClientApp{}
+	if app.ScopesList() != nil {
+		t.Error("expected nil for empty scopes")
+	}
+
+	// Valid scopes
+	app.AllowedScopes = []byte(`["recordings:create", "recordings:read", "auth:claim"]`)
+	scopes := app.ScopesList()
+	if len(scopes) != 3 {
+		t.Fatalf("expected 3 scopes, got %d", len(scopes))
+	}
+	if scopes[0] != "recordings:create" || scopes[1] != "recordings:read" || scopes[2] != "auth:claim" {
+		t.Errorf("unexpected scopes: %+v", scopes)
+	}
+
+	// Malformed JSON
+	app.AllowedScopes = []byte(`not-json`)
+	if app.ScopesList() != nil {
+		t.Error("expected nil for malformed scopes JSON")
+	}
+}
+

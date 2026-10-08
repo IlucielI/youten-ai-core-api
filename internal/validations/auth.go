@@ -16,6 +16,7 @@ var digitRegex = regexp.MustCompile(`[0-9]`)
 func ValidateRegisterRequest(r *dtos.RegisterRequest) error {
 	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
 	r.FullName = strings.TrimSpace(r.FullName)
+	r.AnonToken = strings.TrimSpace(r.AnonToken)
 
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Email,
@@ -30,6 +31,9 @@ func ValidateRegisterRequest(r *dtos.RegisterRequest) error {
 			validation.Required.Error("password is required"),
 			validation.Length(8, 72).Error("password must be between 8 and 72 characters"),
 			validation.Match(digitRegex).Error("password must contain at least one digit"),
+		),
+		validation.Field(&r.AnonToken,
+			validation.Length(0, 1024).Error("anon_token cannot exceed 1024 characters"),
 		),
 	)
 }
@@ -69,6 +73,7 @@ func ValidateChangePasswordRequest(r *dtos.ChangePasswordRequest) error {
 // ValidateLoginRequest normalizes and validates a login payload.
 func ValidateLoginRequest(r *dtos.LoginRequest) error {
 	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
+	r.AnonToken = strings.TrimSpace(r.AnonToken)
 
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Email,
@@ -77,6 +82,9 @@ func ValidateLoginRequest(r *dtos.LoginRequest) error {
 		),
 		validation.Field(&r.Password,
 			validation.Required.Error("password is required"),
+		),
+		validation.Field(&r.AnonToken,
+			validation.Length(0, 1024).Error("anon_token cannot exceed 1024 characters"),
 		),
 	)
 }

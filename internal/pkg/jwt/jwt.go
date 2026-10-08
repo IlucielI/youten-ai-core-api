@@ -91,6 +91,10 @@ func ValidateToken(cfg config.Config, tokenStr string) (*CustomClaims, error) {
 		return nil, constants.ErrInvalidToken
 	}
 
+	if claims.TokenType != constants.JWTTokenTypeAccess && claims.TokenType != constants.JWTTokenTypeRefresh {
+		return nil, constants.ErrInvalidToken
+	}
+
 	return claims, nil
 }
 
@@ -145,3 +149,76 @@ func ValidateAdminToken(cfg config.Config, tokenStr string) (*AdminClaims, error
 
 	return claims, nil
 }
+
+// AnonClaims encapsulates guest session token claims with allowed scopes and 7-day TTL.
+type AnonClaims struct {
+	SessionID uuid.UUID              `json:"sub"`
+	ClientID  string                 `json:"client_id"`
+	TokenType constants.JWTTokenType `json:"type"` // "anon_access"
+	Scopes    []string               `json:"scopes"`
+	jwt.RegisteredClaims
+}
+
+// HasScope checks if the anonymous claims contain a specific scope or wildcard.
+func (c *AnonClaims) HasScope(requiredScope string) bool {
+	if c == nil {
+		return false
+	}
+	for _, s := range c.Scopes {
+		if s == string(constants.ScopeWildcard) || s == requiredScope {
+			return true
+		}
+	}
+	return false
+}
+
+// GenerateAnonToken signs and returns a new scoped Anonymous Session Token (7-day TTL).
+func GenerateAnonToken(cfg config.Config, sessionID uuid.UUID, clientID string, scopes []string) (string, int64, error) {
+	now := time.Now()
+	ttl := 7 * 24 * time.Hour // 7 days (168 hours)
+	exp := now.Add(ttl)
+
+	claims := AnonClaims{
+		SessionID: sessionID,
+		ClientID:  clientID,
+		TokenType: constants.JWTTokenTypeAnonAccess,
+		Scopes:    scopes,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   sessionID.String(),
+			Issuer:    cfg.AppName,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(exp),
+		},
+	}
+	tokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenStr, err := tokenObj.SignedString([]byte(cfg.JWTSecret))
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to sign anon token: %w", err)
+	}
+	return tokenStr, int64(ttl.Seconds()), nil
+}
+
+// ValidateAnonToken parses and validates an anonymous session token string.
+func ValidateAnonToken(cfg config.Config, tokenStr string) (*AnonClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &AnonClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(cfg.JWTSecret), nil
+	})
+	if err != nil {
+		return nil, constants.ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*AnonClaims)
+	if !ok || !token.Valid {
+		return nil, constants.ErrInvalidToken
+	}
+
+	if claims.TokenType != constants.JWTTokenTypeAnonAccess {
+		return nil, constants.ErrInvalidToken
+	}
+
+	return claims, nil
+}
+

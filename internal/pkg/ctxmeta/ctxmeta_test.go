@@ -254,3 +254,65 @@ func TestHasAdminPermission(t *testing.T) {
 	}
 }
 
+func TestHasUserPermission(t *testing.T) {
+	tests := []struct {
+		name         string
+		user         AuthUser
+		requiredPerm string
+		expected     bool
+	}{
+		{
+			name:         "guest user always fails",
+			user:         AuthUser{IsGuest: true, Permissions: []string{"*"}},
+			requiredPerm: "export:pdf",
+			expected:     false,
+		},
+		{
+			name:         "empty required perm fails",
+			user:         AuthUser{Permissions: []string{"recordings:read"}},
+			requiredPerm: "",
+			expected:     false,
+		},
+		{
+			name:         "wildcard star passes all",
+			user:         AuthUser{Permissions: []string{"*"}},
+			requiredPerm: "export:pdf",
+			expected:     true,
+		},
+		{
+			name:         "exact match passes",
+			user:         AuthUser{Permissions: []string{"recordings:create", "export:pdf"}},
+			requiredPerm: "export:pdf",
+			expected:     true,
+		},
+		{
+			name:         "prefix wildcard passes",
+			user:         AuthUser{Permissions: []string{"recordings:*"}},
+			requiredPerm: "recordings:share",
+			expected:     true,
+		},
+		{
+			name:         "unrelated permission fails",
+			user:         AuthUser{Permissions: []string{"recordings:read"}},
+			requiredPerm: "export:pdf",
+			expected:     false,
+		},
+		{
+			name:         "different prefix fails",
+			user:         AuthUser{Permissions: []string{"workspace:*"}},
+			requiredPerm: "recordings:share",
+			expected:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := HasUserPermission(tc.user, tc.requiredPerm)
+			if result != tc.expected {
+				t.Errorf("HasUserPermission(%v, %q) = %v; expected %v", tc.user.Permissions, tc.requiredPerm, result, tc.expected)
+			}
+		})
+	}
+}
+
+

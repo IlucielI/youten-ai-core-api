@@ -334,3 +334,109 @@ func TestOptionalAuthMiddleware(t *testing.T) {
 		}
 	}
 }
+
+func TestRequireUserPermission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	userID := uuid.New()
+
+	// 1. Unauthenticated / No user in context -> 401
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(RequireUserPermission("export:pdf"))
+		r.GET("/export", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodGet, "/export", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 on unauthenticated, got %d", w.Code)
+		}
+	}
+
+	// 2. Guest user in context -> 401
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			c.Request = c.Request.WithContext(ctxmeta.WithGuestUser(c.Request.Context()))
+			c.Next()
+		})
+		r.Use(RequireUserPermission("export:pdf"))
+		r.GET("/export", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodGet, "/export", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 for guest user, got %d", w.Code)
+		}
+	}
+
+	// 3. Authenticated user without required permission -> 403
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      userID,
+				Email:       "free@example.com",
+				RoleCode:    "FREE",
+				Permissions: []string{"recordings:create", "recordings:read"},
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireUserPermission("export:pdf"))
+		r.GET("/export", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodGet, "/export", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 on missing permission, got %d", w.Code)
+		}
+	}
+
+	// 4. Authenticated user with exact matching permission -> 200
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      userID,
+				Email:       "pro@example.com",
+				RoleCode:    "PRO",
+				Permissions: []string{"recordings:create", "export:pdf"},
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireUserPermission("export:pdf"))
+		r.GET("/export", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodGet, "/export", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 on exact permission match, got %d", w.Code)
+		}
+	}
+
+	// 5. Authenticated user with wildcard category permission -> 200
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      userID,
+				Email:       "pro@example.com",
+				RoleCode:    "PRO",
+				Permissions: []string{"recordings:*"},
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireUserPermission("recordings:share"))
+		r.GET("/recordings/share", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodGet, "/recordings/share", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 on category wildcard match, got %d", w.Code)
+		}
+	}
+}
+

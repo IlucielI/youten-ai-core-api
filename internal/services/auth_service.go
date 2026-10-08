@@ -26,16 +26,31 @@ func resolveDailyQuota(user *models.User) int {
 	if user.DailyQuotaOverride != nil {
 		return *user.DailyQuotaOverride
 	}
+	if user.Role != nil && user.Role.DailyQuota > 0 {
+		return user.Role.DailyQuota
+	}
 	return constants.DefaultUserDailyQuota
 }
 
 // newUserResponse maps a user model into its public response representation.
 func newUserResponse(user *models.User) dtos.UserResponse {
+	var roleCode string
+	var roleName string
+	var permissions []string
+	if user.Role != nil {
+		roleCode = user.Role.Code
+		roleName = user.Role.Name
+		permissions = user.Role.PermissionsList()
+	}
 	return dtos.UserResponse{
 		ID:                 user.ID,
 		Email:              user.Email,
 		FullName:           user.FullName,
 		Status:             string(user.Status),
+		RoleID:             user.RoleID,
+		RoleCode:           roleCode,
+		RoleName:           roleName,
+		Permissions:        permissions,
 		DailyQuota:         resolveDailyQuota(user),
 		DailyQuotaOverride: user.DailyQuotaOverride,
 		EmailVerified:      user.EmailVerified,
@@ -63,11 +78,23 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 		return nil, s.wrapError(ctx, err)
 	}
 
+	// Find default user role
+	defaultRole, err := s.repo.FindDefaultUserRole(ctx)
+	var defaultRoleID *uuid.UUID
+	if err == nil && defaultRole != nil {
+		defaultRoleID = &defaultRole.ID
+	} else {
+		fallbackID := uuid.MustParse("00000000-0000-0000-0000-000000000020")
+		defaultRoleID = &fallbackID
+	}
+
 	user := &models.User{
 		Email:         email,
 		PasswordHash:  passwordHash,
 		FullName:      strings.TrimSpace(req.FullName),
 		Status:        constants.UserStatusActive,
+		RoleID:        defaultRoleID,
+		Role:          defaultRole,
 		EmailVerified: false,
 	}
 
@@ -104,8 +131,33 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 		return nil, constants.ErrInvalidCredentials
 	}
 
+	// Retrieve user role if available
+	var roleCode string
+	var perms []string
+	if user.RoleID != nil {
+		if user.Role != nil {
+			roleCode = user.Role.Code
+			perms = user.Role.PermissionsList()
+		} else {
+			r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID)
+			if rErr != nil {
+				return nil, s.wrapError(ctx, rErr)
+			}
+			if r != nil {
+				user.Role = r
+				roleCode = r.Code
+				perms = r.PermissionsList()
+			}
+		}
+	}
+	dailyQuota := resolveDailyQuota(user)
+
 	sessionID := uuid.New().String()
-	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID)
+	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID, jwt.UserRoleClaims{
+		RoleCode:    roleCode,
+		Permissions: perms,
+		DailyQuota:  dailyQuota,
+	})
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
@@ -363,10 +415,13 @@ func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.A
 		return nil, constants.ErrInvalidToken
 	}
 	return &ctxmeta.AuthUser{
-		UserID:    claims.UserID,
-		Email:     claims.Email,
-		SessionID: claims.SessionID,
-		IsGuest:   false,
+		UserID:      claims.UserID,
+		Email:       claims.Email,
+		SessionID:   claims.SessionID,
+		RoleCode:    claims.RoleCode,
+		Permissions: claims.Permissions,
+		DailyQuota:  claims.DailyQuota,
+		IsGuest:     false,
 	}, nil
 }
 
@@ -416,6 +471,28 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 		return nil, s.wrapError(ctx, err)
 	}
 
+	var roleCode string
+	var roleName string
+	var permissions []string
+	if user.RoleID != nil {
+		if user.Role != nil {
+			roleCode = user.Role.Code
+			roleName = user.Role.Name
+			permissions = user.Role.PermissionsList()
+		} else {
+			r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID)
+			if rErr != nil {
+				return nil, s.wrapError(ctx, rErr)
+			}
+			if r != nil {
+				user.Role = r
+				roleCode = r.Code
+				roleName = r.Name
+				permissions = r.PermissionsList()
+			}
+		}
+	}
+
 	dailyQuota := resolveDailyQuota(user)
 
 	countToday, err := s.repo.CountUserRecordingsToday(ctx, user.ID)
@@ -434,6 +511,10 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 		Email:          user.Email,
 		FullName:       user.FullName,
 		Status:         string(user.Status),
+		RoleID:         user.RoleID,
+		RoleCode:       roleCode,
+		RoleName:       roleName,
+		Permissions:    permissions,
 		DailyQuota:     dailyQuota,
 		QuotaUsedToday: quotaUsedToday,
 		QuotaRemaining: quotaRemaining,

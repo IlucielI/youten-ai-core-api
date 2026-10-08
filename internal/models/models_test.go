@@ -28,6 +28,7 @@ func TestTableNames(t *testing.T) {
 		{model: Report{}, expected: "reports"},
 		{model: BotWaitlist{}, expected: "bot_waitlists"},
 		{model: ClientApp{}, expected: "client_apps"},
+		{model: UserRole{}, expected: "user_roles"},
 	}
 
 	for _, tc := range testCases {
@@ -200,4 +201,35 @@ func TestClientApp_ScopesList(t *testing.T) {
 		t.Error("expected nil for malformed scopes JSON")
 	}
 }
+
+func TestUserRole_PermissionsList(t *testing.T) {
+	// Nil receiver
+	var nilRole *UserRole
+	if nilRole.PermissionsList() != nil {
+		t.Error("expected nil for nil receiver")
+	}
+
+	// Empty permissions
+	role := &UserRole{}
+	if role.PermissionsList() != nil {
+		t.Error("expected nil for empty permissions")
+	}
+
+	// Valid permissions
+	role.Permissions = []byte(`["recordings:create", "export:pdf", "workspace:memory"]`)
+	perms := role.PermissionsList()
+	if len(perms) != 3 {
+		t.Fatalf("expected 3 permissions, got %d", len(perms))
+	}
+	if perms[0] != "recordings:create" || perms[1] != "export:pdf" || perms[2] != "workspace:memory" {
+		t.Errorf("unexpected permissions: %+v", perms)
+	}
+
+	// Malformed JSON
+	role.Permissions = []byte(`invalid-json`)
+	if role.PermissionsList() != nil {
+		t.Error("expected nil for malformed permissions JSON")
+	}
+}
+
 

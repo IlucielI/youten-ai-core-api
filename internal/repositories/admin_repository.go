@@ -175,4 +175,36 @@ func (r *Repositories) GetSystemOverviewStats(ctx context.Context) (*SystemOverv
 	return &stats, nil
 }
 
+// ListAllRecordingsForAdmin queries paginated generation recordings across all users and statuses.
+func (r *Repositories) ListAllRecordingsForAdmin(ctx context.Context, status, search string, limit, offset int) ([]models.Recording, int64, error) {
+	query := r.db.WithContext(ctx).Model(&models.Recording{})
+
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if search != "" {
+		searchPattern := "%" + search + "%"
+		query = query.Where("title ILIKE ? OR original_filename ILIKE ?", searchPattern, searchPattern)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var recordings []models.Recording
+	err := query.
+		Preload("User").
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&recordings).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return recordings, total, nil
+}
+
+
 

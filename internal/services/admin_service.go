@@ -620,6 +620,56 @@ func (s *Service) AdminGetDLQMessages(ctx context.Context, meta AdminActionMeta,
 	}, nil
 }
 
+// AdminListJobs retrieves paginated generation and pipeline recordings across all users and statuses.
+func (s *Service) AdminListJobs(ctx context.Context, meta AdminActionMeta, query dtos.AdminJobListQuery) (*dtos.AdminJobListResponse, error) {
+	query.SetDefaults()
+	offset := (query.Page - 1) * query.Limit
+
+	recs, total, err := s.repo.ListAllRecordingsForAdmin(ctx, query.Status, query.Search, query.Limit, offset)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.AdminJobItem, 0, len(recs))
+	for _, rec := range recs {
+		item := dtos.AdminJobItem{
+			ID:               rec.ID,
+			Title:            rec.Title,
+			OriginalFilename: rec.OriginalFilename,
+			FileSizeBytes:    rec.FileSizeBytes,
+			DurationSeconds:  rec.DurationSeconds,
+			SourceType:       rec.SourceType,
+			Status:           rec.Status,
+			SelectedTemplate: rec.SelectedTemplate,
+			DetectedLanguage: rec.DetectedLanguage,
+			OutputLanguage:   rec.OutputLanguage,
+			ErrorMessage:     rec.ErrorMessage,
+			ErrorCode:        rec.ErrorCode,
+			IsGuest:          rec.IsGuest,
+			CreatedAt:        rec.CreatedAt,
+			UpdatedAt:        rec.UpdatedAt,
+		}
+		if rec.User != nil {
+			item.UserName = &rec.User.FullName
+			item.UserEmail = &rec.User.Email
+		}
+		items = append(items, item)
+	}
+
+	totalPages := 0
+	if query.Limit > 0 {
+		totalPages = int((total + int64(query.Limit) - 1) / int64(query.Limit))
+	}
+
+	return &dtos.AdminJobListResponse{
+		Items:      items,
+		Total:      total,
+		Page:       query.Page,
+		Limit:      query.Limit,
+		TotalPages: totalPages,
+	}, nil
+}
+
 func resolveDLQQueueAndTopic(status, sourceType string) (string, string) {
 	switch status {
 	case models.RecordingStatusQueued, models.RecordingStatusExtracting:

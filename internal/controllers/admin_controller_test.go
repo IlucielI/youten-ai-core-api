@@ -1394,6 +1394,60 @@ func TestControllers_AdminStatsAndCosts(t *testing.T) {
 	})
 }
 
+func TestControllers_AdminListJobs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("successfully lists jobs with admin auth context", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		adminUser := ctxmeta.AdminAuthUser{
+			AdminID:  adminID,
+			Username: "admin",
+		}
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(`SELECT \* FROM "recordings"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "status", "source_type", "selected_template", "output_language", "is_guest"}).
+				AddRow(uuid.New(), "Meeting Analysis", "COMPLETED", "UPLOAD", "GENERAL", "id", false))
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			c.Request = c.Request.WithContext(ctxmeta.WithAdminAuthUser(c.Request.Context(), adminUser))
+			c.Next()
+		})
+		r.GET("/v1/admin/jobs", ctrls.AdminListJobs)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/jobs?page=1&limit=10", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("unauthorized without admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.GET("/v1/admin/jobs", ctrls.AdminListJobs)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/jobs", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+}
+
+
 
 
 

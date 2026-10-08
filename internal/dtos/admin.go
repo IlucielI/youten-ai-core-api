@@ -164,6 +164,121 @@ func (r *AdminUpdateRoleRequest) Validate() error {
 	return nil
 }
 
+// AdminUserRoleItem represents a customer user role with permissions and daily quota.
+type AdminUserRoleItem struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Code        string    `json:"code"`
+	Description string    `json:"description"`
+	Permissions []string  `json:"permissions"`
+	DailyQuota  int       `json:"daily_quota"`
+	IsDefault   bool      `json:"is_default"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// AdminUserRoleListResponse encapsulates the list of customer user roles.
+type AdminUserRoleListResponse struct {
+	Items []AdminUserRoleItem `json:"items"`
+}
+
+// AdminCreateUserRoleRequest defines the payload for creating a customer user role.
+type AdminCreateUserRoleRequest struct {
+	Name        string   `json:"name"`
+	Code        string   `json:"code"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+	DailyQuota  int      `json:"daily_quota"`
+	IsDefault   bool     `json:"is_default"`
+}
+
+// Validate ensures user role creation payload meets domain constraints.
+func (r *AdminCreateUserRoleRequest) Validate() error {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return errors.New("name is required")
+	}
+	if len(r.Name) > 100 {
+		return errors.New("name cannot exceed 100 characters")
+	}
+	r.Code = strings.ToUpper(strings.TrimSpace(r.Code))
+	if r.Code == "" {
+		return errors.New("code is required")
+	}
+	if len(r.Code) > 50 {
+		return errors.New("code cannot exceed 50 characters")
+	}
+	r.Description = strings.TrimSpace(r.Description)
+	if len(r.Description) > 500 {
+		return errors.New("description cannot exceed 500 characters")
+	}
+	if r.DailyQuota < 1 || r.DailyQuota > 1000 {
+		return errors.New("daily_quota must be between 1 and 1000")
+	}
+	for i, p := range r.Permissions {
+		r.Permissions[i] = strings.TrimSpace(p)
+		if r.Permissions[i] == "" {
+			return errors.New("empty permission item is not allowed")
+		}
+	}
+	return nil
+}
+
+// AdminUpdateUserRoleRequest defines the payload for updating a customer user role.
+type AdminUpdateUserRoleRequest struct {
+	Name        *string   `json:"name,omitempty"`
+	Description *string   `json:"description,omitempty"`
+	Permissions *[]string `json:"permissions,omitempty"`
+	DailyQuota  *int      `json:"daily_quota,omitempty"`
+	IsDefault   *bool     `json:"is_default,omitempty"`
+}
+
+// Validate ensures user role update payload meets domain constraints.
+func (r *AdminUpdateUserRoleRequest) Validate() error {
+	if r.Name != nil {
+		*r.Name = strings.TrimSpace(*r.Name)
+		if *r.Name == "" {
+			return errors.New("name cannot be empty")
+		}
+		if len(*r.Name) > 100 {
+			return errors.New("name cannot exceed 100 characters")
+		}
+	}
+	if r.Description != nil {
+		*r.Description = strings.TrimSpace(*r.Description)
+		if len(*r.Description) > 500 {
+			return errors.New("description cannot exceed 500 characters")
+		}
+	}
+	if r.DailyQuota != nil {
+		if *r.DailyQuota < 1 || *r.DailyQuota > 1000 {
+			return errors.New("daily_quota must be between 1 and 1000")
+		}
+	}
+	if r.Permissions != nil {
+		for i, p := range *r.Permissions {
+			(*r.Permissions)[i] = strings.TrimSpace(p)
+			if (*r.Permissions)[i] == "" {
+				return errors.New("empty permission item is not allowed")
+			}
+		}
+	}
+	return nil
+}
+
+// AdminAssignUserRoleRequest defines the payload for assigning a role to a user.
+type AdminAssignUserRoleRequest struct {
+	RoleID uuid.UUID `json:"role_id"`
+}
+
+// Validate ensures role assignment payload has a valid role ID.
+func (r *AdminAssignUserRoleRequest) Validate() error {
+	if r.RoleID == uuid.Nil {
+		return errors.New("role_id is required")
+	}
+	return nil
+}
+
 // AdminTemplateItem represents a prompt template in administrative views.
 type AdminTemplateItem struct {
 	ID           uuid.UUID              `json:"id"`

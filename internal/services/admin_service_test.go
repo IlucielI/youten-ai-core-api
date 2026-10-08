@@ -1417,6 +1417,197 @@ func TestService_AdminStatsAndCosts(t *testing.T) {
 	})
 }
 
+func TestService_AdminUserRoles(t *testing.T) {
+	t.Run("AdminListUserRoles returns role items", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		roleID := uuid.New()
+		now := time.Now()
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "description", "permissions", "daily_quota", "is_default", "created_at", "updated_at"}).
+			AddRow(roleID, "Free Member", "FREE", "Free tier", []byte(`["recordings:create"]`), 5, true, now, now)
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" ORDER BY daily_quota ASC, created_at ASC`).
+			WillReturnRows(rows)
+
+		resp, err := svc.AdminListUserRoles(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(resp.Items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(resp.Items))
+		}
+		if resp.Items[0].Code != "FREE" || !resp.Items[0].IsDefault {
+			t.Errorf("unexpected item: %+v", resp.Items[0])
+		}
+	})
+
+	t.Run("AdminCreateUserRole success", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+		req := dtos.AdminCreateUserRoleRequest{
+			Name:        "VIP Member",
+			Code:        "VIP",
+			Description: "VIP Tier",
+			Permissions: []string{"recordings:*"},
+			DailyQuota:  50,
+			IsDefault:   false,
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE LOWER\(name\) = LOWER\(\$1\) ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(req.Name, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE UPPER\(code\) = UPPER\(\$1\) ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(req.Code, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "user_roles"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(roleID, time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminCreateUserRole(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.Name != req.Name || resp.Code != req.Code {
+			t.Errorf("unexpected resp: %+v", resp)
+		}
+	})
+
+	t.Run("AdminCreateUserRole duplicate code error", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		req := dtos.AdminCreateUserRoleRequest{
+			Name:        "Pro Member Dupe",
+			Code:        "PRO",
+			DailyQuota:  25,
+			Permissions: []string{"recordings:*"},
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE LOWER\(name\) = LOWER\(\$1\) ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(req.Name, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE UPPER\(code\) = UPPER\(\$1\) ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(req.Code, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "code"}).AddRow(uuid.New(), "PRO"))
+
+		_, err := svc.AdminCreateUserRole(context.Background(), AdminActionMeta{}, req)
+		if err == nil {
+			t.Fatal("expected conflict error, got nil")
+		}
+	})
+
+	t.Run("AdminUpdateUserRole success", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+		newName := "Pro Plus"
+		newQuota := 30
+		req := dtos.AdminUpdateUserRoleRequest{
+			Name:       &newName,
+			DailyQuota: &newQuota,
+		}
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE id = \$1 ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(roleID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "permissions"}).
+				AddRow(roleID, "Pro Member", "PRO", 25, []byte(`["recordings:*"]`)))
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE LOWER\(name\) = LOWER\(\$1\) ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(newName, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "user_roles" SET`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminUpdateUserRole(context.Background(), AdminActionMeta{AdminID: adminID}, roleID, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.Name != newName || resp.DailyQuota != newQuota {
+			t.Errorf("unexpected resp: %+v", resp)
+		}
+	})
+
+	t.Run("AdminAssignUserRole success", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+		roleID := uuid.New()
+		now := time.Now()
+
+		req := dtos.AdminAssignUserRoleRequest{RoleID: roleID}
+
+		// 1. FindUserByID
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status"}).
+				AddRow(userID, "user@example.com", "Test User", constants.UserStatusActive))
+
+		// 2. FindUserRoleByID
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE id = \$1 ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(roleID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota"}).
+				AddRow(roleID, "Pro Member", "PRO", 25))
+
+		// 3. UpdateUserRoleID
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "users" SET "role_id"=\$1,"updated_at"=\$2 WHERE`).
+			WithArgs(roleID, sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// 4. FindUserByIDWithRole (preload user + role)
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "role_id", "created_at"}).
+				AddRow(userID, "user@example.com", "Test User", constants.UserStatusActive, roleID, now))
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE "user_roles"\."id" = \$1`).
+			WithArgs(roleID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "permissions"}).
+				AddRow(roleID, "Pro Member", "PRO", 25, []byte(`["recordings:*"]`)))
+
+		// 5. AdminAuditLog
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminAssignUserRole(context.Background(), AdminActionMeta{AdminID: adminID}, userID, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.RoleCode != "PRO" || resp.RoleName != "Pro Member" {
+			t.Errorf("unexpected resp: %+v", resp)
+		}
+	})
+}
+
+
 
 
 

@@ -267,6 +267,13 @@ routes:
     admin_auth: true
     permission: "users:write"
 
+  # Admin assign user role (CMS).
+  - method: PATCH
+    path: /v1/admin/users/:id/role
+    handler: AdminAssignUserRole
+    admin_auth: true
+    permission: "users:write"
+
   # Admin list RBAC roles (CMS).
   - method: GET
     path: /v1/admin/roles
@@ -285,6 +292,27 @@ routes:
   - method: PUT
     path: /v1/admin/roles/:id
     handler: AdminUpdateRole
+    admin_auth: true
+    permission: "roles:write"
+
+  # Admin list customer user roles (CMS).
+  - method: GET
+    path: /v1/admin/user-roles
+    handler: AdminListUserRoles
+    admin_auth: true
+    permission: "roles:read"
+
+  # Admin create customer user role (CMS).
+  - method: POST
+    path: /v1/admin/user-roles
+    handler: AdminCreateUserRole
+    admin_auth: true
+    permission: "roles:write"
+
+  # Admin update customer user role (CMS).
+  - method: PUT
+    path: /v1/admin/user-roles/:id
+    handler: AdminUpdateUserRole
     admin_auth: true
     permission: "roles:write"
 

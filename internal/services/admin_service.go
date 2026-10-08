@@ -360,6 +360,294 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta AdminActionMeta, rol
 	}, nil
 }
 
+// AdminListUserRoles retrieves all customer user roles with permissions.
+func (s *Service) AdminListUserRoles(ctx context.Context) (*dtos.AdminUserRoleListResponse, error) {
+	roles, err := s.repo.ListUserRoles(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.AdminUserRoleItem, 0, len(roles))
+	for _, r := range roles {
+		rawPerms := r.PermissionsList()
+		perms := make([]string, 0, len(rawPerms))
+		for _, p := range rawPerms {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				perms = append(perms, p)
+			}
+		}
+		items = append(items, dtos.AdminUserRoleItem{
+			ID:          r.ID,
+			Name:        r.Name,
+			Code:        r.Code,
+			Description: r.Description,
+			Permissions: perms,
+			DailyQuota:  r.DailyQuota,
+			IsDefault:   r.IsDefault,
+			CreatedAt:   r.CreatedAt,
+			UpdatedAt:   r.UpdatedAt,
+		})
+	}
+
+	return &dtos.AdminUserRoleListResponse{Items: items}, nil
+}
+
+// AdminCreateUserRole creates a new customer user role and writes an audit log.
+func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	existingName, err := s.repo.FindUserRoleByName(ctx, req.Name)
+	if err == nil && existingName != nil {
+		return nil, constants.ErrConflict.WithMessage("user role with this name already exists")
+	}
+
+	existingCode, err := s.repo.FindUserRoleByCode(ctx, req.Code)
+	if err == nil && existingCode != nil {
+		return nil, constants.ErrConflict.WithMessage("user role with this code already exists")
+	}
+
+	perms := req.Permissions
+	if perms == nil {
+		perms = []string{}
+	}
+	permsJSON, err := json.Marshal(perms)
+	if err != nil {
+		return nil, constants.ErrBadRequest.WithMessage("invalid permissions format")
+	}
+
+	if req.IsDefault {
+		if err := s.repo.ClearDefaultUserRoles(ctx, uuid.Nil); err != nil {
+			return nil, s.wrapError(ctx, err)
+		}
+	}
+
+	role := &models.UserRole{
+		Name:        req.Name,
+		Code:        strings.ToUpper(req.Code),
+		Description: req.Description,
+		Permissions: permsJSON,
+		DailyQuota:  req.DailyQuota,
+		IsDefault:   req.IsDefault,
+	}
+
+	if err := s.repo.CreateUserRole(ctx, role); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	roleIDStr := role.ID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "user_role.create",
+		Entity:   "user_role",
+		EntityID: &roleIDStr,
+		Payload: models.JSONMap{
+			"name":        role.Name,
+			"code":        role.Code,
+			"daily_quota": role.DailyQuota,
+			"permissions": perms,
+			"is_default":  role.IsDefault,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AdminUserRoleItem{
+		ID:          role.ID,
+		Name:        role.Name,
+		Code:        role.Code,
+		Description: role.Description,
+		Permissions: perms,
+		DailyQuota:  role.DailyQuota,
+		IsDefault:   role.IsDefault,
+		CreatedAt:   role.CreatedAt,
+		UpdatedAt:   role.UpdatedAt,
+	}, nil
+}
+
+// AdminUpdateUserRole modifies an existing customer user role.
+func (s *Service) AdminUpdateUserRole(ctx context.Context, meta AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	role, err := s.repo.FindUserRoleByID(ctx, roleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user role not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if req.Name != nil && *req.Name != role.Name {
+		existing, err := s.repo.FindUserRoleByName(ctx, *req.Name)
+		if err == nil && existing != nil && existing.ID != role.ID {
+			return nil, constants.ErrConflict.WithMessage("user role with this name already exists")
+		}
+		role.Name = *req.Name
+	}
+
+	if req.Description != nil {
+		role.Description = *req.Description
+	}
+
+	if req.DailyQuota != nil {
+		role.DailyQuota = *req.DailyQuota
+	}
+
+	if req.Permissions != nil {
+		permsJSON, err := json.Marshal(*req.Permissions)
+		if err != nil {
+			return nil, constants.ErrBadRequest.WithMessage("invalid permissions format")
+		}
+		role.Permissions = permsJSON
+	}
+
+	if req.IsDefault != nil {
+		if *req.IsDefault {
+			if err := s.repo.ClearDefaultUserRoles(ctx, role.ID); err != nil {
+				return nil, s.wrapError(ctx, err)
+			}
+			role.IsDefault = true
+		} else {
+			role.IsDefault = false
+		}
+	}
+
+	if err := s.repo.UpdateUserRole(ctx, role); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	roleIDStr := role.ID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "user_role.update",
+		Entity:   "user_role",
+		EntityID: &roleIDStr,
+		Payload: models.JSONMap{
+			"name":        role.Name,
+			"code":        role.Code,
+			"daily_quota": role.DailyQuota,
+			"is_default":  role.IsDefault,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	rawPerms := role.PermissionsList()
+	perms := make([]string, 0, len(rawPerms))
+	for _, p := range rawPerms {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			perms = append(perms, p)
+		}
+	}
+
+	return &dtos.AdminUserRoleItem{
+		ID:          role.ID,
+		Name:        role.Name,
+		Code:        role.Code,
+		Description: role.Description,
+		Permissions: perms,
+		DailyQuota:  role.DailyQuota,
+		IsDefault:   role.IsDefault,
+		CreatedAt:   role.CreatedAt,
+		UpdatedAt:   role.UpdatedAt,
+	}, nil
+}
+
+// AdminAssignUserRole assigns a customer user role to a user.
+func (s *Service) AdminAssignUserRole(ctx context.Context, meta AdminActionMeta, userID uuid.UUID, req dtos.AdminAssignUserRoleRequest) (*dtos.UserResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	role, err := s.repo.FindUserRoleByID(ctx, req.RoleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user role not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if err := s.repo.UpdateUserRoleID(ctx, userID, req.RoleID); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	updatedUser, err := s.repo.FindUserByIDWithRole(ctx, userID)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	adminIDVal := meta.AdminID
+	userIDStr := user.ID.String()
+	var ip *string
+	var ua *string
+	if meta.IPAddress != "" {
+		ip = &meta.IPAddress
+	}
+	if meta.UserAgent != "" {
+		ua = &meta.UserAgent
+	}
+
+	auditLog := &models.AdminAuditLog{
+		AdminID:  &adminIDVal,
+		Action:   "user.assign_role",
+		Entity:   "user",
+		EntityID: &userIDStr,
+		Payload: models.JSONMap{
+			"previous_role_id": user.RoleID,
+			"new_role_id":      req.RoleID,
+			"new_role_code":    role.Code,
+			"new_role_name":    role.Name,
+		},
+		IPAddress: ip,
+		UserAgent: ua,
+	}
+	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	resp := newUserResponse(updatedUser)
+	return &resp, nil
+}
+
 // AdminListTemplates retrieves all prompt templates for administrative management.
 func (s *Service) AdminListTemplates(ctx context.Context) (*dtos.AdminTemplateListResponse, error) {
 	templates, err := s.repo.ListAllTemplates(ctx)

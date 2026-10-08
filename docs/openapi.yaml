@@ -1000,6 +1000,42 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/admin/users/{id}/role:
+    patch:
+      tags: [Admin Users]
+      summary: Admin Assign User Role
+      security:
+        - AdminAuth: []
+      description: Assigns a customer user role to the specified user (requires users:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAssignUserRoleRequest'
+      responses:
+        '200':
+          description: Role assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAssignUserRoleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/admin/roles:
     get:
       tags: [Admin RBAC]
@@ -1073,6 +1109,90 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/user-roles:
+    get:
+      tags: [Admin User Roles]
+      summary: Admin List Customer User Roles
+      security:
+        - AdminAuth: []
+      description: Lists all customer user roles with permissions and quotas (requires roles:read).
+      responses:
+        '200':
+          description: User roles list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserRoleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin User Roles]
+      summary: Admin Create Customer User Role
+      security:
+        - AdminAuth: []
+      description: Creates a new customer user role (requires roles:write).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateUserRoleRequest'
+      responses:
+        '201':
+          description: User role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserRoleItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/admin/user-roles/{id}:
+    put:
+      tags: [Admin User Roles]
+      summary: Admin Update Customer User Role
+      security:
+        - AdminAuth: []
+      description: Updates customer user role attributes and permissions (requires roles:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateUserRoleRequest'
+      responses:
+        '200':
+          description: User role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserRoleItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/admin/templates:
     get:
@@ -2135,6 +2255,138 @@ components:
           type: array
           items:
             type: string
+
+    AdminAssignUserRoleRequest:
+      type: object
+      required: [role_id]
+      properties:
+        role_id:
+          type: string
+          format: uuid
+
+    AdminAssignUserRoleResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/UserResponse'
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        full_name:
+          type: string
+        status:
+          type: string
+        role_id:
+          type: string
+          format: uuid
+        role_code:
+          type: string
+        role_name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        daily_quota:
+          type: integer
+        daily_quota_override:
+          type: integer
+        email_verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    AdminUserRoleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminUserRoleItem'
+
+    AdminUserRoleItemResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AdminUserRoleItem'
+
+    AdminUserRoleItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        daily_quota:
+          type: integer
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AdminCreateUserRoleRequest:
+      type: object
+      required: [name, code, daily_quota]
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        daily_quota:
+          type: integer
+        is_default:
+          type: boolean
+
+    AdminUpdateUserRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        daily_quota:
+          type: integer
+        is_default:
+          type: boolean
 
     AdminTemplateListResponse:
       allOf:

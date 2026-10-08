@@ -1581,6 +1581,193 @@ func TestControllers_AdminLogin(t *testing.T) {
 	})
 }
 
+func TestControllers_AdminUserRoles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("AdminListUserRoles returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		roleID := uuid.New()
+		now := time.Now()
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "description", "permissions", "daily_quota", "is_default", "created_at", "updated_at"}).
+			AddRow(roleID, "Free Member", "FREE", "Free tier", []byte(`["recordings:create"]`), 5, true, now, now)
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" ORDER BY daily_quota ASC, created_at ASC`).
+			WillReturnRows(rows)
+
+		r := gin.New()
+		r.GET("/v1/admin/user-roles", ctrls.AdminListUserRoles)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/user-roles", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("AdminCreateUserRole returns 201", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE LOWER\(name\) = LOWER\(\$1\) ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs("Gold Member", 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE UPPER\(code\) = UPPER\(\$1\) ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs("GOLD", 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "user_roles"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(roleID, time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.POST("/v1/admin/user-roles", ctrls.AdminCreateUserRole)
+
+		body := `{"name": "Gold Member", "code": "GOLD", "daily_quota": 50, "permissions": ["recordings:*"]}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/user-roles", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("AdminUpdateUserRole returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE id = \$1 ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(roleID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "permissions"}).
+				AddRow(roleID, "Gold Member", "GOLD", 50, []byte(`["recordings:*"]`)))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "user_roles" SET`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.PUT("/v1/admin/user-roles/:id", ctrls.AdminUpdateUserRole)
+
+		body := `{"daily_quota": 60}`
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v1/admin/user-roles/%s", roleID), strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("AdminAssignUserRole returns 200", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+		roleID := uuid.New()
+		now := time.Now()
+
+		// 1. FindUserByID
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status"}).
+				AddRow(userID, "user@example.com", "Test User", constants.UserStatusActive))
+
+		// 2. FindUserRoleByID
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE id = \$1 ORDER BY "user_roles"\."id" LIMIT \$2`).
+			WithArgs(roleID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota"}).
+				AddRow(roleID, "Pro Member", "PRO", 25))
+
+		// 3. UpdateUserRoleID
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "users" SET "role_id"=\$1,"updated_at"=\$2 WHERE`).
+			WithArgs(roleID, sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// 4. FindUserByIDWithRole (preload)
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "role_id", "created_at"}).
+				AddRow(userID, "user@example.com", "Test User", constants.UserStatusActive, roleID, now))
+
+		mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE "user_roles"\."id" = \$1`).
+			WithArgs(roleID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "permissions"}).
+				AddRow(roleID, "Pro Member", "PRO", 25, []byte(`["recordings:*"]`)))
+
+		// 5. AuditLog
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  adminID,
+				Username: "admin_tester",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.PATCH("/v1/admin/users/:id/role", ctrls.AdminAssignUserRole)
+
+		body := fmt.Sprintf(`{"role_id": "%s"}`, roleID)
+		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/v1/admin/users/%s/role", userID), strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+}
+
+
 
 
 

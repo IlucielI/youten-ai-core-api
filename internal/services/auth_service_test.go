@@ -1354,6 +1354,24 @@ func TestService_Authenticate(t *testing.T) {
 	if !errors.Is(err, constants.ErrInvalidToken) {
 		t.Fatalf("expected ErrInvalidToken on malformed token, got: %v", err)
 	}
+
+	// 4. Valid Anonymous Guest Session Token
+	anonSessionID := uuid.New()
+	anonTokenStr, _, err := jwt.GenerateAnonToken(cfg, anonSessionID, "client-app", []string{"recordings:create", "recordings:read"})
+	if err != nil {
+		t.Fatalf("failed to generate anon token: %v", err)
+	}
+
+	anonAuthUser, err := svc.Authenticate(context.Background(), anonTokenStr)
+	if err != nil {
+		t.Fatalf("expected valid anonymous authentication, got error: %v", err)
+	}
+	if !anonAuthUser.IsGuest || anonAuthUser.RoleCode != "ANON" || anonAuthUser.SessionID != anonSessionID.String() {
+		t.Fatalf("unexpected anonAuthUser: %+v", anonAuthUser)
+	}
+	if len(anonAuthUser.Permissions) != 2 || anonAuthUser.Permissions[0] != "recordings:create" {
+		t.Fatalf("unexpected permissions on anonAuthUser: %+v", anonAuthUser.Permissions)
+	}
 }
 
 func TestService_AuthenticateAdmin(t *testing.T) {
@@ -1726,3 +1744,140 @@ func TestService_ChangePassword_Errors(t *testing.T) {
 		t.Errorf("unfulfilled expectations: %s", err)
 	}
 }
+
+func TestService_Register_WithAnonToken_AutoClaim(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "newguestuser@example.com"
+	password := "Password123"
+	fullName := "Guest User"
+	defaultRoleID := uuid.New()
+	anonSessionID := uuid.New()
+	recordingID := uuid.New()
+
+	anonTokenStr, _, err := jwt.GenerateAnonToken(config.Config{JWTSecret: "test-jwt-secret-key-1234567890"}, anonSessionID, "client-app", []string{"recordings:create"})
+	if err != nil {
+		t.Fatalf("failed to generate anon token: %v", err)
+	}
+
+	// 1. Check if email exists
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	// 2. Default user role lookup
+	roleRows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+		AddRow(defaultRoleID, "Free Member", "FREE", 5, true)
+	mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE is_default = TRUE ORDER BY "user_roles"\."id" LIMIT \$1`).
+		WithArgs(1).
+		WillReturnRows(roleRows)
+
+	// 3. Insert user
+	mock.ExpectBegin()
+	userRows := sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+		AddRow(uuid.New(), time.Now(), time.Now())
+	mock.ExpectQuery(`INSERT INTO "users"`).
+		WillReturnRows(userRows)
+	mock.ExpectCommit()
+
+	// 4. Auto-claim guest recordings
+	mock.ExpectBegin()
+	recRows := sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+		AddRow(recordingID, anonSessionID.String(), true)
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1,\$2\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(anonTokenStr, anonSessionID.String()).
+		WillReturnRows(recRows)
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE id IN \(\$4\)`).
+		WithArgs(false, sqlmock.AnyArg(), sqlmock.AnyArg(), recordingID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	req := &dtos.RegisterRequest{
+		Email:     email,
+		Password:  password,
+		FullName:  fullName,
+		AnonToken: anonTokenStr,
+	}
+
+	resp, err := svc.Register(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error registering user with auto-claim: %v", err)
+	}
+	if resp == nil || resp.Email != email {
+		t.Fatalf("unexpected user response: %+v", resp)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_Login_WithAnonToken_AutoClaim(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "returningguest@example.com"
+	rawPassword := "Password123"
+	hashedPassword, _ := hasher.HashPassword(rawPassword)
+	userID := uuid.New()
+	roleID := uuid.New()
+	anonSessionID := uuid.New()
+	recordingID := uuid.New()
+	now := time.Now()
+
+	anonTokenStr, _, err := jwt.GenerateAnonToken(config.Config{JWTSecret: "test-jwt-secret-key-1234567890"}, anonSessionID, "client-app", []string{"recordings:create"})
+	if err != nil {
+		t.Fatalf("failed to generate anon token: %v", err)
+	}
+
+	// 1. User lookup
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "role_id", "created_at"}).
+			AddRow(userID, email, hashedPassword, constants.UserStatusActive, roleID, now))
+
+	// 2. User role lookup
+	roleRows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+		AddRow(roleID, "Free Member", "FREE", 5, true)
+	mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE id = \$1 ORDER BY "user_roles"\."id" LIMIT \$2`).
+		WithArgs(roleID, 1).
+		WillReturnRows(roleRows)
+
+	// 3. Create AuthToken
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	// 4. Auto-claim guest recordings
+	mock.ExpectBegin()
+	recRows := sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+		AddRow(recordingID, anonSessionID.String(), true)
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1,\$2\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(anonTokenStr, anonSessionID.String()).
+		WillReturnRows(recRows)
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE id IN \(\$4\)`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recordingID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	req := &dtos.LoginRequest{
+		Email:     email,
+		Password:  rawPassword,
+		AnonToken: anonTokenStr,
+	}
+
+	resp, err := svc.Login(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error during login with auto-claim: %v", err)
+	}
+	if resp == nil || resp.ClaimedRecordingsCount != 1 {
+		t.Fatalf("expected ClaimedRecordingsCount = 1, got %+v", resp)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+

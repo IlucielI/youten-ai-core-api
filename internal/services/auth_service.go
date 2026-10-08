@@ -94,7 +94,6 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 		FullName:      strings.TrimSpace(req.FullName),
 		Status:        constants.UserStatusActive,
 		RoleID:        defaultRoleID,
-		Role:          defaultRole,
 		EmailVerified: false,
 	}
 
@@ -102,8 +101,33 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 		return nil, s.wrapError(ctx, err)
 	}
 
+	user.Role = defaultRole
+
+	if req.AnonToken != "" {
+		s.autoClaimGuestRecordings(ctx, user.ID, req.AnonToken)
+	}
+
 	resp := newUserResponse(user)
 	return &resp, nil
+}
+
+// autoClaimGuestRecordings claims any pending guest recordings associated with the anon_token or ownership token.
+func (s *Service) autoClaimGuestRecordings(ctx context.Context, userID uuid.UUID, rawAnonToken string) int {
+	rawAnonToken = strings.TrimSpace(rawAnonToken)
+	if rawAnonToken == "" {
+		return 0
+	}
+
+	tokens := []string{rawAnonToken}
+	if anonClaims, err := jwt.ValidateAnonToken(s.cfg, rawAnonToken); err == nil && anonClaims != nil {
+		tokens = append(tokens, anonClaims.SessionID.String())
+	}
+
+	claimedIDs, err := s.repo.ClaimRecordingsByTokens(ctx, tokens, userID)
+	if err != nil {
+		return 0
+	}
+	return len(claimedIDs)
 }
 
 // Login authenticates a user by email and password, returning an access and refresh token pair.
@@ -175,13 +199,19 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 		return nil, s.wrapError(ctx, err)
 	}
 
+	claimedCount := 0
+	if req.AnonToken != "" {
+		claimedCount = s.autoClaimGuestRecordings(ctx, user.ID, req.AnonToken)
+	}
+
 	return &dtos.AuthResponse{
-		AccessToken:      tokenPair.AccessToken,
-		RefreshToken:     tokenPair.RefreshToken,
-		TokenType:        tokenPair.TokenType,
-		ExpiresIn:        tokenPair.ExpiresIn,
-		RefreshExpiresIn: tokenPair.RefreshExpiresIn,
-		User:             newUserResponse(user),
+		AccessToken:            tokenPair.AccessToken,
+		RefreshToken:           tokenPair.RefreshToken,
+		TokenType:              tokenPair.TokenType,
+		ExpiresIn:              tokenPair.ExpiresIn,
+		RefreshExpiresIn:       tokenPair.RefreshExpiresIn,
+		User:                   newUserResponse(user),
+		ClaimedRecordingsCount: claimedCount,
 	}, nil
 }
 
@@ -405,24 +435,38 @@ func (s *Service) ResetPassword(ctx context.Context, req *dtos.ResetPasswordRequ
 	return nil
 }
 
-// Authenticate validates a JWT access token, checks its validity and claims, and returns the AuthUser context metadata.
+// Authenticate validates a JWT token (user access token or scoped anonymous session token)
+// and returns the AuthUser context metadata.
 func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
+	// 1. Attempt validation as registered user access token
 	claims, err := jwt.ValidateToken(s.cfg, tokenStr)
-	if err != nil || claims == nil {
-		return nil, constants.ErrInvalidToken
+	if err == nil && claims != nil && claims.TokenType == constants.JWTTokenTypeAccess {
+		return &ctxmeta.AuthUser{
+			UserID:      claims.UserID,
+			Email:       claims.Email,
+			SessionID:   claims.SessionID,
+			RoleCode:    claims.RoleCode,
+			Permissions: claims.Permissions,
+			DailyQuota:  claims.DailyQuota,
+			IsGuest:     false,
+		}, nil
 	}
-	if claims.TokenType != constants.JWTTokenTypeAccess {
-		return nil, constants.ErrInvalidToken
+
+	// 2. Attempt validation as scoped anonymous guest session token
+	anonClaims, aErr := jwt.ValidateAnonToken(s.cfg, tokenStr)
+	if aErr == nil && anonClaims != nil && anonClaims.TokenType == constants.JWTTokenTypeAnonAccess {
+		return &ctxmeta.AuthUser{
+			UserID:      anonClaims.SessionID,
+			Email:       "",
+			SessionID:   anonClaims.SessionID.String(),
+			RoleCode:    "ANON",
+			Permissions: anonClaims.Scopes,
+			DailyQuota:  constants.DefaultGuestDailyQuota,
+			IsGuest:     true,
+		}, nil
 	}
-	return &ctxmeta.AuthUser{
-		UserID:      claims.UserID,
-		Email:       claims.Email,
-		SessionID:   claims.SessionID,
-		RoleCode:    claims.RoleCode,
-		Permissions: claims.Permissions,
-		DailyQuota:  claims.DailyQuota,
-		IsGuest:     false,
-	}, nil
+
+	return nil, constants.ErrInvalidToken
 }
 
 // AuthenticateAdmin validates an Admin JWT token, checks its validity and status, and returns the AdminAuthUser context metadata.

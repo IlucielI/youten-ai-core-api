@@ -369,6 +369,13 @@ routes:
     admin_auth: true
     admin_permission: "analytics:read"
 
+  # Admin list all generation and pipeline jobs (CMS).
+  - method: GET
+    path: /v1/admin/jobs
+    handler: AdminListJobs
+    admin_auth: true
+    admin_permission: "ops:read"
+
 
 
 

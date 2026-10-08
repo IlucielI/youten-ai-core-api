@@ -1383,6 +1383,44 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/admin/jobs:
+    get:
+      tags: [Admin Operations]
+      summary: Admin List Generation and Pipeline Jobs
+      security:
+        - AdminAuth: []
+      description: Paginated generation and pipeline recordings across all users and statuses (requires ops:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated generation jobs list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminJobListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -2253,3 +2291,40 @@ components:
                   type: number
                 total_estimated_cost_usd:
                   type: number
+
+    AdminJobListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      title:
+                        type: string
+                      status:
+                        type: string
+                      duration_seconds:
+                        type: number
+                      selected_template:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+                total:
+                  type: integer
+                page:
+                  type: integer
+                limit:
+                  type: integer
+                total_pages:
+                  type: integer
+

@@ -85,3 +85,14 @@ type ResetPasswordRequest struct {
 	Token       string `json:"token"`
 	NewPassword string `json:"new_password"`
 }
+
+// AnonTokenResponse represents the response envelope containing the scoped anonymous session token and its claims metadata.
+type AnonTokenResponse struct {
+	AnonToken string    `json:"anon_token"`
+	SessionID uuid.UUID `json:"session_id"`
+	ClientID  string    `json:"client_id"`
+	TokenType string    `json:"token_type"`
+	ExpiresIn int64     `json:"expires_in"`
+	Scopes    []string  `json:"scopes"`
+}
+

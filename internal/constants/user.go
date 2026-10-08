@@ -25,4 +25,5 @@ const (
 	JWTTokenTypeAccess      JWTTokenType = "access"
 	JWTTokenTypeRefresh     JWTTokenType = "refresh"
 	JWTTokenTypeAdminAccess JWTTokenType = "admin_access"
+	JWTTokenTypeAnonAccess  JWTTokenType = "anon_access"
 )

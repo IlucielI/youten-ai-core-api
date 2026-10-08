@@ -21,6 +21,11 @@ routes:
     path: /docs
     handler: APIDocs
 
+  # Issue a scoped anonymous session token for official client applications via HTTP Basic Auth.
+  - method: POST
+    path: /v1/auth/anon
+    handler: AnonToken
+
   # Register a new user account.
   - method: POST
     path: /v1/auth/register

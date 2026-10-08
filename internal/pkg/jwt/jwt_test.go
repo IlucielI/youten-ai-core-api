@@ -157,3 +157,82 @@ func TestAdminToken(t *testing.T) {
 	}
 }
 
+func TestGenerateAndValidateAnonToken(t *testing.T) {
+	cfg := config.Config{
+		AppName:   "youten-test",
+		JWTSecret: "test-secret-key-32bytes-long-super!",
+	}
+
+	sessionID := uuid.New()
+	clientID := "client-app"
+	scopes := []string{"recordings:create", "recordings:read", "auth:claim"}
+
+	tokenStr, expiresIn, err := GenerateAnonToken(cfg, sessionID, clientID, scopes)
+	if err != nil {
+		t.Fatalf("unexpected error generating anon token: %v", err)
+	}
+	if tokenStr == "" {
+		t.Fatal("expected non-empty anon token string")
+	}
+	if expiresIn != 7*24*3600 {
+		t.Errorf("expected 7 days expiresIn (%d), got %d", 7*24*3600, expiresIn)
+	}
+
+	claims, err := ValidateAnonToken(cfg, tokenStr)
+	if err != nil {
+		t.Fatalf("unexpected error validating anon token: %v", err)
+	}
+	if claims.SessionID != sessionID {
+		t.Errorf("expected session ID %s, got %s", sessionID, claims.SessionID)
+	}
+	if claims.ClientID != clientID {
+		t.Errorf("expected client ID %s, got %s", clientID, claims.ClientID)
+	}
+	if claims.TokenType != constants.JWTTokenTypeAnonAccess {
+		t.Errorf("expected token type %s, got %s", constants.JWTTokenTypeAnonAccess, claims.TokenType)
+	}
+	if len(claims.Scopes) != len(scopes) {
+		t.Errorf("expected %d scopes, got %d", len(scopes), len(claims.Scopes))
+	}
+
+	// Scope validation tests
+	if !claims.HasScope("recordings:create") {
+		t.Error("expected HasScope('recordings:create') to be true")
+	}
+	if !claims.HasScope("recordings:read") {
+		t.Error("expected HasScope('recordings:read') to be true")
+	}
+	if claims.HasScope("recordings:share") {
+		t.Error("expected HasScope('recordings:share') to be false")
+	}
+
+	// Wildcard scope test
+	wildcardClaims := &AnonClaims{
+		Scopes: []string{"*"},
+	}
+	if !wildcardClaims.HasScope("any:permission") {
+		t.Error("expected wildcard to grant any:permission")
+	}
+
+	// Wrong secret test
+	badCfg := cfg
+	badCfg.JWTSecret = "wrong-jwt-secret-12345"
+	_, err = ValidateAnonToken(badCfg, tokenStr)
+	if err == nil {
+		t.Fatal("expected error validating anon token with wrong secret, got nil")
+	}
+
+	// Passing anon token to ValidateToken (user claims) fails
+	_, err = ValidateToken(cfg, tokenStr)
+	if err == nil {
+		t.Fatal("expected error validating anon token as user token, got nil")
+	}
+
+	// Passing anon token to ValidateAdminToken fails
+	_, err = ValidateAdminToken(cfg, tokenStr)
+	if err == nil {
+		t.Fatal("expected error validating anon token as admin token, got nil")
+	}
+}
+
+

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 	"time"
 
@@ -1330,3 +1331,135 @@ func TestControllers_ChangePassword_ValidationErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestControllers_AnonToken_MissingBasicAuth(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/anon", nil)
+
+	ctrls.AnonToken(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 on missing basic auth, got %d", w.Code)
+	}
+}
+
+func TestControllers_AnonToken_InvalidCredentials(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	clientID := "client-app"
+
+	// Mock DB query returns record not found
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "client_apps" WHERE client_id = $1 ORDER BY "client_apps"."id" LIMIT $2`)).
+		WithArgs(clientID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/anon", nil)
+	ctx.Request.SetBasicAuth(clientID, "wrongsecret")
+
+	ctrls.AnonToken(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 on invalid client credentials, got %d", w.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_AnonToken_InactiveClient(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	clientID := "client-app"
+	appID := uuid.New()
+
+	rows := sqlmock.NewRows([]string{"id", "client_id", "client_secret_hash", "name", "allowed_scopes", "is_active"}).
+		AddRow(appID, clientID, "$2a$12$o0q4I1Rt.97j0oRCsIzVf.hwCwGWoaF7Rk0T7.4G6f8uLkzjw0l0u", "Official Client", []byte(`["recordings:create"]`), false)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "client_apps" WHERE client_id = $1 ORDER BY "client_apps"."id" LIMIT $2`)).
+		WithArgs(clientID, 1).
+		WillReturnRows(rows)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/anon", nil)
+	ctx.Request.SetBasicAuth(clientID, "secret")
+
+	ctrls.AnonToken(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 on inactive client, got %d", w.Code)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_AnonToken_Success(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	clientID := "client-app"
+	appID := uuid.New()
+	secret := "secret"
+	secretHash, err := hasher.HashPassword(secret)
+	if err != nil {
+		t.Fatalf("failed to hash secret: %v", err)
+	}
+
+	rows := sqlmock.NewRows([]string{"id", "client_id", "client_secret_hash", "name", "allowed_scopes", "is_active"}).
+		AddRow(appID, clientID, secretHash, "Official Client", []byte(`["recordings:create", "recordings:read", "auth:claim"]`), true)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "client_apps" WHERE client_id = $1 ORDER BY "client_apps"."id" LIMIT $2`)).
+		WithArgs(clientID, 1).
+		WillReturnRows(rows)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/anon", nil)
+	ctx.Request.SetBasicAuth(clientID, secret)
+
+	ctrls.AnonToken(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on successful basic auth, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Status string                  `json:"status"`
+		Data   dtos.AnonTokenResponse `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response JSON: %v", err)
+	}
+
+	if resp.Status != "success" {
+		t.Errorf("expected status 'success', got '%s'", resp.Status)
+	}
+	if resp.Data.AnonToken == "" {
+		t.Error("expected non-empty anon token")
+	}
+	if resp.Data.ClientID != clientID {
+		t.Errorf("expected client ID '%s', got '%s'", clientID, resp.Data.ClientID)
+	}
+	if resp.Data.TokenType != "Bearer" {
+		t.Errorf("expected token type 'Bearer', got '%s'", resp.Data.TokenType)
+	}
+	if len(resp.Data.Scopes) != 3 {
+		t.Errorf("expected 3 scopes, got %d", len(resp.Data.Scopes))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+

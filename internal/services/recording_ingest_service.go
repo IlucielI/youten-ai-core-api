@@ -91,11 +91,10 @@ func (s *Service) UploadRecording(
 		language = "auto"
 	}
 
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate ownership token: %w", err)
+	ownershipToken, err := resolveOwnershipToken(ctx)
+	if err != nil {
+		return nil, err
 	}
-	ownershipToken := hex.EncodeToString(tokenBytes)
 	recordingID := uuid.New()
 	now := time.Now().UTC()
 
@@ -248,11 +247,10 @@ func (s *Service) ImportRecordingFromURL(
 			language = "auto"
 		}
 
-		tokenBytes := make([]byte, 32)
-		if _, err := rand.Read(tokenBytes); err != nil {
-			return nil, fmt.Errorf("failed to generate ownership token: %w", err)
+		ownershipToken, err := resolveOwnershipToken(ctx)
+		if err != nil {
+			return nil, err
 		}
-		ownershipToken := hex.EncodeToString(tokenBytes)
 
 		safeFilename := fmt.Sprintf("import_%s.m4a", recID.String()[:8])
 		if safeMediaID != "" {
@@ -377,11 +375,10 @@ func (s *Service) ImportRecordingFromURL(
 		language = "auto"
 	}
 
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate ownership token: %w", err)
+	ownershipToken, err := resolveOwnershipToken(ctx)
+	if err != nil {
+		return nil, err
 	}
-	ownershipToken := hex.EncodeToString(tokenBytes)
 	now := time.Now().UTC()
 
 	var fileSizeBytes int64
@@ -556,6 +553,19 @@ func (s *Service) checkDailyQuota(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// resolveOwnershipToken extracts anonymous session ID as ownership anchor if present,
+// otherwise generates a cryptographically random 32-byte hex token.
+func resolveOwnershipToken(ctx context.Context) (string, error) {
+	if authUser, ok := ctxmeta.GetAuthUser(ctx); ok && authUser.IsGuest && authUser.SessionID != "" {
+		return authUser.SessionID, nil
+	}
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("failed to generate ownership token: %w", err)
+	}
+	return hex.EncodeToString(tokenBytes), nil
 }
 
 // applyRecordingOwnership sets user or guest ownership and expiration on a recording.

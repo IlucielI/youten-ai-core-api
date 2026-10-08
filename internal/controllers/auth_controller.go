@@ -211,3 +211,21 @@ func (c *Controllers) ChangePassword(ctx *gin.Context) {
 
 	c.respondEmpty(ctx, "Password changed successfully")
 }
+
+// AnonToken handles scoped anonymous session token generation for client apps via HTTP Basic Authentication.
+func (c *Controllers) AnonToken(ctx *gin.Context) {
+	clientID, clientSecret, ok := ctx.Request.BasicAuth()
+	if !ok || clientID == "" || clientSecret == "" {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("missing or invalid HTTP Basic Auth credentials"))
+		return
+	}
+
+	tokenResp, err := c.svc.GenerateAnonToken(ctx.Request.Context(), clientID, clientSecret)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "Anonymous token issued successfully", tokenResp)
+}
+

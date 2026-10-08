@@ -493,3 +493,51 @@ func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, req *dto
 
 	return nil
 }
+
+// GenerateAnonToken authenticates a client application via its client_id and secret,
+// and issues a scoped 7-day anonymous session token.
+func (s *Service) GenerateAnonToken(ctx context.Context, clientID, clientSecret string) (*dtos.AnonTokenResponse, error) {
+	cleanClientID := strings.TrimSpace(clientID)
+	cleanSecret := strings.TrimSpace(clientSecret)
+
+	if cleanClientID == "" || cleanSecret == "" {
+		return nil, constants.ErrUnauthorized.WithMessage("missing basic auth client credentials")
+	}
+
+	clientApp, err := s.repo.FindClientAppByClientID(ctx, cleanClientID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrUnauthorized.WithMessage("invalid basic auth client credentials")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if !clientApp.IsActive {
+		return nil, constants.ErrUnauthorized.WithMessage("client application is inactive or revoked")
+	}
+
+	if !hasher.VerifyPassword(clientApp.ClientSecretHash, cleanSecret) {
+		return nil, constants.ErrUnauthorized.WithMessage("invalid basic auth client credentials")
+	}
+
+	scopes := clientApp.ScopesList()
+	if len(scopes) == 0 {
+		scopes = constants.DefaultClientAppScopes()
+	}
+
+	sessionID := uuid.New()
+	tokenStr, expiresIn, err := jwt.GenerateAnonToken(s.cfg, sessionID, clientApp.ClientID, scopes)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AnonTokenResponse{
+		AnonToken: tokenStr,
+		SessionID: sessionID,
+		ClientID:  clientApp.ClientID,
+		TokenType: "Bearer",
+		ExpiresIn: expiresIn,
+		Scopes:    scopes,
+	}, nil
+}
+

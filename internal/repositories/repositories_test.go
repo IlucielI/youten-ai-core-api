@@ -554,6 +554,85 @@ func TestRepositories_Waitlist(t *testing.T) {
 	}
 }
 
+func TestRepositories_ClientApp(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	appID := uuid.New()
+	clientID := "client-app"
+
+	t.Run("CreateClientApp success", func(t *testing.T) {
+		mock.ExpectBegin()
+		retRows := sqlmock.NewRows([]string{"id", "allowed_scopes", "created_at", "updated_at"}).
+			AddRow(appID, []byte(`["recordings:create"]`), time.Now(), time.Now())
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "client_apps"`)).
+			WillReturnRows(retRows)
+		mock.ExpectCommit()
+
+		app := &models.ClientApp{
+			ID:               appID,
+			ClientID:         clientID,
+			ClientSecretHash: "hashed",
+			Name:             "Official Client",
+			AllowedScopes:    []byte(`["recordings:create"]`),
+			IsActive:         true,
+		}
+		if err := repo.CreateClientApp(context.Background(), app); err != nil {
+			t.Fatalf("unexpected error creating client app: %v", err)
+		}
+	})
+
+	t.Run("FindClientAppByID success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "client_id", "name", "is_active"}).
+			AddRow(appID, clientID, "Official Client", true)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "client_apps" WHERE id = $1 ORDER BY "client_apps"."id" LIMIT $2`)).
+			WithArgs(appID, 1).
+			WillReturnRows(rows)
+
+		found, err := repo.FindClientAppByID(context.Background(), appID)
+		if err != nil {
+			t.Fatalf("unexpected error finding client app by ID: %v", err)
+		}
+		if found == nil || found.ClientID != clientID {
+			t.Fatalf("unexpected client app: %+v", found)
+		}
+	})
+
+	t.Run("FindClientAppByClientID success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "client_id", "name", "is_active"}).
+			AddRow(appID, clientID, "Official Client", true)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "client_apps" WHERE client_id = $1 ORDER BY "client_apps"."id" LIMIT $2`)).
+			WithArgs(clientID, 1).
+			WillReturnRows(rows)
+
+		found, err := repo.FindClientAppByClientID(context.Background(), clientID)
+		if err != nil {
+			t.Fatalf("unexpected error finding client app by client ID: %v", err)
+		}
+		if found == nil || found.ID != appID {
+			t.Fatalf("unexpected client app: %+v", found)
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+
 
 
 

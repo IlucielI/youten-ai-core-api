@@ -1606,6 +1606,9 @@ func TestControllers_AdminUserRoles(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
 		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
 	})
 
 	t.Run("AdminCreateUserRole returns 201", func(t *testing.T) {
@@ -1653,6 +1656,9 @@ func TestControllers_AdminUserRoles(t *testing.T) {
 		if w.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d. Body: %s", w.Code, w.Body.String())
 		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
 	})
 
 	t.Run("AdminUpdateUserRole returns 200", func(t *testing.T) {
@@ -1696,6 +1702,9 @@ func TestControllers_AdminUserRoles(t *testing.T) {
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
 		}
 	})
 
@@ -1763,6 +1772,9 @@ func TestControllers_AdminUserRoles(t *testing.T) {
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
 		}
 	})
 }

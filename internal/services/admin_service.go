@@ -400,11 +400,17 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta,
 	}
 
 	existingName, err := s.repo.FindUserRoleByName(ctx, req.Name)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, s.wrapError(ctx, err)
+	}
 	if err == nil && existingName != nil {
 		return nil, constants.ErrConflict.WithMessage("user role with this name already exists")
 	}
 
 	existingCode, err := s.repo.FindUserRoleByCode(ctx, req.Code)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, s.wrapError(ctx, err)
+	}
 	if err == nil && existingCode != nil {
 		return nil, constants.ErrConflict.WithMessage("user role with this code already exists")
 	}
@@ -418,12 +424,6 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta,
 		return nil, constants.ErrBadRequest.WithMessage("invalid permissions format")
 	}
 
-	if req.IsDefault {
-		if err := s.repo.ClearDefaultUserRoles(ctx, uuid.Nil); err != nil {
-			return nil, s.wrapError(ctx, err)
-		}
-	}
-
 	role := &models.UserRole{
 		Name:        req.Name,
 		Code:        strings.ToUpper(req.Code),
@@ -435,6 +435,12 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta,
 
 	if err := s.repo.CreateUserRole(ctx, role); err != nil {
 		return nil, s.wrapError(ctx, err)
+	}
+
+	if req.IsDefault {
+		if err := s.repo.ClearDefaultUserRoles(ctx, role.ID); err != nil {
+			return nil, s.wrapError(ctx, err)
+		}
 	}
 
 	adminIDVal := meta.AdminID
@@ -496,6 +502,9 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta AdminActionMeta,
 
 	if req.Name != nil && *req.Name != role.Name {
 		existing, err := s.repo.FindUserRoleByName(ctx, *req.Name)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, s.wrapError(ctx, err)
+		}
 		if err == nil && existing != nil && existing.ID != role.ID {
 			return nil, constants.ErrConflict.WithMessage("user role with this name already exists")
 		}

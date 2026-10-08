@@ -1440,6 +1440,9 @@ func TestService_AdminUserRoles(t *testing.T) {
 		if resp.Items[0].Code != "FREE" || !resp.Items[0].IsDefault {
 			t.Errorf("unexpected item: %+v", resp.Items[0])
 		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
 	})
 
 	t.Run("AdminCreateUserRole success", func(t *testing.T) {
@@ -1482,6 +1485,9 @@ func TestService_AdminUserRoles(t *testing.T) {
 		if resp.Name != req.Name || resp.Code != req.Code {
 			t.Errorf("unexpected resp: %+v", resp)
 		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
 	})
 
 	t.Run("AdminCreateUserRole duplicate code error", func(t *testing.T) {
@@ -1506,6 +1512,9 @@ func TestService_AdminUserRoles(t *testing.T) {
 		_, err := svc.AdminCreateUserRole(context.Background(), AdminActionMeta{}, req)
 		if err == nil {
 			t.Fatal("expected conflict error, got nil")
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
 		}
 	})
 
@@ -1547,6 +1556,9 @@ func TestService_AdminUserRoles(t *testing.T) {
 		}
 		if resp.Name != newName || resp.DailyQuota != newQuota {
 			t.Errorf("unexpected resp: %+v", resp)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
 		}
 	})
 
@@ -1603,6 +1615,9 @@ func TestService_AdminUserRoles(t *testing.T) {
 		}
 		if resp.RoleCode != "PRO" || resp.RoleName != "Pro Member" {
 			t.Errorf("unexpected resp: %+v", resp)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
 		}
 	})
 }

@@ -1463,3 +1463,85 @@ func TestControllers_AnonToken_Success(t *testing.T) {
 	}
 }
 
+func TestControllers_Login_WithAnonTokenHeader(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	email := "anonlogin@example.com"
+	password := "Password123"
+	hashedPassword, _ := hasher.HashPassword(password)
+	userID := uuid.New()
+	roleID := uuid.New()
+	now := time.Now()
+	anonSessionID := uuid.New()
+	recordingID := uuid.New()
+
+	anonTokenStr, _, err := jwt.GenerateAnonToken(config.Config{JWTSecret: "test-jwt-secret-key-1234567890"}, anonSessionID, "client-app", []string{"recordings:create"})
+	if err != nil {
+		t.Fatalf("failed to generate anon token: %v", err)
+	}
+
+	// 1. User lookup
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "role_id", "created_at"}).
+			AddRow(userID, email, hashedPassword, constants.UserStatusActive, roleID, now))
+
+	// 2. User role lookup
+	roleRows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+		AddRow(roleID, "Free Member", "FREE", 5, true)
+	mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE id = \$1 ORDER BY "user_roles"\."id" LIMIT \$2`).
+		WithArgs(roleID, 1).
+		WillReturnRows(roleRows)
+
+	// 3. Create AuthToken
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	// 4. Auto-claim guest recordings
+	mock.ExpectBegin()
+	recRows := sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+		AddRow(recordingID, anonSessionID.String(), true)
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(ownership_token IN \(\$1,\$2\) AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(anonTokenStr, anonSessionID.String()).
+		WillReturnRows(recRows)
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"updated_at"=\$3 WHERE id IN \(\$4\)`).
+		WithArgs(false, userID, sqlmock.AnyArg(), recordingID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	reqPayload := dtos.LoginRequest{
+		Email:    email,
+		Password: password,
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request.Header.Set("X-Anon-Token", anonTokenStr)
+
+	ctrls.Login(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.AuthResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp.Data == nil || resp.Data.ClaimedRecordingsCount != 1 {
+		t.Fatalf("expected ClaimedRecordingsCount = 1, got %+v", resp.Data)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+

@@ -28,6 +28,7 @@ type routeItem struct {
 	OptionalAuth    bool   `yaml:"optional_auth,omitempty"`
 	BasicAuth       bool   `yaml:"basic_auth,omitempty"`
 	AdminAuth       bool   `yaml:"admin_auth,omitempty"`
+	Permission      string `yaml:"permission,omitempty"`
 	AdminPermission string `yaml:"admin_permission,omitempty"`
 }
 
@@ -67,9 +68,16 @@ func (r *routeItem) UnmarshalYAML(value *yaml.Node) error {
 			if b, ok := v.(bool); ok {
 				r.AdminAuth = b
 			}
+		case "permission":
+			if s, ok := v.(string); ok {
+				r.Permission = s
+			}
 		case "admin_permission":
 			if s, ok := v.(string); ok {
 				r.AdminPermission = s
+				if r.Permission == "" {
+					r.Permission = s
+				}
 			}
 		}
 	}
@@ -157,14 +165,21 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 		if r.OptionalAuth {
 			handlers = append(handlers, middlewares.OptionalAuth(validator))
 		}
-		if r.AdminAuth || r.AdminPermission != "" {
+		isAdminRoute := r.AdminAuth || r.AdminPermission != "" || (r.Permission != "" && strings.HasPrefix(r.Path, "/v1/admin/"))
+		if isAdminRoute {
 			if adminValidator == nil {
 				log.Fatalf("route configuration error: admin validator required for route %s %s", r.Method, r.Path)
 			}
 			handlers = append(handlers, middlewares.RequireAdminAuth(adminValidator))
-		}
-		if r.AdminPermission != "" {
-			handlers = append(handlers, middlewares.RequireAdminPermission(r.AdminPermission))
+			perm := r.Permission
+			if perm == "" {
+				perm = r.AdminPermission
+			}
+			if perm != "" {
+				handlers = append(handlers, middlewares.RequireAdminPermission(perm))
+			}
+		} else if r.Auth && r.Permission != "" {
+			handlers = append(handlers, middlewares.RequireUserPermission(r.Permission))
 		}
 		handlers = append(handlers, fn)
 

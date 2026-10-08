@@ -251,140 +251,140 @@ routes:
     path: /v1/admin/users
     handler: AdminListUsers
     admin_auth: true
-    admin_permission: "users:read"
+    permission: "users:read"
 
   # Admin override user daily transcription quota (CMS).
   - method: PATCH
     path: /v1/admin/users/:id/quota
     handler: AdminOverrideUserQuota
     admin_auth: true
-    admin_permission: "users:write"
+    permission: "users:write"
 
   # Admin revoke all active sessions for a user (CMS).
   - method: POST
     path: /v1/admin/users/:id/revoke-sessions
     handler: AdminRevokeUserSessions
     admin_auth: true
-    admin_permission: "users:write"
+    permission: "users:write"
 
   # Admin list RBAC roles (CMS).
   - method: GET
     path: /v1/admin/roles
     handler: AdminListRoles
     admin_auth: true
-    admin_permission: "roles:read"
+    permission: "roles:read"
 
   # Admin create RBAC role (CMS).
   - method: POST
     path: /v1/admin/roles
     handler: AdminCreateRole
     admin_auth: true
-    admin_permission: "roles:write"
+    permission: "roles:write"
 
   # Admin update RBAC role (CMS).
   - method: PUT
     path: /v1/admin/roles/:id
     handler: AdminUpdateRole
     admin_auth: true
-    admin_permission: "roles:write"
+    permission: "roles:write"
 
   # Admin list prompt templates (CMS).
   - method: GET
     path: /v1/admin/templates
     handler: AdminListTemplates
     admin_auth: true
-    admin_permission: "templates:read"
+    permission: "templates:read"
 
   # Admin create prompt template (CMS).
   - method: POST
     path: /v1/admin/templates
     handler: AdminCreateTemplate
     admin_auth: true
-    admin_permission: "templates:write"
+    permission: "templates:write"
 
   # Admin update prompt template (CMS).
   - method: PUT
     path: /v1/admin/templates/:id
     handler: AdminUpdateTemplate
     admin_auth: true
-    admin_permission: "templates:write"
+    permission: "templates:write"
 
   # Admin test prompt template sandbox (CMS).
   - method: POST
     path: /v1/admin/templates/test
     handler: AdminTestTemplate
     admin_auth: true
-    admin_permission: "templates:write"
+    permission: "templates:write"
 
   # Admin monitor DLQ and stuck pipeline jobs (CMS).
   - method: GET
     path: /v1/admin/pipeline/dlq
     handler: AdminGetDLQPipeline
     admin_auth: true
-    admin_permission: "ops:read"
+    permission: "ops:read"
 
   # Admin reprocess dead-lettered or stuck pipeline jobs (CMS).
   - method: POST
     path: /v1/admin/pipeline/dlq/retry
     handler: AdminRetryDLQJob
     admin_auth: true
-    admin_permission: "ops:write"
+    permission: "ops:write"
 
   # Admin get system config and maintenance mode flags (CMS).
   - method: GET
     path: /v1/admin/config
     handler: AdminGetSystemConfig
     admin_auth: true
-    admin_permission: "config:read"
+    permission: "config:read"
 
   # Admin update system config and maintenance mode flags (CMS).
   - method: PATCH
     path: /v1/admin/config
     handler: AdminUpdateSystemConfig
     admin_auth: true
-    admin_permission: "config:write"
+    permission: "config:write"
 
   # Admin list moderation abuse reports (CMS).
   - method: GET
     path: /v1/admin/reports
     handler: AdminListReports
     admin_auth: true
-    admin_permission: "moderation:read"
+    permission: "moderation:read"
 
   # Admin resolve moderation abuse report (CMS).
   - method: POST
     path: /v1/admin/reports/:id/resolve
     handler: AdminResolveReport
     admin_auth: true
-    admin_permission: "moderation:write"
+    permission: "moderation:write"
 
   # Admin list staff audit trail logs (CMS).
   - method: GET
     path: /v1/admin/audit-logs
     handler: AdminListAuditLogs
     admin_auth: true
-    admin_permission: "audit:read"
+    permission: "audit:read"
 
   # Admin get system overview stats (CMS).
   - method: GET
     path: /v1/admin/stats/overview
     handler: AdminGetOverviewStats
     admin_auth: true
-    admin_permission: "analytics:read"
+    permission: "analytics:read"
 
   # Admin get cost oversight calculations (CMS).
   - method: GET
     path: /v1/admin/stats/costs
     handler: AdminGetCostOversight
     admin_auth: true
-    admin_permission: "analytics:read"
+    permission: "analytics:read"
 
   # Admin list all generation and pipeline jobs (CMS).
   - method: GET
     path: /v1/admin/jobs
     handler: AdminListJobs
     admin_auth: true
-    admin_permission: "ops:read"
+    permission: "ops:read"
 
 
 

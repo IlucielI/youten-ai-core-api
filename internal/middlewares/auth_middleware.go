@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
@@ -130,3 +131,33 @@ func OptionalAuth(validator AuthValidator) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// RequireUserPermission returns a Gin middleware ensuring the authenticated user has the specified permission.
+// Returns 403 Forbidden if permission is not granted, or 401 if unauthenticated.
+func RequireUserPermission(requiredPerm string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authUser, ok := ctxmeta.GetAuthUser(c.Request.Context())
+		if !ok || authUser.IsGuest || authUser.UserID == uuid.Nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "unauthorized: user authentication required",
+				Timestamp: time.Now(),
+			})
+			return
+		}
+
+		if !ctxmeta.HasUserPermission(authUser, requiredPerm) {
+			c.AbortWithStatusJSON(http.StatusForbidden, dtos.BaseResponse{
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeForbidden,
+				Message:   "forbidden: insufficient permissions",
+				Timestamp: time.Now(),
+			})
+			return
+		}
+
+		c.Next()
+	}
+}
+

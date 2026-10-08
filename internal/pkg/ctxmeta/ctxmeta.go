@@ -19,10 +19,13 @@ const (
 
 // AuthUser represents authenticated user identity extracted from JWT and session.
 type AuthUser struct {
-	UserID    uuid.UUID
-	Email     string
-	SessionID string
-	IsGuest   bool
+	UserID      uuid.UUID
+	Email       string
+	SessionID   string
+	RoleCode    string
+	Permissions []string
+	DailyQuota  int
+	IsGuest     bool
 }
 
 // WithAuthUser injects the authenticated user into the context.
@@ -190,4 +193,39 @@ func HasAdminPermission(user AdminAuthUser, requiredPerm string) bool {
 	}
 	return false
 }
+
+// HasUserPermission checks if the authenticated user possesses the required permission.
+// Grants access if:
+// 1. User has wildcard "*" (Full Access).
+// 2. User has exact matching permission (e.g., "export:pdf").
+// 3. User has category wildcard matching prefix (e.g., "recordings:*" matches "recordings:share").
+func HasUserPermission(user AuthUser, requiredPerm string) bool {
+	if user.IsGuest {
+		return false
+	}
+	requiredPerm = strings.TrimSpace(requiredPerm)
+	if requiredPerm == "" {
+		return true
+	}
+	parts := strings.Split(requiredPerm, ":")
+	domainPrefix := ""
+	if len(parts) > 1 {
+		domainPrefix = parts[0] + ":*"
+	}
+
+	for _, p := range user.Permissions {
+		p = strings.TrimSpace(p)
+		if p == "*" {
+			return true
+		}
+		if p == requiredPerm {
+			return true
+		}
+		if domainPrefix != "" && p == domainPrefix {
+			return true
+		}
+	}
+	return false
+}
+
 

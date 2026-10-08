@@ -2,6 +2,7 @@ package jwt
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -12,27 +13,73 @@ import (
 	"code-base-golang/internal/dtos"
 )
 
+// UserRoleClaims contains optional user RBAC role code, permissions, and daily quota.
+type UserRoleClaims struct {
+	RoleCode    string
+	Permissions []string
+	DailyQuota  int
+}
+
 // CustomClaims encapsulates application-specific payload fields in standard JWT claims.
 type CustomClaims struct {
-	UserID    uuid.UUID `json:"sub"`
-	SessionID string    `json:"sid"`
-	Email     string    `json:"email"`
-	TokenType constants.JWTTokenType `json:"type"` // "access" or "refresh"
+	UserID      uuid.UUID              `json:"sub"`
+	SessionID   string                 `json:"sid"`
+	Email       string                 `json:"email"`
+	RoleCode    string                 `json:"role,omitempty"`
+	Permissions []string               `json:"permissions,omitempty"`
+	DailyQuota  int                    `json:"daily_quota,omitempty"`
+	TokenType   constants.JWTTokenType `json:"type"` // "access" or "refresh"
 	jwt.RegisteredClaims
 }
 
+// HasPermission checks if claims contain required permission (exact, wildcard *, or domain prefix *).
+func (c *CustomClaims) HasPermission(requiredPerm string) bool {
+	if c == nil {
+		return false
+	}
+	requiredPerm = strings.TrimSpace(requiredPerm)
+	if requiredPerm == "" {
+		return true
+	}
+	parts := strings.Split(requiredPerm, ":")
+	domainPrefix := ""
+	if len(parts) > 1 {
+		domainPrefix = parts[0] + ":*"
+	}
+
+	for _, p := range c.Permissions {
+		p = strings.TrimSpace(p)
+		if p == "*" || p == requiredPerm || (domainPrefix != "" && p == domainPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // GenerateTokenPair signs and returns a new Access Token and Refresh Token pair.
-func GenerateTokenPair(cfg config.Config, userID uuid.UUID, email string, sessionID string) (*dtos.TokenResponse, error) {
+func GenerateTokenPair(cfg config.Config, userID uuid.UUID, email string, sessionID string, roleClaims ...UserRoleClaims) (*dtos.TokenResponse, error) {
 	now := time.Now()
 	accessExp := now.Add(cfg.JWTAccessExpiration)
 	refreshExp := now.Add(cfg.JWTRefreshExpiration)
 
+	var roleCode string
+	var permissions []string
+	var dailyQuota int
+	if len(roleClaims) > 0 {
+		roleCode = roleClaims[0].RoleCode
+		permissions = roleClaims[0].Permissions
+		dailyQuota = roleClaims[0].DailyQuota
+	}
+
 	// 1. Access Token
 	accessClaims := CustomClaims{
-		UserID:    userID,
-		SessionID: sessionID,
-		Email:     email,
-		TokenType: constants.JWTTokenTypeAccess,
+		UserID:      userID,
+		SessionID:   sessionID,
+		Email:       email,
+		RoleCode:    roleCode,
+		Permissions: permissions,
+		DailyQuota:  dailyQuota,
+		TokenType:   constants.JWTTokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			Issuer:    cfg.AppName,

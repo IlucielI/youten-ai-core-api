@@ -10,8 +10,6 @@ CREATE TABLE IF NOT EXISTS client_apps (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_client_apps_client_id ON client_apps(client_id);
-
 INSERT INTO client_apps (id, client_id, client_secret_hash, name, description, allowed_scopes, is_active)
 VALUES (
     '00000000-0000-0000-0000-000000000010',

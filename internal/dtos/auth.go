@@ -8,9 +8,10 @@ import (
 
 // RegisterRequest defines the input payload for user registration.
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	FullName string `json:"full_name"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	FullName  string `json:"full_name"`
+	AnonToken string `json:"anon_token,omitempty"`
 }
 
 // UserResponse represents the public user response representation.
@@ -59,18 +60,20 @@ type ChangePasswordRequest struct {
 
 // LoginRequest defines the input payload for user authentication.
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	AnonToken string `json:"anon_token,omitempty"`
 }
 
 // AuthResponse represents the response envelope containing tokens and authenticated user info.
 type AuthResponse struct {
-	AccessToken      string       `json:"access_token"`
-	RefreshToken     string       `json:"refresh_token"`
-	TokenType        string       `json:"token_type"`
-	ExpiresIn        int64        `json:"expires_in"`
-	RefreshExpiresIn int64        `json:"refresh_expires_in"`
-	User             UserResponse `json:"user"`
+	AccessToken            string       `json:"access_token"`
+	RefreshToken           string       `json:"refresh_token"`
+	TokenType              string       `json:"token_type"`
+	ExpiresIn              int64        `json:"expires_in"`
+	RefreshExpiresIn       int64        `json:"refresh_expires_in"`
+	User                   UserResponse `json:"user"`
+	ClaimedRecordingsCount int          `json:"claimed_recordings_count,omitempty"`
 }
 
 // RefreshTokenRequest defines the input payload for rotating session tokens.

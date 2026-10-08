@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -18,6 +20,8 @@ func (c *Controllers) Register(ctx *gin.Context) {
 		return
 	}
 
+	req.AnonToken = extractAnonToken(ctx, req.AnonToken)
+
 	if err := validations.ValidateRegisterRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
@@ -32,6 +36,21 @@ func (c *Controllers) Register(ctx *gin.Context) {
 	c.respondCreated(ctx, "User registered successfully", user)
 }
 
+// extractAnonToken retrieves anonymous session token from payload or request headers.
+func extractAnonToken(ctx *gin.Context, currentToken string) string {
+	currentToken = strings.TrimSpace(currentToken)
+	if currentToken != "" {
+		return currentToken
+	}
+	if headerToken := strings.TrimSpace(ctx.GetHeader("X-Anon-Token")); headerToken != "" {
+		return headerToken
+	}
+	if authHeader := strings.TrimSpace(ctx.GetHeader("Authorization")); strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		return strings.TrimSpace(authHeader[7:])
+	}
+	return ""
+}
+
 // Login handles user authentication and JWT session token generation.
 func (c *Controllers) Login(ctx *gin.Context) {
 	var req dtos.LoginRequest
@@ -39,6 +58,8 @@ func (c *Controllers) Login(ctx *gin.Context) {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
 		return
 	}
+
+	req.AnonToken = extractAnonToken(ctx, req.AnonToken)
 
 	if err := validations.ValidateLoginRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))

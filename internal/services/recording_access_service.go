@@ -42,6 +42,13 @@ func (s *Service) authorizeRecordingAccess(ctx context.Context, rec *models.Reco
 		return true
 	}
 
+	// Also grant access when the request carries an anonymous guest token matching the recording ownership anchor
+	if authUser, ok := ctxmeta.GetAuthUser(ctx); ok && authUser.IsGuest && authUser.SessionID != "" {
+		if constantTimeEqual(authUser.SessionID, rec.OwnershipToken) {
+			return true
+		}
+	}
+
 	if policy.allowShareToken && ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil &&
 		constantTimeEqual(ownershipToken, *rec.ShareToken) {
 		return true

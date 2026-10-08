@@ -1106,7 +1106,9 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 	}
 
 	now := time.Now().UTC()
-	_ = s.repo.UpdateAdminLastLogin(ctx, admin.ID, now)
+	if err := s.repo.UpdateAdminLastLogin(ctx, admin.ID, now); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
 
 	tokenStr, err := jwt.GenerateAdminToken(s.cfg, admin.ID, admin.Username)
 	if err != nil {
@@ -1126,14 +1128,16 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 		}
 	}
 	entityIDStr := admin.ID.String()
-	_ = s.repo.CreateAdminAuditLog(ctx, &models.AdminAuditLog{
+	if err := s.repo.CreateAdminAuditLog(ctx, &models.AdminAuditLog{
 		AdminID:   &admin.ID,
 		Action:    "ADMIN_LOGIN",
 		Entity:    "ADMIN_USER",
 		EntityID:  &entityIDStr,
 		IPAddress: ipPtr,
 		UserAgent: uaPtr,
-	})
+	}); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
 
 	roleName := ""
 	var perms []string

@@ -236,6 +236,11 @@ routes:
     path: /v1/waitlist/bot
     handler: JoinBotWaitlist
 
+  # Authenticate staff administrator credentials and issue admin access token (CMS).
+  - method: POST
+    path: /v1/admin/login
+    handler: AdminLogin
+
   # Admin list registered users (CMS).
   - method: GET
     path: /v1/admin/users

@@ -697,6 +697,39 @@ func (c *Controllers) AdminListJobs(ctx *gin.Context) {
 	})
 }
 
+// AdminLogin handles POST /v1/admin/login to authenticate staff administrators.
+func (c *Controllers) AdminLogin(ctx *gin.Context) {
+	var req dtos.AdminLoginRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	meta := &services.AdminActionMeta{
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminLogin(ctx.Request.Context(), req, meta)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminLoginResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "admin logged in successfully",
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
 
 
 

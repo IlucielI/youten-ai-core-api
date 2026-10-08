@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -37,6 +38,14 @@ func (r *Repositories) FindAdminByID(ctx context.Context, id uuid.UUID) (*models
 // CreateAdmin creates a new staff user.
 func (r *Repositories) CreateAdmin(ctx context.Context, admin *models.AdminUser) error {
 	return r.db.WithContext(ctx).Create(admin).Error
+}
+
+// UpdateAdminLastLogin updates the last login timestamp for an admin user.
+func (r *Repositories) UpdateAdminLastLogin(ctx context.Context, id uuid.UUID, lastLoginAt time.Time) error {
+	return r.db.WithContext(ctx).
+		Model(&models.AdminUser{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Update("last_login_at", lastLoginAt).Error
 }
 
 // FindRoleByID retrieves an administrative role by its UUID.

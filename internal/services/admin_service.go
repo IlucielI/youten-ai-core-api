@@ -15,6 +15,8 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/hasher"
+	"code-base-golang/internal/pkg/jwt"
 	"code-base-golang/internal/repositories"
 )
 
@@ -1082,6 +1084,75 @@ func (s *Service) AdminGetCostOversight(ctx context.Context) (*dtos.CostOversigh
 		EstimatedLLMCostUSD:   llmCost,
 		TotalEstimatedCostUSD: totalCost,
 		Currency:              "USD",
+	}, nil
+}
+
+// AdminLogin authenticates staff administrator credentials and issues an admin access token.
+func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, meta *AdminActionMeta) (*dtos.AdminLoginResponse, error) {
+	admin, err := s.repo.FindAdminByUsername(ctx, req.Username)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrInvalidCredentials
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if admin.Status != constants.UserStatusActive {
+		return nil, constants.ErrUserInactive
+	}
+
+	if !hasher.VerifyPassword(admin.PasswordHash, req.Password) {
+		return nil, constants.ErrInvalidCredentials
+	}
+
+	now := time.Now().UTC()
+	_ = s.repo.UpdateAdminLastLogin(ctx, admin.ID, now)
+
+	tokenStr, err := jwt.GenerateAdminToken(s.cfg, admin.ID, admin.Username)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// Record audit log
+	var ipPtr, uaPtr *string
+	if meta != nil {
+		if meta.IPAddress != "" {
+			ip := meta.IPAddress
+			ipPtr = &ip
+		}
+		if meta.UserAgent != "" {
+			ua := meta.UserAgent
+			uaPtr = &ua
+		}
+	}
+	entityIDStr := admin.ID.String()
+	_ = s.repo.CreateAdminAuditLog(ctx, &models.AdminAuditLog{
+		AdminID:   &admin.ID,
+		Action:    "ADMIN_LOGIN",
+		Entity:    "ADMIN_USER",
+		EntityID:  &entityIDStr,
+		IPAddress: ipPtr,
+		UserAgent: uaPtr,
+	})
+
+	roleName := ""
+	var perms []string
+	if admin.Role != nil {
+		roleName = admin.Role.Name
+		perms = admin.Role.PermissionsList()
+	}
+
+	return &dtos.AdminLoginResponse{
+		Token:     tokenStr,
+		ExpiresAt: now.Add(s.cfg.JWTAccessExpiration),
+		Admin: dtos.AdminUserDTO{
+			ID:          admin.ID,
+			Username:    admin.Username,
+			FullName:    admin.FullName,
+			RoleID:      admin.RoleID,
+			RoleName:    roleName,
+			Permissions: perms,
+		},
 	}, nil
 }
 

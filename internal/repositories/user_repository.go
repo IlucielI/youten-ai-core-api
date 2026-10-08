@@ -24,6 +24,15 @@ func (r *Repositories) FindUserByID(ctx context.Context, id uuid.UUID) (*models.
 	return &user, nil
 }
 
+// FindUserByIDWithRole retrieves a user by their UUID with their UserRole preloaded.
+func (r *Repositories) FindUserByIDWithRole(ctx context.Context, id uuid.UUID) (*models.User, error) {
+	var user models.User
+	if err := r.db.WithContext(ctx).Preload("Role").First(&user, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // FindUserByEmail retrieves a user by their email address.
 func (r *Repositories) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
@@ -31,6 +40,18 @@ func (r *Repositories) FindUserByEmail(ctx context.Context, email string) (*mode
 		return nil, err
 	}
 	return &user, nil
+}
+
+// UpdateUserRoleID updates the assigned user role for a user.
+func (r *Repositories) UpdateUserRoleID(ctx context.Context, id uuid.UUID, roleID uuid.UUID) error {
+	res := r.db.WithContext(ctx).Model(&models.User{}).Where("id = ? AND deleted_at IS NULL", id).Update("role_id", roleID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // UpdateUser saves changes to an existing user.

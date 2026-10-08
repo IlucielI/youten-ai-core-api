@@ -632,6 +632,150 @@ func TestRepositories_ClientApp(t *testing.T) {
 	}
 }
 
+func TestRepositories_UserRole(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	roleID := uuid.New()
+	userID := uuid.New()
+
+	t.Run("CreateUserRole success", func(t *testing.T) {
+		mock.ExpectBegin()
+		retRows := sqlmock.NewRows([]string{"id", "permissions", "created_at", "updated_at"}).
+			AddRow(roleID, []byte(`["recordings:create"]`), time.Now(), time.Now())
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "user_roles"`)).
+			WillReturnRows(retRows)
+		mock.ExpectCommit()
+
+		role := &models.UserRole{
+			ID:          roleID,
+			Name:        "Free Member",
+			Code:        "FREE",
+			Permissions: []byte(`["recordings:create"]`),
+			DailyQuota:  5,
+			IsDefault:   true,
+		}
+		if err := repo.CreateUserRole(context.Background(), role); err != nil {
+			t.Fatalf("unexpected error creating user role: %v", err)
+		}
+	})
+
+	t.Run("FindUserRoleByID success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+			AddRow(roleID, "Free Member", "FREE", 5, true)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" WHERE id = $1 ORDER BY "user_roles"."id" LIMIT $2`)).
+			WithArgs(roleID, 1).
+			WillReturnRows(rows)
+
+		found, err := repo.FindUserRoleByID(context.Background(), roleID)
+		if err != nil {
+			t.Fatalf("unexpected error finding user role by ID: %v", err)
+		}
+		if found == nil || found.Code != "FREE" {
+			t.Fatalf("unexpected user role: %+v", found)
+		}
+	})
+
+	t.Run("FindUserRoleByCode success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+			AddRow(roleID, "Free Member", "FREE", 5, true)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" WHERE UPPER(code) = UPPER($1) ORDER BY "user_roles"."id" LIMIT $2`)).
+			WithArgs("free", 1).
+			WillReturnRows(rows)
+
+		found, err := repo.FindUserRoleByCode(context.Background(), "free")
+		if err != nil {
+			t.Fatalf("unexpected error finding user role by code: %v", err)
+		}
+		if found == nil || found.ID != roleID {
+			t.Fatalf("unexpected user role: %+v", found)
+		}
+	})
+
+	t.Run("FindDefaultUserRole success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+			AddRow(roleID, "Free Member", "FREE", 5, true)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" WHERE is_default = TRUE ORDER BY "user_roles"."id" LIMIT $1`)).
+			WithArgs(1).
+			WillReturnRows(rows)
+
+		found, err := repo.FindDefaultUserRole(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error finding default user role: %v", err)
+		}
+		if found == nil || !found.IsDefault {
+			t.Fatalf("unexpected default user role: %+v", found)
+		}
+	})
+
+	t.Run("ListUserRoles success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+			AddRow(roleID, "Free Member", "FREE", 5, true).
+			AddRow(uuid.New(), "Pro Member", "PRO", 25, false)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" ORDER BY daily_quota ASC, created_at ASC`)).
+			WillReturnRows(rows)
+
+		roles, err := repo.ListUserRoles(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error listing user roles: %v", err)
+		}
+		if len(roles) != 2 {
+			t.Fatalf("expected 2 roles, got %d", len(roles))
+		}
+	})
+
+	t.Run("UpdateUserRole success", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "user_roles" SET`)).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		role := &models.UserRole{
+			ID:          roleID,
+			Name:        "Free Member Updated",
+			Code:        "FREE",
+			Permissions: []byte(`["recordings:create"]`),
+			DailyQuota:  10,
+			IsDefault:   true,
+		}
+		if err := repo.UpdateUserRole(context.Background(), role); err != nil {
+			t.Fatalf("unexpected error updating user role: %v", err)
+		}
+	})
+
+	t.Run("UpdateUserRoleID success", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "users" SET "role_id"=\$1,"updated_at"=\$2 WHERE`).
+			WithArgs(roleID, sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		if err := repo.UpdateUserRoleID(context.Background(), userID, roleID); err != nil {
+			t.Fatalf("unexpected error updating user role ID: %v", err)
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+
 
 
 

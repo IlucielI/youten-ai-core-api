@@ -35,6 +35,24 @@ func (r *Repositories) FindDefaultUserRole(ctx context.Context) (*models.UserRol
 	return &role, nil
 }
 
+// FindUserRoleByName retrieves a user role by its unique name.
+func (r *Repositories) FindUserRoleByName(ctx context.Context, name string) (*models.UserRole, error) {
+	var role models.UserRole
+	if err := r.db.WithContext(ctx).Where("LOWER(name) = LOWER(?)", name).First(&role).Error; err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
+// ClearDefaultUserRoles unsets the is_default flag for all user roles except optionally one.
+func (r *Repositories) ClearDefaultUserRoles(ctx context.Context, exceptID uuid.UUID) error {
+	q := r.db.WithContext(ctx).Model(&models.UserRole{}).Where("is_default = TRUE")
+	if exceptID != uuid.Nil {
+		q = q.Where("id != ?", exceptID)
+	}
+	return q.Update("is_default", false).Error
+}
+
 // ListUserRoles retrieves all available user roles ordered by daily quota ascending.
 func (r *Repositories) ListUserRoles(ctx context.Context) ([]models.UserRole, error) {
 	var roles []models.UserRole

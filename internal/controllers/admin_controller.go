@@ -226,6 +226,157 @@ func (c *Controllers) AdminUpdateRole(ctx *gin.Context) {
 	})
 }
 
+// AdminListUserRoles handles GET /v1/admin/user-roles.
+func (c *Controllers) AdminListUserRoles(ctx *gin.Context) {
+	resp, err := c.svc.AdminListUserRoles(ctx.Request.Context())
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserRoleListResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+// AdminCreateUserRole handles POST /v1/admin/user-roles.
+func (c *Controllers) AdminCreateUserRole(ctx *gin.Context) {
+	var req dtos.AdminCreateUserRoleRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminCreateUserRole(ctx.Request.Context(), meta, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.AdminUserRoleItem]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+// AdminUpdateUserRole handles PUT /v1/admin/user-roles/:id.
+func (c *Controllers) AdminUpdateUserRole(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	roleID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid user role ID"))
+		return
+	}
+
+	var req dtos.AdminUpdateUserRoleRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminUpdateUserRole(ctx.Request.Context(), meta, roleID, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserRoleItem]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
+// AdminAssignUserRole handles PATCH /v1/admin/users/:id/role.
+func (c *Controllers) AdminAssignUserRole(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid user ID"))
+		return
+	}
+
+	var req dtos.AdminAssignUserRoleRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return
+	}
+
+	meta := services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}
+
+	resp, err := c.svc.AdminAssignUserRole(ctx.Request.Context(), meta, userID, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.UserResponse]{
+		Status:    constants.ResponseStatusSuccess,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   constants.ResponseMessageSuccess,
+		Data:      resp,
+		Timestamp: time.Now(),
+	})
+}
+
 // AdminListTemplates handles GET /v1/admin/templates.
 func (c *Controllers) AdminListTemplates(ctx *gin.Context) {
 	resp, err := c.svc.AdminListTemplates(ctx.Request.Context())

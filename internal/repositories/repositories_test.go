@@ -770,6 +770,35 @@ func TestRepositories_UserRole(t *testing.T) {
 		}
 	})
 
+	t.Run("FindUserRoleByName success", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+			AddRow(roleID, "Free Member", "FREE", 5, true)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" WHERE LOWER(name) = LOWER($1) ORDER BY "user_roles"."id" LIMIT $2`)).
+			WithArgs("Free Member", 1).
+			WillReturnRows(rows)
+
+		found, err := repo.FindUserRoleByName(context.Background(), "Free Member")
+		if err != nil {
+			t.Fatalf("unexpected error finding user role by name: %v", err)
+		}
+		if found == nil || found.ID != roleID {
+			t.Fatalf("unexpected user role: %+v", found)
+		}
+	})
+
+	t.Run("ClearDefaultUserRoles success", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "user_roles" SET "is_default"=\$1,"updated_at"=\$2 WHERE is_default = TRUE AND id != \$3`).
+			WithArgs(false, sqlmock.AnyArg(), roleID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		if err := repo.ClearDefaultUserRoles(context.Background(), roleID); err != nil {
+			t.Fatalf("unexpected error clearing default user roles: %v", err)
+		}
+	})
+
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}

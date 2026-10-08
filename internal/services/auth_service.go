@@ -139,7 +139,11 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 			roleCode = user.Role.Code
 			perms = user.Role.PermissionsList()
 		} else {
-			if r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID); rErr == nil && r != nil {
+			r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID)
+			if rErr != nil {
+				return nil, s.wrapError(ctx, rErr)
+			}
+			if r != nil {
 				user.Role = r
 				roleCode = r.Code
 				perms = r.PermissionsList()
@@ -476,7 +480,11 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 			roleName = user.Role.Name
 			permissions = user.Role.PermissionsList()
 		} else {
-			if r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID); rErr == nil && r != nil {
+			r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID)
+			if rErr != nil {
+				return nil, s.wrapError(ctx, rErr)
+			}
+			if r != nil {
 				user.Role = r
 				roleCode = r.Code
 				roleName = r.Name

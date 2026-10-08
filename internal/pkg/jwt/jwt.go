@@ -39,7 +39,7 @@ func (c *CustomClaims) HasPermission(requiredPerm string) bool {
 	}
 	requiredPerm = strings.TrimSpace(requiredPerm)
 	if requiredPerm == "" {
-		return true
+		return false
 	}
 	parts := strings.Split(requiredPerm, ":")
 	domainPrefix := ""

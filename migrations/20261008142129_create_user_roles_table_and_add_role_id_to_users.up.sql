@@ -39,7 +39,7 @@ ADD COLUMN IF NOT EXISTS role_id UUID REFERENCES user_roles(id) ON DELETE RESTRI
 
 CREATE INDEX IF NOT EXISTS idx_users_role_id ON users(role_id);
 
--- Backfill existing users with default Free Member role
+-- Backfill existing users with default Free Member role dynamically
 UPDATE users 
-SET role_id = '00000000-0000-0000-0000-000000000020' 
+SET role_id = (SELECT id FROM user_roles WHERE is_default = TRUE ORDER BY created_at ASC LIMIT 1) 
 WHERE role_id IS NULL;

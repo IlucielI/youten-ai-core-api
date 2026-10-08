@@ -268,10 +268,10 @@ func TestHasUserPermission(t *testing.T) {
 			expected:     false,
 		},
 		{
-			name:         "empty required perm passes",
+			name:         "empty required perm fails",
 			user:         AuthUser{Permissions: []string{"recordings:read"}},
 			requiredPerm: "",
-			expected:     true,
+			expected:     false,
 		},
 		{
 			name:         "wildcard star passes all",

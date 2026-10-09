@@ -72,3 +72,25 @@ func (c *Controllers) GetCapabilities(ctx *gin.Context) {
 	resp := c.svc.GetCapabilities(ctx.Request.Context())
 	c.respondOK(ctx, "Platform capabilities retrieved successfully", resp)
 }
+
+// HandleGoogleMeetWebhook handles incoming status and completion webhook events from Google Meet bot workers.
+func (c *Controllers) HandleGoogleMeetWebhook(ctx *gin.Context) {
+	var req dtos.GoogleMeetWebhookRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateGoogleMeetWebhookRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	secretHeader := ctx.GetHeader("X-Bot-Webhook-Secret")
+	if err := c.svc.HandleGoogleMeetWebhook(ctx.Request.Context(), req, secretHeader); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "Google Meet bot webhook processed successfully", nil)
+}

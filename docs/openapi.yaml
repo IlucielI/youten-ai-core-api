@@ -438,6 +438,38 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/webhooks/bot/google-meet:
+    post:
+      tags: [Recordings]
+      summary: Google Meet Bot Worker Webhook
+      description: Receives asynchronous status transitions and audio upload completion callbacks from Google Meet headless bot workers.
+      parameters:
+        - name: X-Bot-Webhook-Secret
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Shared secret for webhook caller authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleMeetWebhookRequest'
+      responses:
+        '200':
+          description: Webhook received and processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/recordings/search:
     get:
       tags: [Intelligence & Search]
@@ -2917,4 +2949,27 @@ components:
                   type: boolean
                 link_import:
                   type: boolean
+
+    GoogleMeetWebhookRequest:
+      type: object
+      required:
+        - external_session_id
+        - event
+      properties:
+        external_session_id:
+          type: string
+          example: meet-12345678-abcd-ef01-2345-6789abcdef01
+        event:
+          type: string
+          enum: [waiting_admit, joined, recording, completed, failed]
+          example: completed
+        audio_url:
+          type: string
+          example: s3://recordings/meet-session.wav
+        duration_seconds:
+          type: integer
+          example: 3600
+        error_message:
+          type: string
+          example: Bot was denied admission by the meeting host
 

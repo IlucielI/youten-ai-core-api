@@ -14,6 +14,7 @@ import (
 	"code-base-golang/internal/adapters/discord"
 	"code-base-golang/internal/adapters/embedding"
 	"code-base-golang/internal/adapters/googledrive"
+	"code-base-golang/internal/adapters/googlemeet"
 	"code-base-golang/internal/adapters/llm"
 	"code-base-golang/internal/adapters/meetingbot"
 	"code-base-golang/internal/adapters/rabbitmq"
@@ -161,7 +162,11 @@ func main() {
 		Enabled:  cfg.MeetingBotEnabled || cfg.DiscordBotEnabled,
 		BotToken: cfg.DiscordBotToken,
 	})
-	meetBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderGoogleMeet)
+	meetBotAdapter := googlemeet.NewAdapter(googlemeet.Config{
+		Enabled:       cfg.MeetingBotEnabled || cfg.GoogleMeetBotEnabled,
+		WebhookSecret: cfg.GoogleMeetBotWebhookSecret,
+		Publisher:     publisher,
+	})
 	teamsBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderMSTeams)
 	zoomBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderZoom)
 

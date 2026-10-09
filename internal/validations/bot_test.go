@@ -79,3 +79,57 @@ func TestValidateDispatchBotRequest(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateGoogleMeetWebhookRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *dtos.GoogleMeetWebhookRequest
+		wantErr bool
+	}{
+		{
+			name: "valid waiting_admit event",
+			req: &dtos.GoogleMeetWebhookRequest{
+				ExternalSessionID: "meet-12345",
+				Event:             "waiting_admit",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid completed event",
+			req: &dtos.GoogleMeetWebhookRequest{
+				ExternalSessionID: "meet-12345",
+				Event:             "completed",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing external session id",
+			req: &dtos.GoogleMeetWebhookRequest{
+				Event: "joined",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid event",
+			req: &dtos.GoogleMeetWebhookRequest{
+				ExternalSessionID: "meet-12345",
+				Event:             "unknown_event",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "nil request",
+			req:     nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGoogleMeetWebhookRequest(tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateGoogleMeetWebhookRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

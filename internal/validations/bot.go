@@ -45,3 +45,21 @@ func ValidateDispatchBotRequest(r *dtos.DispatchBotRequest) error {
 
 	return nil
 }
+
+// ValidateGoogleMeetWebhookRequest validates Google Meet bot worker callback payloads.
+func ValidateGoogleMeetWebhookRequest(r *dtos.GoogleMeetWebhookRequest) error {
+	if r == nil {
+		return validation.NewError("validation_required", "request is required")
+	}
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.ExternalSessionID, validation.Required),
+		validation.Field(&r.Event, validation.Required, validation.In(
+			"waiting_admit",
+			"joined",
+			"recording",
+			"completed",
+			"failed",
+		)),
+	)
+}

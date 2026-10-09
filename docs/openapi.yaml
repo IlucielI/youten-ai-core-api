@@ -502,6 +502,38 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/webhooks/bot/zoom:
+    post:
+      tags: [Recordings]
+      summary: Zoom Bot Worker Webhook
+      description: Receives asynchronous status transitions and audio upload completion callbacks from Zoom bot workers.
+      parameters:
+        - name: X-Bot-Webhook-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Shared secret for webhook caller authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZoomWebhookRequest'
+      responses:
+        '200':
+          description: Webhook received and processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/recordings/search:
     get:
       tags: [Intelligence & Search]
@@ -3030,5 +3062,32 @@ components:
         error_message:
           type: string
           example: Bot was rejected from Microsoft Teams meeting lobby
+
+    ZoomWebhookRequest:
+      type: object
+      required:
+        - external_session_id
+        - event
+      properties:
+        external_session_id:
+          type: string
+          example: zoom-12345678-abcd-ef01-2345-6789abcdef01
+        meeting_id:
+          type: string
+          example: '9876543210'
+        event:
+          type: string
+          enum: [waiting_admit, joined, recording, completed, failed]
+          example: completed
+        audio_url:
+          type: string
+          example: s3://recordings/zoom-session.wav
+        duration_seconds:
+          type: integer
+          example: 3600
+        error_message:
+          type: string
+          example: Bot was denied entry by Zoom meeting host
+
 
 

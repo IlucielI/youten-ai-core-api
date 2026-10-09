@@ -16,7 +16,6 @@ import (
 	"code-base-golang/internal/adapters/googledrive"
 	"code-base-golang/internal/adapters/googlemeet"
 	"code-base-golang/internal/adapters/llm"
-	"code-base-golang/internal/adapters/meetingbot"
 	"code-base-golang/internal/adapters/msteams"
 	"code-base-golang/internal/adapters/rabbitmq"
 	"code-base-golang/internal/adapters/redis"
@@ -24,8 +23,8 @@ import (
 	"code-base-golang/internal/adapters/smtp"
 	"code-base-golang/internal/adapters/stt"
 	"code-base-golang/internal/adapters/youtube"
+	"code-base-golang/internal/adapters/zoom"
 	"code-base-golang/internal/config"
-	"code-base-golang/internal/constants"
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/pkg/migration"
 	"code-base-golang/internal/repositories"
@@ -177,7 +176,14 @@ func main() {
 		CallbackURL:   cfg.MSTeamsCallbackURL,
 		Publisher:     publisher,
 	})
-	zoomBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderZoom)
+	zoomBotAdapter := zoom.NewAdapter(zoom.Config{
+		Enabled:       cfg.MeetingBotEnabled || cfg.ZoomBotEnabled,
+		WebhookSecret: cfg.ZoomBotWebhookSecret,
+		ClientID:      cfg.ZoomClientID,
+		ClientSecret:  cfg.ZoomClientSecret,
+		AccountID:     cfg.ZoomAccountID,
+		Publisher:     publisher,
+	})
 
 	svc := services.New(cfg, repo, storage, publisher).
 		WithMailer(smtpAdapter).

@@ -76,3 +76,14 @@ type MSTeamsWebhookRequest struct {
 	ErrorMessage      *string `json:"error_message,omitempty"`
 }
 
+// ZoomWebhookRequest carries asynchronous status or completion callbacks from a Zoom bot worker.
+type ZoomWebhookRequest struct {
+	ExternalSessionID string  `json:"external_session_id"`
+	MeetingID         string  `json:"meeting_id,omitempty"`
+	Event             string  `json:"event"`
+	AudioURL          *string `json:"audio_url,omitempty"`
+	DurationSeconds   *int    `json:"duration_seconds,omitempty"`
+	ErrorMessage      *string `json:"error_message,omitempty"`
+}
+
+

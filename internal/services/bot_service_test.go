@@ -616,3 +616,266 @@ func TestService_HandleMSTeamsWebhook(t *testing.T) {
 	})
 }
 
+func TestService_HandleZoomWebhook(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("invalid webhook secret", func(t *testing.T) {
+		cfg := config.Config{
+			ZoomBotWebhookSecret: "super-zoom-secret",
+		}
+		svc := services.New(cfg, nil, nil, nil)
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "joined",
+		}, "wrong-secret")
+		if err == nil {
+			t.Errorf("expected unauthorized error for invalid secret")
+		}
+	})
+
+	t.Run("session not found", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-unknown", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-unknown",
+			Event:             "joined",
+		}, "")
+		if err == nil {
+			t.Errorf("expected not found error")
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("unrecognized event", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "zoom-123"))
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "invalid_zoom_event",
+		}, "")
+		if err == nil {
+			t.Errorf("expected error for unrecognized event")
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("waiting_admit event updates session status", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "zoom-123"))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "status"=$1,"updated_at"=$2 WHERE id = $3`)).
+			WithArgs(constants.BotSessionStatusWaitingAdmit, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "waiting_admit",
+		}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("joined event sets started_at and status", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "zoom-123"))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "started_at"=$1,"status"=$2,"updated_at"=$3 WHERE id = $4`)).
+			WithArgs(sqlmock.AnyArg(), constants.BotSessionStatusJoined, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "joined",
+		}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("recording event sets started_at if not set", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "zoom-123"))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "started_at"=$1,"status"=$2,"updated_at"=$3 WHERE id = $4`)).
+			WithArgs(sqlmock.AnyArg(), constants.BotSessionStatusRecording, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "recording",
+		}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("completed event updates recording audio and transcribing status", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+		audioURL := "s3://recordings/zoom-123.wav"
+		durationSec := 240
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "zoom-123"))
+
+		// Update bot session status
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "ended_at"=$1,"status"=$2,"updated_at"=$3 WHERE id = $4`)).
+			WithArgs(sqlmock.AnyArg(), constants.BotSessionStatusCompleted, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// Update recording audio url
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "audio_url"=$1,"duration_seconds"=$2,"updated_at"=$3 WHERE id = $4 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(audioURL, float64(durationSec), sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// Update recording status to TRANSCRIBING
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "status"=$1,"updated_at"=$2 WHERE id = $3 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(models.RecordingStatusTranscribing, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "completed",
+			AudioURL:          &audioURL,
+			DurationSeconds:   &durationSec,
+		}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("completed with audio url db update failure", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+		audioURL := "s3://recordings/zoom-123.wav"
+		durationSec := 240
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "zoom-123"))
+
+		// Update bot session status
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "ended_at"=$1,"status"=$2,"updated_at"=$3 WHERE id = $4`)).
+			WithArgs(sqlmock.AnyArg(), constants.BotSessionStatusCompleted, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// Update recording audio url fails
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "audio_url"=$1,"duration_seconds"=$2,"updated_at"=$3 WHERE id = $4 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(audioURL, float64(durationSec), sqlmock.AnyArg(), recID).
+			WillReturnError(errors.New("db connection failure"))
+		mock.ExpectRollback()
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "completed",
+			AudioURL:          &audioURL,
+			DurationSeconds:   &durationSec,
+		}, "")
+		if err == nil {
+			t.Errorf("expected error when UpdateRecordingAudioURL fails")
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("failed with error message", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+		errMsg := "zoom bot admission rejected by host"
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("zoom-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "zoom-123"))
+
+		// Update bot session status
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "ended_at"=$1,"error_message"=$2,"status"=$3,"updated_at"=$4 WHERE id = $5`)).
+			WithArgs(sqlmock.AnyArg(), errMsg, constants.BotSessionStatusFailed, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// Update recording status to FAILED
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "error_code"=$1,"error_message"=$2,"status"=$3,"updated_at"=$4 WHERE id = $5 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs("BOT_SESSION_FAILED", errMsg, models.RecordingStatusFailed, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
+			ExternalSessionID: "zoom-123",
+			Event:             "failed",
+			ErrorMessage:      &errMsg,
+		}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+}
+
+

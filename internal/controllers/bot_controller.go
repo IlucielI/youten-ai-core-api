@@ -117,3 +117,26 @@ func (c *Controllers) HandleMSTeamsWebhook(ctx *gin.Context) {
 	c.respondOK(ctx, "Microsoft Teams bot webhook processed successfully", nil)
 }
 
+// HandleZoomWebhook handles incoming status and completion webhook events from Zoom bot workers.
+func (c *Controllers) HandleZoomWebhook(ctx *gin.Context) {
+	var req dtos.ZoomWebhookRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateZoomWebhookRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	secretHeader := ctx.GetHeader("X-Bot-Webhook-Secret")
+	if err := c.svc.HandleZoomWebhook(ctx.Request.Context(), req, secretHeader); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "Zoom bot webhook processed successfully", nil)
+}
+
+

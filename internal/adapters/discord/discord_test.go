@@ -96,13 +96,21 @@ func TestDiscordAdapter(t *testing.T) {
 		done := make(chan bool)
 		go func() {
 			for i := 0; i < 50; i++ {
-				_, _ = adapter.GetStatus(ctx, extID)
+				status, err := adapter.GetStatus(ctx, extID)
+				if err != nil {
+					t.Errorf("unexpected get status error: %v", err)
+				}
+				if status == nil {
+					t.Errorf("expected non-nil status")
+				}
 			}
 			done <- true
 		}()
 		go func() {
 			for i := 0; i < 50; i++ {
-				_ = adapter.Stop(ctx, extID)
+				if err := adapter.Stop(ctx, extID); err != nil {
+					t.Errorf("unexpected stop error: %v", err)
+				}
 			}
 			done <- true
 		}()

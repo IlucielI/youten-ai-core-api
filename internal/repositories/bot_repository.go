@@ -53,7 +53,13 @@ func (r *Repositories) UpdateBotSessionStatus(ctx context.Context, id uuid.UUID,
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		var count int64
+		if err := r.db.WithContext(ctx).Model(&models.BotSession{}).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
 	}
 	return nil
 }
@@ -65,7 +71,13 @@ func (r *Repositories) UpdateBotSessionExternalID(ctx context.Context, id uuid.U
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		var count int64
+		if err := r.db.WithContext(ctx).Model(&models.BotSession{}).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
 	}
 	return nil
 }

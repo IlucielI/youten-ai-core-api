@@ -130,7 +130,12 @@ func (a *Adapter) Dispatch(ctx context.Context, params services.BotDispatchParam
 			"account_id":          a.cfg.AccountID,
 			"dispatched_at":       now,
 		}
-		_ = a.cfg.Publisher.Publish(ctx, "bot.zoom.dispatch", eventPayload)
+		if err := a.cfg.Publisher.Publish(ctx, "bot.zoom.dispatch", eventPayload); err != nil {
+			a.mu.Lock()
+			delete(a.sessions, externalID)
+			a.mu.Unlock()
+			return "", err
+		}
 	}
 
 	return externalID, nil

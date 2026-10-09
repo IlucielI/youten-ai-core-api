@@ -2,6 +2,7 @@ package zoom
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,14 @@ func (m *mockPublisher) Publish(ctx context.Context, exchange string, body inter
 
 func (m *mockPublisher) MustPublish(ctx context.Context, exchange string, body interface{}) {}
 func (m *mockPublisher) Ping(ctx context.Context) error                                     { return nil }
+
+type mockErrPublisher struct{}
+
+func (m *mockErrPublisher) Publish(ctx context.Context, exchange string, body interface{}) error {
+	return errors.New("rabbitmq network down")
+}
+func (m *mockErrPublisher) MustPublish(ctx context.Context, exchange string, body interface{}) {}
+func (m *mockErrPublisher) Ping(ctx context.Context) error                                     { return nil }
 
 func TestValidateMeetingURL(t *testing.T) {
 	tests := []struct {
@@ -129,6 +138,21 @@ func TestZoomAdapter(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatalf("expected error on invalid url")
+		}
+	})
+
+	t.Run("dispatch publisher error returns error and cleans up session", func(t *testing.T) {
+		errPub := &mockErrPublisher{}
+		adapter := NewAdapter(Config{
+			Enabled:   true,
+			Publisher: errPub,
+		})
+
+		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+			MeetingURL: "https://zoom.us/j/1234567890",
+		})
+		if err == nil {
+			t.Fatalf("expected error when publisher fails")
 		}
 	})
 

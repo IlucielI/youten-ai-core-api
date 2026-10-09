@@ -432,6 +432,9 @@ func TestControllers_HandleMSTeamsWebhook_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled mock expectations: %v", err)
+	}
 }
 
 func TestControllers_HandleZoomWebhook_InvalidJSON(t *testing.T) {
@@ -499,6 +502,9 @@ func TestControllers_HandleZoomWebhook_Success(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled mock expectations: %v", err)
 	}
 }
 

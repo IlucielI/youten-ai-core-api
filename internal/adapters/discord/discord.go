@@ -96,11 +96,18 @@ func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*ser
 		}, nil
 	}
 
+	startedAt := sess.StartedAt
+	var endedAt *time.Time
+	if sess.EndedAt != nil {
+		ended := *sess.EndedAt
+		endedAt = &ended
+	}
+
 	return &services.BotProviderStatus{
 		ExternalSessionID: sess.SessionID,
 		Status:            sess.Status,
-		StartedAt:         &sess.StartedAt,
-		EndedAt:           sess.EndedAt,
+		StartedAt:         &startedAt,
+		EndedAt:           endedAt,
 	}, nil
 }
 

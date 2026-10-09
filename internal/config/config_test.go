@@ -360,3 +360,30 @@ func TestConfig_MSTeamsBotEnv(t *testing.T) {
 	}
 }
 
+func TestConfig_ZoomBotEnv(t *testing.T) {
+	t.Setenv("ZOOM_BOT_ENABLED", "true")
+	t.Setenv("ZOOM_BOT_WEBHOOK_SECRET", "zoom-wh-secret")
+	t.Setenv("ZOOM_CLIENT_ID", "zoom-client-123")
+	t.Setenv("ZOOM_CLIENT_SECRET", "zoom-secret-456")
+	t.Setenv("ZOOM_ACCOUNT_ID", "zoom-account-789")
+
+	cfg := config.Load()
+
+	if !cfg.ZoomBotEnabled {
+		t.Errorf("expected ZoomBotEnabled true, got %v", cfg.ZoomBotEnabled)
+	}
+	if cfg.ZoomBotWebhookSecret != "zoom-wh-secret" {
+		t.Errorf("expected ZoomBotWebhookSecret 'zoom-wh-secret', got %q", cfg.ZoomBotWebhookSecret)
+	}
+	if cfg.ZoomClientID != "zoom-client-123" {
+		t.Errorf("expected ZoomClientID 'zoom-client-123', got %q", cfg.ZoomClientID)
+	}
+	if cfg.ZoomClientSecret != "zoom-secret-456" {
+		t.Errorf("expected ZoomClientSecret 'zoom-secret-456', got %q", cfg.ZoomClientSecret)
+	}
+	if cfg.ZoomAccountID != "zoom-account-789" {
+		t.Errorf("expected ZoomAccountID 'zoom-account-789', got %q", cfg.ZoomAccountID)
+	}
+}
+
+

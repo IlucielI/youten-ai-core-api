@@ -122,6 +122,11 @@ type Config struct {
 	MSTeamsClientSecret        string
 	MSTeamsBotWebhookSecret    string
 	MSTeamsCallbackURL         string
+	ZoomBotEnabled             bool
+	ZoomBotWebhookSecret       string
+	ZoomClientID               string
+	ZoomClientSecret           string
+	ZoomAccountID              string
 }
 
 func Load() Config {
@@ -238,6 +243,11 @@ func Load() Config {
 		MSTeamsClientSecret:        getEnv("MSTEAMS_CLIENT_SECRET", ""),
 		MSTeamsBotWebhookSecret:    getEnv("MSTEAMS_BOT_WEBHOOK_SECRET", ""),
 		MSTeamsCallbackURL:         getEnv("MSTEAMS_CALLBACK_URL", ""),
+		ZoomBotEnabled:             getEnvBool("ZOOM_BOT_ENABLED", false),
+		ZoomBotWebhookSecret:       getEnv("ZOOM_BOT_WEBHOOK_SECRET", ""),
+		ZoomClientID:               getEnv("ZOOM_CLIENT_ID", ""),
+		ZoomClientSecret:           getEnv("ZOOM_CLIENT_SECRET", ""),
+		ZoomAccountID:              getEnv("ZOOM_ACCOUNT_ID", ""),
 	}
 }
 

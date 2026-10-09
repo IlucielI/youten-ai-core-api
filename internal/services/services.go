@@ -28,6 +28,7 @@ type Service struct {
 	mediaLinkExtractor MediaLinkExtractor
 	mediaFetcher       MediaFetcher
 	sseHub             sse.Hub
+	botProviders       map[string]MeetingBotProvider
 }
 
 // New creates a new unified service container.
@@ -37,11 +38,12 @@ func New(cfg config.Config, repo *repositories.Repositories, storage FileStorage
 		pub = publisher[0]
 	}
 	return &Service{
-		cfg:       cfg,
-		storage:   storage,
-		repo:      repo,
-		publisher: pub,
-		sseHub:    sse.NewHub(),
+		cfg:          cfg,
+		storage:      storage,
+		repo:         repo,
+		publisher:    pub,
+		sseHub:       sse.NewHub(),
+		botProviders: make(map[string]MeetingBotProvider),
 	}
 }
 
@@ -197,6 +199,29 @@ func (s *Service) WithSSEHub(hub sse.Hub) *Service {
 // SSEHub returns the underlying SSE hub.
 func (s *Service) SSEHub() sse.Hub {
 	return s.sseHub
+}
+
+// RegisterBotProvider registers or updates a meeting voice bot provider.
+func (s *Service) RegisterBotProvider(provider MeetingBotProvider) {
+	if s.botProviders == nil {
+		s.botProviders = make(map[string]MeetingBotProvider)
+	}
+	s.botProviders[provider.ProviderName()] = provider
+}
+
+// WithBotProvider fluently registers a meeting voice bot provider.
+func (s *Service) WithBotProvider(provider MeetingBotProvider) *Service {
+	s.RegisterBotProvider(provider)
+	return s
+}
+
+// BotProvider returns a registered voice bot provider by name.
+func (s *Service) BotProvider(name string) (MeetingBotProvider, bool) {
+	if s.botProviders == nil {
+		return nil, false
+	}
+	p, exists := s.botProviders[name]
+	return p, exists
 }
 
 // wrapError wraps unknown or system errors into structured AppError.

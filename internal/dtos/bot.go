@@ -56,3 +56,12 @@ type CapabilitiesResponse struct {
 	AudioUpload bool              `json:"audio_upload"`
 	LinkImport  bool              `json:"link_import"`
 }
+
+// GoogleMeetWebhookRequest carries asynchronous status or completion callbacks from a headless bot runner.
+type GoogleMeetWebhookRequest struct {
+	ExternalSessionID string  `json:"external_session_id"`
+	Event             string  `json:"event"`
+	AudioURL          *string `json:"audio_url,omitempty"`
+	DurationSeconds   *int    `json:"duration_seconds,omitempty"`
+	ErrorMessage      *string `json:"error_message,omitempty"`
+}

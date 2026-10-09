@@ -264,6 +264,11 @@ routes:
     path: /v1/capabilities
     handler: GetCapabilities
 
+  # Asynchronous webhook for Google Meet bot worker status and recording upload callbacks.
+  - method: POST
+    path: /v1/webhooks/bot/google-meet
+    handler: HandleGoogleMeetWebhook
+
   # Authenticate staff administrator credentials and issue admin access token (CMS).
   - method: POST
     path: /v1/admin/login

@@ -111,9 +111,11 @@ type Config struct {
 	RAGTopK               int
 
 	// Meeting Voice Bot Configuration
-	MeetingBotEnabled bool
-	DiscordBotEnabled bool
-	DiscordBotToken   string
+	MeetingBotEnabled          bool
+	DiscordBotEnabled          bool
+	DiscordBotToken            string
+	GoogleMeetBotEnabled       bool
+	GoogleMeetBotWebhookSecret string
 }
 
 func Load() Config {
@@ -219,9 +221,11 @@ func Load() Config {
 		RAGTopK:               getEnvInt("RAG_TOP_K", 5),
 
 		// Meeting Voice Bot settings
-		MeetingBotEnabled: getEnvBool("MEETING_BOT_ENABLED", false),
-		DiscordBotEnabled: getEnvBool("DISCORD_BOT_ENABLED", false),
-		DiscordBotToken:   getEnv("DISCORD_BOT_TOKEN", ""),
+		MeetingBotEnabled:          getEnvBool("MEETING_BOT_ENABLED", false),
+		DiscordBotEnabled:          getEnvBool("DISCORD_BOT_ENABLED", false),
+		DiscordBotToken:            getEnv("DISCORD_BOT_TOKEN", ""),
+		GoogleMeetBotEnabled:       getEnvBool("GOOGLE_MEET_BOT_ENABLED", false),
+		GoogleMeetBotWebhookSecret: getEnv("GOOGLE_MEET_BOT_WEBHOOK_SECRET", ""),
 	}
 }
 

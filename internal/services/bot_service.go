@@ -361,3 +361,67 @@ func (s *Service) HandleMSTeamsWebhook(ctx context.Context, req dtos.MSTeamsWebh
 	return nil
 }
 
+// HandleZoomWebhook processes asynchronous status updates and completion signals from Zoom bot workers.
+func (s *Service) HandleZoomWebhook(ctx context.Context, req dtos.ZoomWebhookRequest, secretHeader string) error {
+	if s.cfg.ZoomBotWebhookSecret != "" && secretHeader != s.cfg.ZoomBotWebhookSecret {
+		return apperror.New(http.StatusUnauthorized, "INVALID_WEBHOOK_SECRET", "invalid webhook secret")
+	}
+
+	session, err := s.repo.FindBotSessionByExternalID(ctx, req.ExternalSessionID)
+	if err != nil {
+		return apperror.New(http.StatusNotFound, "SESSION_NOT_FOUND", "bot session not found for external id")
+	}
+
+	now := time.Now().UTC()
+	var mappedStatus string
+	var startedAt, endedAt *time.Time
+	var errMsg *string
+
+	switch req.Event {
+	case "waiting_admit":
+		mappedStatus = constants.BotSessionStatusWaitingAdmit
+	case "joined":
+		mappedStatus = constants.BotSessionStatusJoined
+		startedAt = &now
+	case "recording", "recording_started":
+		mappedStatus = constants.BotSessionStatusRecording
+		if session.StartedAt == nil {
+			startedAt = &now
+		}
+	case "completed":
+		mappedStatus = constants.BotSessionStatusCompleted
+		endedAt = &now
+	case "failed":
+		mappedStatus = constants.BotSessionStatusFailed
+		endedAt = &now
+		errMsg = req.ErrorMessage
+	default:
+		return apperror.New(http.StatusBadRequest, "INVALID_EVENT", "unrecognized webhook event")
+	}
+
+	if err := s.repo.UpdateBotSessionStatus(ctx, session.ID, mappedStatus, errMsg, startedAt, endedAt); err != nil {
+		return err
+	}
+
+	if mappedStatus == constants.BotSessionStatusCompleted && req.AudioURL != nil && *req.AudioURL != "" {
+		duration := float64(0)
+		if req.DurationSeconds != nil {
+			duration = float64(*req.DurationSeconds)
+		}
+		if err := s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *req.AudioURL, duration); err != nil {
+			return err
+		}
+		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil); err != nil {
+			return err
+		}
+	} else if mappedStatus == constants.BotSessionStatusFailed {
+		errCode := "BOT_SESSION_FAILED"
+		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, req.ErrorMessage); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+

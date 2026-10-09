@@ -274,6 +274,11 @@ routes:
     path: /v1/webhooks/bot/ms-teams
     handler: HandleMSTeamsWebhook
 
+  # Asynchronous webhook for Zoom bot worker status and recording callbacks.
+  - method: POST
+    path: /v1/webhooks/bot/zoom
+    handler: HandleZoomWebhook
+
   # Authenticate staff administrator credentials and issue admin access token (CMS).
   - method: POST
     path: /v1/admin/login

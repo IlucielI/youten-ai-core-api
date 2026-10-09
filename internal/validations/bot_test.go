@@ -196,3 +196,74 @@ func TestValidateMSTeamsWebhookRequest(t *testing.T) {
 	}
 }
 
+func TestValidateZoomWebhookRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *dtos.ZoomWebhookRequest
+		wantErr bool
+	}{
+		{
+			name: "valid waiting_admit event",
+			req: &dtos.ZoomWebhookRequest{
+				ExternalSessionID: "zoom-12345",
+				Event:             "waiting_admit",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid joined event",
+			req: &dtos.ZoomWebhookRequest{
+				ExternalSessionID: "zoom-12345",
+				Event:             "joined",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid recording event",
+			req: &dtos.ZoomWebhookRequest{
+				ExternalSessionID: "zoom-12345",
+				Event:             "recording",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid completed event",
+			req: &dtos.ZoomWebhookRequest{
+				ExternalSessionID: "zoom-12345",
+				Event:             "completed",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing external session id",
+			req: &dtos.ZoomWebhookRequest{
+				Event: "completed",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid event",
+			req: &dtos.ZoomWebhookRequest{
+				ExternalSessionID: "zoom-12345",
+				Event:             "unknown_event",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "nil request",
+			req:     nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateZoomWebhookRequest(tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateZoomWebhookRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+

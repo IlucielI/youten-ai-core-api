@@ -86,9 +86,9 @@ func (a *Adapter) Dispatch(ctx context.Context, params services.BotDispatchParam
 // GetStatus checks the live status of an active Discord bot connection.
 func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*services.BotProviderStatus, error) {
 	a.mu.RLock()
-	sess, exists := a.sessions[externalSessionID]
-	a.mu.RUnlock()
+	defer a.mu.RUnlock()
 
+	sess, exists := a.sessions[externalSessionID]
 	if !exists {
 		return &services.BotProviderStatus{
 			ExternalSessionID: externalSessionID,

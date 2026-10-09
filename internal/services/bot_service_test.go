@@ -238,4 +238,8 @@ func TestService_GetCapabilities(t *testing.T) {
 	if caps.MeetingBot[constants.BotProviderZoom] != "coming_soon" {
 		t.Errorf("expected zoom to be coming_soon, got %s", caps.MeetingBot[constants.BotProviderZoom])
 	}
+
+	t.Run("nil provider registration does not panic", func(t *testing.T) {
+		svc.RegisterBotProvider(nil)
+	})
 }

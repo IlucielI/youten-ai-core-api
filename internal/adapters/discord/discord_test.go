@@ -80,4 +80,33 @@ func TestDiscordAdapter(t *testing.T) {
 			t.Errorf("expected validation error when channel ID is empty")
 		}
 	})
+
+	t.Run("concurrent status and stop access", func(t *testing.T) {
+		adapter := NewAdapter(Config{Enabled: true, BotToken: "valid-bot-token"})
+		recID := uuid.New()
+		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+			RecordingID: recID,
+			GuildID:     "guild-1",
+			ChannelID:   "chan-1",
+		})
+		if err != nil {
+			t.Fatalf("unexpected dispatch error: %v", err)
+		}
+
+		done := make(chan bool)
+		go func() {
+			for i := 0; i < 50; i++ {
+				_, _ = adapter.GetStatus(ctx, extID)
+			}
+			done <- true
+		}()
+		go func() {
+			for i := 0; i < 50; i++ {
+				_ = adapter.Stop(ctx, extID)
+			}
+			done <- true
+		}()
+		<-done
+		<-done
+	})
 }

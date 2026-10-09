@@ -203,6 +203,9 @@ func (s *Service) SSEHub() sse.Hub {
 
 // RegisterBotProvider registers or updates a meeting voice bot provider.
 func (s *Service) RegisterBotProvider(provider MeetingBotProvider) {
+	if provider == nil {
+		return
+	}
 	if s.botProviders == nil {
 		s.botProviders = make(map[string]MeetingBotProvider)
 	}

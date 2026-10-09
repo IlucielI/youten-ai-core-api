@@ -119,8 +119,12 @@ func (s *Service) DispatchMeetingBot(ctx context.Context, req dtos.DispatchBotRe
 	}
 
 	// Update session with external connection ID and mark status active
-	_ = s.repo.UpdateBotSessionExternalID(ctx, sessionID, extSessionID)
-	_ = s.repo.UpdateBotSessionStatus(ctx, sessionID, constants.BotSessionStatusRecording, nil, &now, nil)
+	if err := s.repo.UpdateBotSessionExternalID(ctx, sessionID, extSessionID); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateBotSessionStatus(ctx, sessionID, constants.BotSessionStatusRecording, nil, &now, nil); err != nil {
+		return nil, err
+	}
 
 	return &dtos.DispatchBotResponse{
 		SessionID:      sessionID,
@@ -145,6 +149,8 @@ func (s *Service) GetBotSessionStatus(ctx context.Context, sessionID uuid.UUID) 
 			if liveStatus, err := provider.GetStatus(ctx, *session.ExternalSessionID); err == nil && liveStatus != nil {
 				if liveStatus.Status != session.Status {
 					session.Status = liveStatus.Status
+					session.StartedAt = liveStatus.StartedAt
+					session.EndedAt = liveStatus.EndedAt
 					_ = s.repo.UpdateBotSessionStatus(ctx, sessionID, liveStatus.Status, nil, liveStatus.StartedAt, liveStatus.EndedAt)
 				}
 			}

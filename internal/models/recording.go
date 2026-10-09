@@ -12,6 +12,7 @@ const (
 	RecordingStatusQueued       = "QUEUED"
 	RecordingStatusValidating   = "VALIDATING"
 	RecordingStatusExtracting   = "EXTRACTING"
+	RecordingStatusRecording    = "RECORDING"
 	RecordingStatusTranscribing = "TRANSCRIBING"
 	RecordingStatusSummarizing  = "SUMMARIZING"
 	RecordingStatusIndexing     = "INDEXING"

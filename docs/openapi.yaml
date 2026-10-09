@@ -59,6 +59,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
 
+  /v1/capabilities:
+    get:
+      tags: [System]
+      summary: System & Feature Capabilities
+      description: Returns feature availability flags, active providers (such as Meeting Voice Bots), and runtime capabilities.
+      responses:
+        '200':
+          description: System capabilities payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+
   /v1/auth/anon:
     post:
       tags: [Auth]
@@ -353,6 +366,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecordingDetailResponse'
+
+  /v1/recordings/meeting-bot:
+    post:
+      tags: [Recordings]
+      summary: Dispatch Meeting Voice Bot
+      description: Dispatches an automated voice recording bot to an external meeting or voice channel (Discord, Google Meet, Teams, Zoom).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DispatchBotRequest'
+      responses:
+        '201':
+          description: Bot dispatched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DispatchBotResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /v1/recordings/meeting-bot/{id}/status:
+    get:
+      tags: [Recordings]
+      summary: Get Meeting Bot Session Status
+      description: Retrieves the current status, recording state, and metadata of a meeting bot session.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bot session status payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotSessionStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/recordings/meeting-bot/{id}/stop:
+    post:
+      tags: [Recordings]
+      summary: Stop Meeting Voice Bot Session
+      description: Requests the active bot to leave the meeting or channel and finalizes the audio recording.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bot session stopped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopBotResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /v1/recordings/search:
     get:
@@ -2710,4 +2794,127 @@ components:
                       type: array
                       items:
                         type: string
+
+    DispatchBotRequest:
+      type: object
+      required:
+        - provider
+      properties:
+        provider:
+          type: string
+          example: discord
+          enum: [discord, google_meet, teams, zoom]
+        meeting_url:
+          type: string
+          example: https://meet.google.com/abc-defg-hij
+        guild_id:
+          type: string
+          example: '123456789012345678'
+        channel_id:
+          type: string
+          example: '987654321098765432'
+        title:
+          type: string
+          example: Weekly Team Standup
+        template:
+          type: string
+          example: detailed
+        language:
+          type: string
+          example: id
+        scheduled_at:
+          type: string
+          format: date-time
+
+    DispatchBotResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                recording_id:
+                  type: string
+                  format: uuid
+                ownership_token:
+                  type: string
+                provider:
+                  type: string
+                status:
+                  type: string
+                message:
+                  type: string
+
+    BotSessionStatusResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                recording_id:
+                  type: string
+                  format: uuid
+                provider:
+                  type: string
+                status:
+                  type: string
+                meeting_url:
+                  type: string
+                channel_id:
+                  type: string
+                guild_id:
+                  type: string
+                started_at:
+                  type: string
+                  format: date-time
+                ended_at:
+                  type: string
+                  format: date-time
+                error_message:
+                  type: string
+
+    StopBotResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                recording_id:
+                  type: string
+                  format: uuid
+                status:
+                  type: string
+                message:
+                  type: string
+
+    CapabilitiesResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                meeting_bot:
+                  type: object
+                  additionalProperties:
+                    type: string
+                audio_upload:
+                  type: boolean
+                link_import:
+                  type: boolean
 

@@ -11,16 +11,19 @@ import (
 
 	"code-base-golang/internal/adapters/audio"
 	"code-base-golang/internal/adapters/database"
+	"code-base-golang/internal/adapters/discord"
 	"code-base-golang/internal/adapters/embedding"
+	"code-base-golang/internal/adapters/googledrive"
 	"code-base-golang/internal/adapters/llm"
+	"code-base-golang/internal/adapters/meetingbot"
 	"code-base-golang/internal/adapters/rabbitmq"
 	"code-base-golang/internal/adapters/redis"
 	"code-base-golang/internal/adapters/s3"
 	"code-base-golang/internal/adapters/smtp"
 	"code-base-golang/internal/adapters/stt"
-	"code-base-golang/internal/adapters/googledrive"
 	"code-base-golang/internal/adapters/youtube"
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/pkg/migration"
 	"code-base-golang/internal/repositories"
@@ -153,12 +156,25 @@ func main() {
 	if broker != nil {
 		publisher = broker
 	}
+	// Initialize Meeting Voice Bot Adapters
+	discordBotAdapter := discord.NewAdapter(discord.Config{
+		Enabled:  cfg.MeetingBotEnabled || cfg.DiscordBotEnabled,
+		BotToken: cfg.DiscordBotToken,
+	})
+	meetBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderGoogleMeet)
+	teamsBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderMSTeams)
+	zoomBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderZoom)
+
 	svc := services.New(cfg, repo, storage, publisher).
 		WithMailer(smtpAdapter).
 		WithSTT(sttAdapter).
 		WithLLM(llmAdapter).
 		WithEmbedding(embeddingAdapter).
-		WithAudioExtractor(audioExtractor)
+		WithAudioExtractor(audioExtractor).
+		WithBotProvider(discordBotAdapter).
+		WithBotProvider(meetBotAdapter).
+		WithBotProvider(teamsBotAdapter).
+		WithBotProvider(zoomBotAdapter)
 	if len(mediaExtractors) > 0 {
 		svc.WithMediaLinkExtractor(services.NewCompositeMediaLinkExtractor(mediaExtractors))
 	}

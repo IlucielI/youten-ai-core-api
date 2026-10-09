@@ -62,8 +62,27 @@ const (
 
 // Recording media source types.
 const (
-	RecordingSourceTypeUpload = "UPLOAD"
-	RecordingSourceTypeLink   = "LINK"
+	RecordingSourceTypeUpload     = "UPLOAD"
+	RecordingSourceTypeLink       = "LINK"
+	RecordingSourceTypeMeetingBot = "MEETING_BOT"
+)
+
+// Meeting bot providers.
+const (
+	BotProviderDiscord    = "discord"
+	BotProviderGoogleMeet = "google_meet"
+	BotProviderMSTeams    = "ms_teams"
+	BotProviderZoom       = "zoom"
+)
+
+// Bot session statuses.
+const (
+	BotSessionStatusDispatched = "DISPATCHED"
+	BotSessionStatusJoined     = "JOINED"
+	BotSessionStatusRecording  = "RECORDING"
+	BotSessionStatusCompleted  = "COMPLETED"
+	BotSessionStatusFailed     = "FAILED"
+	BotSessionStatusCancelled  = "CANCELLED"
 )
 
 // Highlight origin sources.

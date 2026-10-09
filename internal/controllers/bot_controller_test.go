@@ -365,3 +365,72 @@ func TestControllers_HandleGoogleMeetWebhook_Success(t *testing.T) {
 		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestControllers_HandleMSTeamsWebhook_InvalidJSON(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/bot/ms-teams", bytes.NewBufferString(`{invalid json}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.HandleMSTeamsWebhook(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid JSON, got %d", w.Code)
+	}
+}
+
+func TestControllers_HandleMSTeamsWebhook_ValidationErrors(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/bot/ms-teams", bytes.NewBufferString(`{"external_session_id":"","event":"invalid_event"}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.HandleMSTeamsWebhook(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for validation error, got %d", w.Code)
+	}
+}
+
+func TestControllers_HandleMSTeamsWebhook_Success(t *testing.T) {
+	ctrls, mock, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	sessID := uuid.New()
+	recID := uuid.New()
+	extID := "teams-12345"
+
+	// Mock finding bot session by external_session_id
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+		WithArgs(extID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id", "status"}).AddRow(sessID, recID, extID, constants.BotSessionStatusWaitingAdmit))
+
+	// Mock updating status to RECORDING
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "started_at"=$1,"status"=$2,"updated_at"=$3 WHERE id = $4`)).
+		WithArgs(sqlmock.AnyArg(), constants.BotSessionStatusRecording, sqlmock.AnyArg(), sessID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	body := `{"external_session_id":"teams-12345","event":"recording_started"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/bot/ms-teams", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.HandleMSTeamsWebhook(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+

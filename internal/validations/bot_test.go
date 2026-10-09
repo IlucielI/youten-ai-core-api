@@ -133,3 +133,66 @@ func TestValidateGoogleMeetWebhookRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMSTeamsWebhookRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *dtos.MSTeamsWebhookRequest
+		wantErr bool
+	}{
+		{
+			name: "valid call_connected event",
+			req: &dtos.MSTeamsWebhookRequest{
+				ExternalSessionID: "teams-12345",
+				Event:             "call_connected",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid recording_started event",
+			req: &dtos.MSTeamsWebhookRequest{
+				ExternalSessionID: "teams-12345",
+				Event:             "recording_started",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid completed event",
+			req: &dtos.MSTeamsWebhookRequest{
+				ExternalSessionID: "teams-12345",
+				Event:             "completed",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing external session id",
+			req: &dtos.MSTeamsWebhookRequest{
+				Event: "call_connected",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid event",
+			req: &dtos.MSTeamsWebhookRequest{
+				ExternalSessionID: "teams-12345",
+				Event:             "unknown_event",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "nil request",
+			req:     nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateMSTeamsWebhookRequest(tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateMSTeamsWebhookRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+

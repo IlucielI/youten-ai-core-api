@@ -269,6 +269,11 @@ routes:
     path: /v1/webhooks/bot/google-meet
     handler: HandleGoogleMeetWebhook
 
+  # Asynchronous webhook for Microsoft Teams bot worker status and recording callbacks.
+  - method: POST
+    path: /v1/webhooks/bot/ms-teams
+    handler: HandleMSTeamsWebhook
+
   # Authenticate staff administrator credentials and issue admin access token (CMS).
   - method: POST
     path: /v1/admin/login

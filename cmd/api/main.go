@@ -17,6 +17,7 @@ import (
 	"code-base-golang/internal/adapters/googlemeet"
 	"code-base-golang/internal/adapters/llm"
 	"code-base-golang/internal/adapters/meetingbot"
+	"code-base-golang/internal/adapters/msteams"
 	"code-base-golang/internal/adapters/rabbitmq"
 	"code-base-golang/internal/adapters/redis"
 	"code-base-golang/internal/adapters/s3"
@@ -167,7 +168,15 @@ func main() {
 		WebhookSecret: cfg.GoogleMeetBotWebhookSecret,
 		Publisher:     publisher,
 	})
-	teamsBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderMSTeams)
+	teamsBotAdapter := msteams.NewAdapter(msteams.Config{
+		Enabled:       cfg.MeetingBotEnabled || cfg.MSTeamsBotEnabled,
+		TenantID:      cfg.MSTeamsTenantID,
+		ClientID:      cfg.MSTeamsClientID,
+		ClientSecret:  cfg.MSTeamsClientSecret,
+		WebhookSecret: cfg.MSTeamsBotWebhookSecret,
+		CallbackURL:   cfg.MSTeamsCallbackURL,
+		Publisher:     publisher,
+	})
 	zoomBotAdapter := meetingbot.NewStubAdapter(constants.BotProviderZoom)
 
 	svc := services.New(cfg, repo, storage, publisher).

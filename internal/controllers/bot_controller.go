@@ -94,3 +94,26 @@ func (c *Controllers) HandleGoogleMeetWebhook(ctx *gin.Context) {
 
 	c.respondOK(ctx, "Google Meet bot webhook processed successfully", nil)
 }
+
+// HandleMSTeamsWebhook handles incoming status and completion webhook events from Microsoft Teams / Azure Calling bot workers.
+func (c *Controllers) HandleMSTeamsWebhook(ctx *gin.Context) {
+	var req dtos.MSTeamsWebhookRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateMSTeamsWebhookRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	secretHeader := ctx.GetHeader("X-Bot-Webhook-Secret")
+	if err := c.svc.HandleMSTeamsWebhook(ctx.Request.Context(), req, secretHeader); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "Microsoft Teams bot webhook processed successfully", nil)
+}
+

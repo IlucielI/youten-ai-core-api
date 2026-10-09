@@ -65,3 +65,14 @@ type GoogleMeetWebhookRequest struct {
 	DurationSeconds   *int    `json:"duration_seconds,omitempty"`
 	ErrorMessage      *string `json:"error_message,omitempty"`
 }
+
+// MSTeamsWebhookRequest carries asynchronous status or completion callbacks from an Azure/MS Teams calling bot worker.
+type MSTeamsWebhookRequest struct {
+	ExternalSessionID string  `json:"external_session_id"`
+	CallConnectionID  string  `json:"call_connection_id,omitempty"`
+	Event             string  `json:"event"`
+	AudioURL          *string `json:"audio_url,omitempty"`
+	DurationSeconds   *int    `json:"duration_seconds,omitempty"`
+	ErrorMessage      *string `json:"error_message,omitempty"`
+}
+

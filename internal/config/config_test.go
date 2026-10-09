@@ -321,7 +321,7 @@ func TestConfig_LoadIdempotencyTTLEnv(t *testing.T) {
 		{"invalid", 24 * time.Hour},
 	}
 
-	for _, tc := range testCases {
+		for _, tc := range testCases {
 		t.Setenv("IDEMPOTENCY_TTL", tc.envVal)
 		cfg := config.Load()
 		if cfg.IdempotencyTTL != tc.expected {
@@ -329,3 +329,34 @@ func TestConfig_LoadIdempotencyTTLEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestConfig_MSTeamsBotEnv(t *testing.T) {
+	t.Setenv("MSTEAMS_BOT_ENABLED", "true")
+	t.Setenv("MSTEAMS_TENANT_ID", "tenant-123")
+	t.Setenv("MSTEAMS_CLIENT_ID", "client-456")
+	t.Setenv("MSTEAMS_CLIENT_SECRET", "secret-789")
+	t.Setenv("MSTEAMS_BOT_WEBHOOK_SECRET", "webhook-secret")
+	t.Setenv("MSTEAMS_CALLBACK_URL", "https://api.example.com/v1/webhooks/bot/ms-teams")
+
+	cfg := config.Load()
+
+	if !cfg.MSTeamsBotEnabled {
+		t.Errorf("expected MSTeamsBotEnabled true, got %v", cfg.MSTeamsBotEnabled)
+	}
+	if cfg.MSTeamsTenantID != "tenant-123" {
+		t.Errorf("expected MSTeamsTenantID 'tenant-123', got %q", cfg.MSTeamsTenantID)
+	}
+	if cfg.MSTeamsClientID != "client-456" {
+		t.Errorf("expected MSTeamsClientID 'client-456', got %q", cfg.MSTeamsClientID)
+	}
+	if cfg.MSTeamsClientSecret != "secret-789" {
+		t.Errorf("expected MSTeamsClientSecret 'secret-789', got %q", cfg.MSTeamsClientSecret)
+	}
+	if cfg.MSTeamsBotWebhookSecret != "webhook-secret" {
+		t.Errorf("expected MSTeamsBotWebhookSecret 'webhook-secret', got %q", cfg.MSTeamsBotWebhookSecret)
+	}
+	if cfg.MSTeamsCallbackURL != "https://api.example.com/v1/webhooks/bot/ms-teams" {
+		t.Errorf("expected MSTeamsCallbackURL 'https://api.example.com/v1/webhooks/bot/ms-teams', got %q", cfg.MSTeamsCallbackURL)
+	}
+}
+

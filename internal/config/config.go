@@ -116,6 +116,12 @@ type Config struct {
 	DiscordBotToken            string
 	GoogleMeetBotEnabled       bool
 	GoogleMeetBotWebhookSecret string
+	MSTeamsBotEnabled          bool
+	MSTeamsTenantID            string
+	MSTeamsClientID            string
+	MSTeamsClientSecret        string
+	MSTeamsBotWebhookSecret    string
+	MSTeamsCallbackURL         string
 }
 
 func Load() Config {
@@ -226,6 +232,12 @@ func Load() Config {
 		DiscordBotToken:            getEnv("DISCORD_BOT_TOKEN", ""),
 		GoogleMeetBotEnabled:       getEnvBool("GOOGLE_MEET_BOT_ENABLED", false),
 		GoogleMeetBotWebhookSecret: getEnv("GOOGLE_MEET_BOT_WEBHOOK_SECRET", ""),
+		MSTeamsBotEnabled:          getEnvBool("MSTEAMS_BOT_ENABLED", false),
+		MSTeamsTenantID:            getEnv("MSTEAMS_TENANT_ID", ""),
+		MSTeamsClientID:            getEnv("MSTEAMS_CLIENT_ID", ""),
+		MSTeamsClientSecret:        getEnv("MSTEAMS_CLIENT_SECRET", ""),
+		MSTeamsBotWebhookSecret:    getEnv("MSTEAMS_BOT_WEBHOOK_SECRET", ""),
+		MSTeamsCallbackURL:         getEnv("MSTEAMS_CALLBACK_URL", ""),
 	}
 }
 

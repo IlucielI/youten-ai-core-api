@@ -63,3 +63,24 @@ func ValidateGoogleMeetWebhookRequest(r *dtos.GoogleMeetWebhookRequest) error {
 		)),
 	)
 }
+
+// ValidateMSTeamsWebhookRequest validates Microsoft Teams bot worker callback payloads.
+func ValidateMSTeamsWebhookRequest(r *dtos.MSTeamsWebhookRequest) error {
+	if r == nil {
+		return validation.NewError("validation_required", "request is required")
+	}
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.ExternalSessionID, validation.Required),
+		validation.Field(&r.Event, validation.Required, validation.In(
+			"waiting_admit",
+			"joined",
+			"call_connected",
+			"recording",
+			"recording_started",
+			"completed",
+			"failed",
+		)),
+	)
+}
+

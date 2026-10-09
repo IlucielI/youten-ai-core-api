@@ -77,12 +77,13 @@ const (
 
 // Bot session statuses.
 const (
-	BotSessionStatusDispatched = "DISPATCHED"
-	BotSessionStatusJoined     = "JOINED"
-	BotSessionStatusRecording  = "RECORDING"
-	BotSessionStatusCompleted  = "COMPLETED"
-	BotSessionStatusFailed     = "FAILED"
-	BotSessionStatusCancelled  = "CANCELLED"
+	BotSessionStatusDispatched   = "DISPATCHED"
+	BotSessionStatusWaitingAdmit = "WAITING_ADMIT"
+	BotSessionStatusJoined       = "JOINED"
+	BotSessionStatusRecording    = "RECORDING"
+	BotSessionStatusCompleted    = "COMPLETED"
+	BotSessionStatusFailed       = "FAILED"
+	BotSessionStatusCancelled    = "CANCELLED"
 )
 
 // Highlight origin sources.

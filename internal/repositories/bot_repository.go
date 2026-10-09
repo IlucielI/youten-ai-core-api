@@ -33,6 +33,15 @@ func (r *Repositories) FindBotSessionByRecordingID(ctx context.Context, recordin
 	return &session, nil
 }
 
+// FindBotSessionByExternalID retrieves a bot session by its provider-assigned external session identifier.
+func (r *Repositories) FindBotSessionByExternalID(ctx context.Context, externalID string) (*models.BotSession, error) {
+	var session models.BotSession
+	if err := r.db.WithContext(ctx).First(&session, "external_session_id = ?", externalID).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
 // UpdateBotSessionStatus updates lifecycle status and optional timestamps/errors for a bot session.
 func (r *Repositories) UpdateBotSessionStatus(ctx context.Context, id uuid.UUID, status string, errMsg *string, startedAt, endedAt *time.Time) error {
 	updates := map[string]interface{}{

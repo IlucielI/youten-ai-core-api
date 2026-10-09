@@ -2,6 +2,7 @@ package services_test
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -351,6 +352,45 @@ func TestService_HandleGoogleMeetWebhook(t *testing.T) {
 		}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
+
+	t.Run("completed with audio url db update failure", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+		audioURL := "s3://recordings/meet-123.wav"
+		durationSec := 120
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("meet-123", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "meet-123"))
+
+		// Update bot session status
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "ended_at"=$1,"status"=$2,"updated_at"=$3 WHERE id = $4`)).
+			WithArgs(sqlmock.AnyArg(), constants.BotSessionStatusCompleted, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// Update recording audio url fails
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "audio_url"=$1,"duration_seconds"=$2,"updated_at"=$3 WHERE id = $4 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(audioURL, float64(durationSec), sqlmock.AnyArg(), recID).
+			WillReturnError(errors.New("db connection failure"))
+		mock.ExpectRollback()
+
+		err := svc.HandleGoogleMeetWebhook(ctx, dtos.GoogleMeetWebhookRequest{
+			ExternalSessionID: "meet-123",
+			Event:             "completed",
+			AudioURL:          &audioURL,
+			DurationSeconds:   &durationSec,
+		}, "")
+		if err == nil {
+			t.Errorf("expected error when UpdateRecordingAudioURL fails")
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
 			t.Errorf("unfulfilled mock expectations: %v", err)

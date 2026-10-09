@@ -70,7 +70,8 @@ func ValidateMeetingURL(rawURL string) error {
 	}
 
 	parsedURL := trimmed
-	if !strings.HasPrefix(parsedURL, "http://") && !strings.HasPrefix(parsedURL, "https://") {
+	lowerURL := strings.ToLower(parsedURL)
+	if !strings.HasPrefix(lowerURL, "http://") && !strings.HasPrefix(lowerURL, "https://") {
 		parsedURL = "https://" + parsedURL
 	}
 

@@ -53,6 +53,7 @@ func TestGoogleMeetAdapter(t *testing.T) {
 	t.Run("validate meeting url", func(t *testing.T) {
 		validURLs := []string{
 			"https://meet.google.com/abc-defg-hij",
+			"HTTPS://meet.google.com/abc-defg-hij",
 			"http://meet.google.com/xyz-uvwx-rst",
 			"meet.google.com/aaa-bbbb-ccc",
 			"https://meet.google.com/ABC-DEFG-HIJ",

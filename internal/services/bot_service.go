@@ -282,11 +282,17 @@ func (s *Service) HandleGoogleMeetWebhook(ctx context.Context, req dtos.GoogleMe
 		if req.DurationSeconds != nil {
 			duration = float64(*req.DurationSeconds)
 		}
-		_ = s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *req.AudioURL, duration)
-		_ = s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil)
+		if err := s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *req.AudioURL, duration); err != nil {
+			return err
+		}
+		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil); err != nil {
+			return err
+		}
 	} else if mappedStatus == constants.BotSessionStatusFailed {
 		errCode := "BOT_SESSION_FAILED"
-		_ = s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, req.ErrorMessage)
+		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, req.ErrorMessage); err != nil {
+			return err
+		}
 	}
 
 	return nil

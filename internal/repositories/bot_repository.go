@@ -69,3 +69,4 @@ func (r *Repositories) UpdateBotSessionExternalID(ctx context.Context, id uuid.U
 	}
 	return nil
 }
+

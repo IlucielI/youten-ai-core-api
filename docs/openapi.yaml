@@ -374,7 +374,6 @@ paths:
       description: Dispatches an automated voice recording bot to an external meeting or voice channel (Discord, Google Meet, Teams, Zoom).
       security:
         - BearerAuth: []
-        - {}
       requestBody:
         required: true
         content:
@@ -398,7 +397,6 @@ paths:
       description: Retrieves the current status, recording state, and metadata of a meeting bot session.
       security:
         - BearerAuth: []
-        - {}
       parameters:
         - name: id
           in: path
@@ -423,7 +421,6 @@ paths:
       description: Requests the active bot to leave the meeting or channel and finalizes the audio recording.
       security:
         - BearerAuth: []
-        - {}
       parameters:
         - name: id
           in: path

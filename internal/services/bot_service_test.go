@@ -120,6 +120,10 @@ func TestService_DispatchMeetingBot_Success(t *testing.T) {
 	if resp.Status != constants.BotSessionStatusRecording {
 		t.Errorf("expected status %s, got %s", constants.BotSessionStatusRecording, resp.Status)
 	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
 }
 
 func TestService_DispatchMeetingBot_UnsupportedAndDisabled(t *testing.T) {
@@ -207,6 +211,10 @@ func TestService_GetBotSessionStatus_And_Stop(t *testing.T) {
 		}
 		if res.Status != constants.BotSessionStatusCompleted {
 			t.Errorf("expected status %s, got %s", constants.BotSessionStatusCompleted, res.Status)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %s", err)
 		}
 	})
 }

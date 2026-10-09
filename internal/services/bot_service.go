@@ -97,6 +97,7 @@ func (s *Service) DispatchMeetingBot(ctx context.Context, req dtos.DispatchBotRe
 	}
 
 	if err := s.repo.CreateBotSession(ctx, botSession); err != nil {
+		_ = s.repo.DeleteRecording(ctx, recordingID)
 		return nil, fmt.Errorf("failed to persist bot session: %w", err)
 	}
 
@@ -151,7 +152,9 @@ func (s *Service) GetBotSessionStatus(ctx context.Context, sessionID uuid.UUID) 
 					session.Status = liveStatus.Status
 					session.StartedAt = liveStatus.StartedAt
 					session.EndedAt = liveStatus.EndedAt
-					_ = s.repo.UpdateBotSessionStatus(ctx, sessionID, liveStatus.Status, nil, liveStatus.StartedAt, liveStatus.EndedAt)
+					if err := s.repo.UpdateBotSessionStatus(ctx, sessionID, liveStatus.Status, nil, liveStatus.StartedAt, liveStatus.EndedAt); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -180,16 +183,22 @@ func (s *Service) StopBotSession(ctx context.Context, sessionID uuid.UUID) (*dto
 
 	now := time.Now().UTC()
 	if provider, exists := s.BotProvider(session.Provider); exists && session.ExternalSessionID != nil {
-		_ = provider.Stop(ctx, *session.ExternalSessionID)
+		if err := provider.Stop(ctx, *session.ExternalSessionID); err != nil {
+			return nil, err
+		}
 	}
 
-	_ = s.repo.UpdateBotSessionStatus(ctx, sessionID, constants.BotSessionStatusCompleted, nil, nil, &now)
+	if err := s.repo.UpdateBotSessionStatus(ctx, sessionID, constants.BotSessionStatusCompleted, nil, nil, &now); err != nil {
+		return nil, err
+	}
 
 	// Transition recording status to pending/extracting
 	rec, err := s.repo.FindRecordingByID(ctx, session.RecordingID)
 	if err == nil && rec != nil {
 		rec.Status = models.RecordingStatusPending
-		_ = s.repo.DB().WithContext(ctx).Model(rec).Update("status", models.RecordingStatusPending)
+		if err := s.repo.DB().WithContext(ctx).Model(rec).Update("status", models.RecordingStatusPending).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	return &dtos.StopBotResponse{

@@ -241,6 +241,29 @@ routes:
     path: /v1/waitlist/bot
     handler: JoinBotWaitlist
 
+  # Dispatch a voice bot to join a meeting or voice channel.
+  - method: POST
+    path: /v1/recordings/meeting-bot
+    handler: DispatchMeetingBot
+    optional_auth: true
+
+  # Check real-time lifecycle status of a meeting bot session.
+  - method: GET
+    path: /v1/recordings/meeting-bot/:id/status
+    handler: GetBotSessionStatus
+    optional_auth: true
+
+  # Command a meeting bot to leave the meeting and finish recording.
+  - method: POST
+    path: /v1/recordings/meeting-bot/:id/stop
+    handler: StopBotSession
+    optional_auth: true
+
+  # Report ingestion and voice bot platform capabilities.
+  - method: GET
+    path: /v1/capabilities
+    handler: GetCapabilities
+
   # Authenticate staff administrator credentials and issue admin access token (CMS).
   - method: POST
     path: /v1/admin/login

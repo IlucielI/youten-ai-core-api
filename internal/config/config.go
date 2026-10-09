@@ -109,6 +109,11 @@ type Config struct {
 	RAGChunkTokens        int
 	RAGChunkOverlapTokens int
 	RAGTopK               int
+
+	// Meeting Voice Bot Configuration
+	MeetingBotEnabled bool
+	DiscordBotEnabled bool
+	DiscordBotToken   string
 }
 
 func Load() Config {
@@ -212,6 +217,11 @@ func Load() Config {
 		RAGChunkTokens:        getEnvInt("RAG_CHUNK_TOKENS", 300),
 		RAGChunkOverlapTokens: getEnvInt("RAG_CHUNK_OVERLAP_TOKENS", 50),
 		RAGTopK:               getEnvInt("RAG_TOP_K", 5),
+
+		// Meeting Voice Bot settings
+		MeetingBotEnabled: getEnvBool("MEETING_BOT_ENABLED", false),
+		DiscordBotEnabled: getEnvBool("DISCORD_BOT_ENABLED", false),
+		DiscordBotToken:   getEnv("DISCORD_BOT_TOKEN", ""),
 	}
 }
 

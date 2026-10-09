@@ -287,6 +287,10 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"PUT", "/v1/recordings/:id/speakers"},
 		{"POST", "/v1/recordings/:id/regenerate"},
 		{"POST", "/v1/waitlist/bot"},
+		{"POST", "/v1/recordings/meeting-bot"},
+		{"GET", "/v1/recordings/meeting-bot/:id/status"},
+		{"POST", "/v1/recordings/meeting-bot/:id/stop"},
+		{"GET", "/v1/capabilities"},
 	}
 
 	registeredPairs := make(map[string]bool)

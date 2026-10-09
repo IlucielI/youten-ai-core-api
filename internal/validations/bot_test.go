@@ -71,4 +71,11 @@ func TestValidateDispatchBotRequest(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("nil request pointer", func(t *testing.T) {
+		err := ValidateDispatchBotRequest(nil)
+		if err == nil {
+			t.Errorf("expected error when request pointer is nil")
+		}
+	})
 }

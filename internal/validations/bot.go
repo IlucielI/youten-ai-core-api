@@ -10,6 +10,10 @@ import (
 
 // ValidateDispatchBotRequest validates parameters for initiating a bot session.
 func ValidateDispatchBotRequest(r *dtos.DispatchBotRequest) error {
+	if r == nil {
+		return validation.NewError("validation_required", "request is required")
+	}
+
 	err := validation.ValidateStruct(r,
 		validation.Field(&r.Provider, validation.Required, validation.In(
 			constants.BotProviderDiscord,

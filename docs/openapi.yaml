@@ -446,7 +446,7 @@ paths:
       parameters:
         - name: X-Bot-Webhook-Secret
           in: header
-          required: false
+          required: true
           schema:
             type: string
           description: Shared secret for webhook caller authentication.

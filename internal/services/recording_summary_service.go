@@ -231,6 +231,13 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		MarkdownContent:  markdownContent,
 	}
 
+	// If recording was previously in FAILED status, restore it to COMPLETED before saving new summary
+	if rec.Status == models.RecordingStatusFailed {
+		if err := s.repo.UpdateRecordingStatus(ctx, rec.ID, models.RecordingStatusCompleted, nil, nil); err != nil {
+			return nil, fmt.Errorf("failed to restore recording status to completed: %w", err)
+		}
+	}
+
 	if err := s.repo.SaveNewSummaryVersion(ctx, &newSummary); err != nil {
 		return nil, fmt.Errorf("failed to save summary version: %w", err)
 	}

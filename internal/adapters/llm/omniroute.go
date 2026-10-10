@@ -323,53 +323,112 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 	}
 
 	url := fmt.Sprintf("%s/chat/completions", o.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
-	}
+	maxRetries := 3
+	var lastErr error
 
-	req.Header.Set("Content-Type", "application/json")
-	if o.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+o.apiKey)
-	}
-
-	resp, err := o.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("llm request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("llm api returned status %d: %s", resp.StatusCode, string(respBytes))
-	}
-
-	trimmed := bytes.TrimSpace(respBytes)
-	if bytes.HasPrefix(trimmed, []byte("data:")) {
-		return parseSSEChatResponse(trimmed)
-	}
-
-	var chatResp openAIChatResponse
-	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		// Fallback: check if response payload is an SSE event stream
-		if sseResp, sseErr := parseSSEChatResponse(trimmed); sseErr == nil && len(sseResp.Choices) > 0 && sseResp.Choices[0].Message.Content != "" {
-			return sseResp, nil
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create http request: %w", err)
 		}
-		return nil, fmt.Errorf("failed to unmarshal chat response: %w", err)
+
+		req.Header.Set("Content-Type", "application/json")
+		if o.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+o.apiKey)
+		}
+
+		resp, err := o.httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("llm request failed: %w", err)
+			if attempt < maxRetries && ctx.Err() == nil {
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
+				continue
+			}
+			return nil, lastErr
+		}
+
+		respBytes, err := io.ReadAll(resp.Body)
+		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			if attempt < maxRetries && ctx.Err() == nil {
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
+				continue
+			}
+			return nil, lastErr
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("llm api returned status %d: %s", resp.StatusCode, string(respBytes))
+			if resp.StatusCode >= 500 && attempt < maxRetries && ctx.Err() == nil {
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
+				continue
+			}
+			return nil, lastErr
+		}
+
+		trimmed := bytes.TrimSpace(respBytes)
+		if bytes.HasPrefix(trimmed, []byte("data:")) {
+			chatResp, sseErr := parseSSEChatResponse(trimmed)
+			if sseErr != nil {
+				lastErr = sseErr
+				if attempt < maxRetries && ctx.Err() == nil {
+					if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+						return nil, waitErr
+					}
+					continue
+				}
+				return nil, lastErr
+			}
+			return chatResp, nil
+		}
+
+		var chatResp openAIChatResponse
+		if err := json.Unmarshal(respBytes, &chatResp); err != nil {
+			// Fallback: check if response payload is an SSE event stream
+			if sseResp, sseErr := parseSSEChatResponse(trimmed); sseErr == nil && len(sseResp.Choices) > 0 && sseResp.Choices[0].Message.Content != "" {
+				return sseResp, nil
+			}
+			lastErr = fmt.Errorf("failed to unmarshal chat response: %w", err)
+			if attempt < maxRetries && ctx.Err() == nil {
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
+				continue
+			}
+			return nil, lastErr
+		}
+
+		return &chatResp, nil
 	}
 
-	return &chatResp, nil
+	return nil, lastErr
+}
+
+func waitBackoff(ctx context.Context, attempt int) error {
+	select {
+	case <-time.After(time.Duration(attempt) * time.Second):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // parseSSEChatResponse reconstructs a full chat completion response from an SSE event stream payload.
 func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 	reader := bufio.NewReader(bytes.NewReader(respBytes))
 	var contentBuilder strings.Builder
+	var reasoningBuilder strings.Builder
 	var finishReason string
+	var lastStreamError string
 	var usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
@@ -390,16 +449,25 @@ func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 			}
 
 			var chunk struct {
-				ID      string `json:"id"`
+				ID    string `json:"id"`
+				Error *struct {
+					Message string      `json:"message"`
+					Type    string      `json:"type"`
+					Code    interface{} `json:"code"`
+				} `json:"error"`
 				Choices []struct {
 					Index int `json:"index"`
 					Delta struct {
-						Role    string `json:"role,omitempty"`
-						Content string `json:"content,omitempty"`
+						Role             string `json:"role,omitempty"`
+						Content          string `json:"content,omitempty"`
+						ReasoningContent string `json:"reasoning_content,omitempty"`
+						Thought          string `json:"thought,omitempty"`
 					} `json:"delta"`
 					Message struct {
-						Role    string `json:"role,omitempty"`
-						Content string `json:"content,omitempty"`
+						Role             string `json:"role,omitempty"`
+						Content          string `json:"content,omitempty"`
+						ReasoningContent string `json:"reasoning_content,omitempty"`
+						Thought          string `json:"thought,omitempty"`
 					} `json:"message"`
 					FinishReason string `json:"finish_reason,omitempty"`
 				} `json:"choices"`
@@ -411,6 +479,9 @@ func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 			}
 
 			if err := json.Unmarshal([]byte(payload), &chunk); err == nil {
+				if chunk.Error != nil && chunk.Error.Message != "" {
+					lastStreamError = chunk.Error.Message
+				}
 				if chunk.Usage.TotalTokens > 0 {
 					usage = chunk.Usage
 				}
@@ -421,6 +492,18 @@ func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 					} else if choice.Message.Content != "" {
 						contentBuilder.WriteString(choice.Message.Content)
 					}
+
+					// Collect reasoning/thought tokens if present (for thinking models)
+					if choice.Delta.ReasoningContent != "" {
+						reasoningBuilder.WriteString(choice.Delta.ReasoningContent)
+					} else if choice.Delta.Thought != "" {
+						reasoningBuilder.WriteString(choice.Delta.Thought)
+					} else if choice.Message.ReasoningContent != "" {
+						reasoningBuilder.WriteString(choice.Message.ReasoningContent)
+					} else if choice.Message.Thought != "" {
+						reasoningBuilder.WriteString(choice.Message.Thought)
+					}
+
 					if choice.FinishReason != "" {
 						finishReason = choice.FinishReason
 					}
@@ -433,7 +516,18 @@ func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 		}
 	}
 
-	if contentBuilder.Len() == 0 {
+	content := contentBuilder.String()
+	if content == "" && reasoningBuilder.Len() > 0 {
+		cleanedReasoning := jsonutil.CleanMarkdownJSON(reasoningBuilder.String())
+		if cleanedReasoning != "" && (strings.HasPrefix(cleanedReasoning, "{") || strings.HasPrefix(cleanedReasoning, "[")) {
+			content = cleanedReasoning
+		}
+	}
+
+	if content == "" {
+		if lastStreamError != "" {
+			return nil, fmt.Errorf("upstream sse error: %s", lastStreamError)
+		}
 		return nil, fmt.Errorf("empty content in sse stream response")
 	}
 
@@ -457,7 +551,7 @@ func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 					Content string `json:"content"`
 				}{
 					Role:    "assistant",
-					Content: contentBuilder.String(),
+					Content: content,
 				},
 				FinishReason: finishReason,
 			},

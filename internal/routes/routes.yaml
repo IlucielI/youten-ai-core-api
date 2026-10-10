@@ -75,6 +75,12 @@ routes:
     handler: ChangePassword
     auth: true
 
+  # Retrieve available active summary prompt templates.
+  - method: GET
+    path: /v1/templates
+    handler: ListTemplates
+    optional_auth: true
+
   # Generate a presigned URL for direct-to-S3 recording upload.
   - method: POST
     path: /v1/recordings/presign-upload

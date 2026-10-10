@@ -12,6 +12,7 @@ const (
 	TemplateKeyPodcast        = "PODCAST"
 	TemplateKeyLecture        = "LECTURE"
 	TemplateKeyMusicLyrics    = "MUSIC_LYRICS"
+	TemplateKeyResearchDeepdive = "RESEARCH_DEEPDIVE"
 )
 
 // ValidTemplates contains all registered template category keys.
@@ -26,6 +27,7 @@ var ValidTemplates = []string{
 	TemplateKeyPodcast,
 	TemplateKeyLecture,
 	TemplateKeyMusicLyrics,
+	TemplateKeyResearchDeepdive,
 }
 
 // IsValidTemplate checks whether the given template key is recognized.

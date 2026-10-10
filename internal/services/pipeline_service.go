@@ -460,7 +460,9 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 		if attempt < 3 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				err := ctx.Err()
+				s.failAndLog(context.Background(), recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation cancelled: %v", err))
+				return err
 			case <-time.After(time.Duration(attempt) * time.Second):
 			}
 		}

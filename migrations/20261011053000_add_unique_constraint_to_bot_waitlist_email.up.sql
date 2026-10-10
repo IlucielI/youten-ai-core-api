@@ -2,7 +2,10 @@
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'uq_bot_waitlists_email'
+        SELECT 1 
+        FROM pg_constraint 
+        WHERE conname = 'uq_bot_waitlists_email' 
+          AND conrelid = 'bot_waitlists'::regclass
     ) THEN
         ALTER TABLE bot_waitlists ADD CONSTRAINT uq_bot_waitlists_email UNIQUE (email);
     END IF;

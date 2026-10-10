@@ -56,6 +56,10 @@ func TestControllers_ListTemplates(t *testing.T) {
 		if resp.Data.Items[0].CategoryKey != "GENERAL" {
 			t.Errorf("expected first item GENERAL, got %s", resp.Data.Items[0].CategoryKey)
 		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("there were unfulfilled expectations: %s", err)
+		}
 	})
 
 	t.Run("failure returns 500 error", func(t *testing.T) {
@@ -73,6 +77,10 @@ func TestControllers_ListTemplates(t *testing.T) {
 
 		if w.Code != http.StatusInternalServerError {
 			t.Fatalf("expected 500 Internal Server Error, got %d, body: %s", w.Code, w.Body.String())
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("there were unfulfilled expectations: %s", err)
 		}
 	})
 }

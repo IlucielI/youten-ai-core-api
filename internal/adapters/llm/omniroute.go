@@ -350,7 +350,9 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		}
 
 		respBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response body: %w", err)
 			if attempt < maxRetries && ctx.Err() == nil {

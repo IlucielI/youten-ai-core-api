@@ -341,7 +341,9 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		if err != nil {
 			lastErr = fmt.Errorf("llm request failed: %w", err)
 			if attempt < maxRetries && ctx.Err() == nil {
-				time.Sleep(time.Duration(attempt) * time.Second)
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
 				continue
 			}
 			return nil, lastErr
@@ -352,7 +354,9 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response body: %w", err)
 			if attempt < maxRetries && ctx.Err() == nil {
-				time.Sleep(time.Duration(attempt) * time.Second)
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
 				continue
 			}
 			return nil, lastErr
@@ -361,7 +365,9 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("llm api returned status %d: %s", resp.StatusCode, string(respBytes))
 			if resp.StatusCode >= 500 && attempt < maxRetries && ctx.Err() == nil {
-				time.Sleep(time.Duration(attempt) * time.Second)
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
 				continue
 			}
 			return nil, lastErr
@@ -373,7 +379,9 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 			if sseErr != nil {
 				lastErr = sseErr
 				if attempt < maxRetries && ctx.Err() == nil {
-					time.Sleep(time.Duration(attempt) * time.Second)
+					if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+						return nil, waitErr
+					}
 					continue
 				}
 				return nil, lastErr
@@ -389,7 +397,9 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 			}
 			lastErr = fmt.Errorf("failed to unmarshal chat response: %w", err)
 			if attempt < maxRetries && ctx.Err() == nil {
-				time.Sleep(time.Duration(attempt) * time.Second)
+				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
+					return nil, waitErr
+				}
 				continue
 			}
 			return nil, lastErr
@@ -399,6 +409,15 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 	}
 
 	return nil, lastErr
+}
+
+func waitBackoff(ctx context.Context, attempt int) error {
+	select {
+	case <-time.After(time.Duration(attempt) * time.Second):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // parseSSEChatResponse reconstructs a full chat completion response from an SSE event stream payload.
@@ -530,7 +549,7 @@ func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 					Content string `json:"content"`
 				}{
 					Role:    "assistant",
-					Content: contentBuilder.String(),
+					Content: content,
 				},
 				FinishReason: finishReason,
 			},

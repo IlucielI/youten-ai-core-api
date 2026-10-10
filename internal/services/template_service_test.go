@@ -40,6 +40,9 @@ func TestService_ListActiveTemplates(t *testing.T) {
 		if resp.Items[1].CategoryKey != "MOM" || resp.Items[1].Name != "Minutes of Meeting" {
 			t.Errorf("unexpected second item: %+v", resp.Items[1])
 		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("there were unfulfilled expectations: %s", err)
+		}
 	})
 
 	t.Run("db error propagates cleanly", func(t *testing.T) {
@@ -54,6 +57,9 @@ func TestService_ListActiveTemplates(t *testing.T) {
 		}
 		if resp != nil {
 			t.Fatalf("expected nil response on error, got %+v", resp)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("there were unfulfilled expectations: %s", err)
 		}
 	})
 }

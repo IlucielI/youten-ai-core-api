@@ -18,6 +18,7 @@ func TestIsValidTemplate(t *testing.T) {
 		constants.TemplateKeyPodcast,
 		constants.TemplateKeyLecture,
 		constants.TemplateKeyMusicLyrics,
+		constants.TemplateKeyResearchDeepdive,
 	}
 
 	for _, tmpl := range expectedTemplates {

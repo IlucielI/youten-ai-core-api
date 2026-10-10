@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -233,6 +234,13 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 
 	if err := s.repo.SaveNewSummaryVersion(ctx, &newSummary); err != nil {
 		return nil, fmt.Errorf("failed to save summary version: %w", err)
+	}
+
+	// If recording was previously in FAILED status, restore it to COMPLETED and clear error flags
+	if rec.Status == models.RecordingStatusFailed {
+		if err := s.repo.UpdateRecordingStatus(ctx, rec.ID, models.RecordingStatusCompleted, nil, nil); err != nil {
+			log.Printf("[SUMMARY WARN] recording %s: failed to mark completed on regenerate: %v", rec.ID.String(), err)
+		}
 	}
 
 	resp := toSummaryVersionResponse(newSummary)

@@ -449,10 +449,25 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 		return errors.New(errMsg)
 	}
 
-	structuredRes, err := s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
-	if err != nil {
-		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation failed: %v", err))
-		return fmt.Errorf("llm generation failed: %w", err)
+	var structuredRes *dtos.StructuredResponse
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
+		if lastErr == nil {
+			break
+		}
+		log.Printf("[PIPELINE WARN] recording %s: summarization attempt %d failed: %v", recording.ID.String(), attempt, lastErr)
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+	}
+	if lastErr != nil {
+		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation failed: %v", lastErr))
+		return fmt.Errorf("llm generation failed: %w", lastErr)
 	}
 
 	// Deactivate older summaries for this recording

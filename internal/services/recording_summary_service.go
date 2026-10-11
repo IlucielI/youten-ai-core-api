@@ -149,9 +149,9 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	transcriptBody := sb.String()
 
 	// Determine template
-	templateKey := strings.TrimSpace(req.TemplateCategory)
+	templateKey := strings.ToUpper(strings.TrimSpace(req.TemplateCategory))
 	if templateKey == "" {
-		templateKey = rec.SelectedTemplate
+		templateKey = strings.ToUpper(strings.TrimSpace(rec.SelectedTemplate))
 	}
 	if templateKey == "" {
 		templateKey = constants.TemplateKeyGeneral
@@ -211,6 +211,12 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	} else if md, ok := structMap["executive_summary"].(string); ok && md != "" {
 		markdownContent = md
 	} else if md, ok := structMap["executive_overview"].(string); ok && md != "" {
+		markdownContent = md
+	} else if md, ok := structMap["show_notes"].(string); ok && md != "" {
+		markdownContent = md
+	} else if md, ok := structMap["course_summary"].(string); ok && md != "" {
+		markdownContent = md
+	} else if md, ok := structMap["abstract_or_summary"].(string); ok && md != "" {
 		markdownContent = md
 	} else {
 		markdownContent = cleanedJSON

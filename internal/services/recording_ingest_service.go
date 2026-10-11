@@ -82,7 +82,7 @@ func (s *Service) UploadRecording(
 	if title == "" {
 		title = strings.TrimSuffix(safeFilename, filepath.Ext(safeFilename))
 	}
-	template := strings.TrimSpace(req.Template)
+	template := strings.ToUpper(strings.TrimSpace(req.Template))
 	if template == "" {
 		template = constants.TemplateKeyGeneral
 	}
@@ -238,7 +238,7 @@ func (s *Service) ImportRecordingFromURL(
 			}
 		}
 
-		template := strings.TrimSpace(req.Template)
+		template := strings.ToUpper(strings.TrimSpace(req.Template))
 		if template == "" {
 			template = constants.TemplateKeyGeneral
 		}
@@ -366,7 +366,7 @@ func (s *Service) ImportRecordingFromURL(
 	if title == "" {
 		title = strings.TrimSuffix(safeFilename, filepath.Ext(safeFilename))
 	}
-	template := strings.TrimSpace(req.Template)
+	template := strings.ToUpper(strings.TrimSpace(req.Template))
 	if template == "" {
 		template = constants.TemplateKeyGeneral
 	}

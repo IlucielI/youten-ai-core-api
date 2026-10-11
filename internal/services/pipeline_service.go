@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
+	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/sse"
@@ -378,7 +379,7 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	s.publishProgress(recording.ID, models.RecordingStatusSummarizing, nil, nil)
 
 	// Retrieve template
-	templateKey := recording.SelectedTemplate
+	templateKey := strings.ToUpper(strings.TrimSpace(recording.SelectedTemplate))
 	if templateKey == "" {
 		templateKey = constants.TemplateKeyGeneral
 	}
@@ -477,8 +478,9 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 		log.Printf("[PIPELINE WARN] recording %s: failed to deactivate previous summaries: %v", recording.ID.String(), err)
 	}
 
+	cleanedJSON := jsonutil.CleanMarkdownJSON(structuredRes.RawJSON)
 	var structMap map[string]interface{}
-	if err := json.Unmarshal([]byte(structuredRes.RawJSON), &structMap); err != nil {
+	if err := json.Unmarshal([]byte(cleanedJSON), &structMap); err != nil {
 		log.Printf("[PIPELINE WARN] recording %s: failed to unmarshal structured summary JSON: %v", recording.ID.String(), err)
 	}
 
@@ -487,8 +489,16 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 		markdownContent = md
 	} else if md, ok := structMap["executive_summary"].(string); ok && md != "" {
 		markdownContent = md
+	} else if md, ok := structMap["executive_overview"].(string); ok && md != "" {
+		markdownContent = md
+	} else if md, ok := structMap["show_notes"].(string); ok && md != "" {
+		markdownContent = md
+	} else if md, ok := structMap["course_summary"].(string); ok && md != "" {
+		markdownContent = md
+	} else if md, ok := structMap["abstract_or_summary"].(string); ok && md != "" {
+		markdownContent = md
 	} else {
-		markdownContent = structuredRes.RawJSON
+		markdownContent = cleanedJSON
 	}
 
 	summary := models.Summary{

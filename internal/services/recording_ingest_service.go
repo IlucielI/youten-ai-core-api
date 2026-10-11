@@ -257,6 +257,13 @@ func (s *Service) ImportRecordingFromURL(
 			safeFilename = fmt.Sprintf("import_%s.m4a", safeMediaID)
 		}
 
+		analyticsData := models.JSONMap{
+			"source_url": canonicalURL,
+		}
+		if safeMediaID != "" {
+			analyticsData["media_id"] = safeMediaID
+		}
+
 		rec := models.Recording{
 			BaseModel: models.BaseModel{
 				ID:        recID,
@@ -270,6 +277,7 @@ func (s *Service) ImportRecordingFromURL(
 			SelectedTemplate: template,
 			OutputLanguage:   language,
 			OwnershipToken:   ownershipToken,
+			AnalyticsData:    analyticsData,
 			ConsentGiven:     true,
 			ConsentVersion:   "1.0",
 			ConsentAt:        &now,

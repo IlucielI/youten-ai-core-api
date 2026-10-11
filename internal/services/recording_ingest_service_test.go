@@ -663,6 +663,55 @@ func TestService_RetryRecordingPipeline_Success_AudioMissing(t *testing.T) {
 	}
 }
 
+func TestService_RetryRecordingPipeline_Success_LinkImport_AudioMissing(t *testing.T) {
+	svc, mock, _, publisher := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "audio_url", "source_type", "original_filename", "analytics_data", "status", "selected_template", "output_language"}).
+			AddRow(recID, &userID, nil, "LINK", "import_Yu-YPy0YMsE.m4a", []byte(`{"source_url":"https://www.youtube.com/watch?v=Yu-YPy0YMsE"}`), models.RecordingStatusFailed, "GENERAL", "id"))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectQuery(`SELECT .* FROM "transcript_chunks" WHERE recording_id = \$1.*`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
+		WithArgs(models.RecordingStatusQueued, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	publisher.publishedTopics = nil
+	resp, err := svc.RetryRecordingPipeline(ctx, recID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != recID.String() {
+		t.Errorf("expected ID %s, got %s", recID.String(), resp.ID)
+	}
+	if resp.Stage != models.RecordingStatusExtracting {
+		t.Errorf("expected stage EXTRACTING, got %s", resp.Stage)
+	}
+	if resp.Status != models.RecordingStatusQueued {
+		t.Errorf("expected status QUEUED, got %s", resp.Status)
+	}
+	if len(publisher.publishedTopics) == 0 || publisher.publishedTopics[0] != constants.TopicRecordingImport {
+		t.Errorf("expected TopicRecordingImport, got %v", publisher.publishedTopics)
+	}
+}
+
 func TestService_RetryRecordingPipeline_Success_TranscribeMissing(t *testing.T) {
 	svc, mock, _, publisher := setupRecordingTestService(t)
 	recID := uuid.New()

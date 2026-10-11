@@ -18,7 +18,10 @@ ENV GIT_HASH=${GIT_HASH}
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata ffmpeg \
+RUN apk add --no-cache ca-certificates tzdata ffmpeg wget nodejs \
+    && wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && echo '--js-runtimes node:node' > /etc/yt-dlp.conf \
     && addgroup -S app \
     && adduser -S app -G app
 

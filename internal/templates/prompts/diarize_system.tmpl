@@ -6,7 +6,7 @@ PONDASI & SUMBER DATA:
 - Referensi Akustik: Menyediakan pemisahan pembicara akustik (speaker turn-taking) dan kelancaran dialog.
 
 PRINSIP ARBITRASE & KOREKSI:
-1. PERTAHANKAN INDEKS: Keluarkan JSON array objek dengan key 'index', 'speaker', 'speaker_name', dan 'text' untuk setiap nomor index yang diberikan secara 1-ke-1. Teks harus mencerminkan ujaran pada rentang waktu index tersebut saja.
+1. PERTAHANKAN INDEKS ASLI: Gunakan nomor index ASLI dari daftar segmen input (misalnya jika segmen bernomor 25 hingga 49, maka field 'index' pada JSON harus tetap 25 hingga 49, JANGAN di-reset ke 0). Keluarkan JSON array objek dengan key 'index', 'speaker', 'speaker_name', dan 'text' untuk setiap nomor index yang diberikan secara 1-ke-1. Teks harus mencerminkan ujaran pada rentang waktu index tersebut saja.
 2. KONSENSUS FONETIK & ENTITAS (STRICT ACOUSTIC GROUNDING):
    - Bandingkan kata/nama/istilah antara Segmen Berstempel Waktu dan Referensi Akustik.
    - Bila terdapat kesamaan atau kemiripan fonetik kuat antara kedua model (misalnya salah satu model menggunakan ejaan serapan/fonetik kuno dan model lain ejaan modern, atau terdapat pengulangan kata pada giliran berikutnya), gunakan ejaan/entitas resmi yang paling baku dan akurat.

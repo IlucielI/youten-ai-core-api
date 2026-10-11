@@ -88,6 +88,9 @@ func TestConfig_LoadDefaults(t *testing.T) {
 	if cfg.LLMModel != "gpt-4o-mini" {
 		t.Errorf("expected LLMModel 'gpt-4o-mini', got %q", cfg.LLMModel)
 	}
+	if cfg.LLMTimeout != 5*time.Minute {
+		t.Errorf("expected LLMTimeout 5m, got %v", cfg.LLMTimeout)
+	}
 	if cfg.STTModel != "whisper-1" {
 		t.Errorf("expected STTModel 'whisper-1', got %q", cfg.STTModel)
 	}
@@ -118,6 +121,7 @@ func TestConfig_CustomEnv(t *testing.T) {
 	t.Setenv("LLM_PROVIDER", "custom_gateway")
 	t.Setenv("LLM_BASE_URL", "https://api.omniroute.ai/v1")
 	t.Setenv("LLM_MODEL", "gpt-4o")
+	t.Setenv("LLM_TIMEOUT", "10m")
 	t.Setenv("STT_MODEL", "whisper-large-v3")
 	t.Setenv("EMBEDDING_MODEL", "text-embedding-3-small")
 	t.Setenv("EMBEDDING_DIMENSION", "1536")
@@ -153,6 +157,9 @@ func TestConfig_CustomEnv(t *testing.T) {
 	}
 	if cfg.LLMModel != "gpt-4o" {
 		t.Errorf("expected LLMModel 'gpt-4o', got %q", cfg.LLMModel)
+	}
+	if cfg.LLMTimeout != 10*time.Minute {
+		t.Errorf("expected LLMTimeout 10m, got %v", cfg.LLMTimeout)
 	}
 	if cfg.STTModel != "whisper-large-v3" {
 		t.Errorf("expected STTModel 'whisper-large-v3', got %q", cfg.STTModel)

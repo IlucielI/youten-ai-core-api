@@ -318,5 +318,187 @@ func TestExtractSpeakerLabelsFromText(t *testing.T) {
 	}
 }
 
+func TestService_DiarizeAndCorrectSegmentsWithLLM_RelativeIndexChunk(t *testing.T) {
+	// Simulate 2 chunks (total 30 segments).
+	// Chunk 0 is segments [0..25). Chunk 1 is segments [25..30).
+	// In Chunk 1, the LLM returns 0-based relative indices [{"index": 0, ...}, {"index": 1, ...}]
+	// instead of [{"index": 25, ...}, {"index": 26, ...}].
+	callCount := 0
+	mockLLM := &dummyLLM{
+		generateChatFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+			callCount++
+			if callCount == 1 {
+				// Pass 1: Roster discovery
+				return &dtos.ChatResponse{
+					Content: `[{"label": "Speaker 0", "name": "Host", "role": "Host"}, {"label": "Speaker 1", "name": "Budi", "role": "Guest"}]`,
+				}, nil
+			} else if callCount == 2 {
+				// Pass 2, Chunk 0 [0..25)
+				return &dtos.ChatResponse{
+					Content: `[{"index": 0, "speaker": "Speaker 0", "speaker_name": "Host", "text": "Selamat datang"}]`,
+				}, nil
+			} else {
+				// Pass 2, Chunk 1 [25..30): LLM outputs 0-based relative index for index 25!
+				return &dtos.ChatResponse{
+					Content: `[
+						{"index": 0, "speaker": "Speaker 1", "speaker_name": "Budi", "text": "Halo saya Budi segmen 25."},
+						{"index": 1, "speaker": "Speaker 1", "speaker_name": "Budi", "text": "Ini segmen 26."}
+					]`,
+				}, nil
+			}
+		},
+	}
+
+	svc := &Service{llm: mockLLM}
+	segments := make([]dtos.SegmentResult, 30)
+	for i := range segments {
+		segments[i] = dtos.SegmentResult{
+			ID:    i,
+			Start: float64(i * 10),
+			End:   float64(i*10 + 8),
+			Text:  fmt.Sprintf("Teks original segmen %d", i),
+		}
+	}
+
+	svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments)
+
+	// Verify Chunk 1 segment 25 correctly mapped from relative index 0
+	if segments[25].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 25 SpeakerLabel 'Speaker 1', got %q", segments[25].SpeakerLabel)
+	}
+	if segments[25].SpeakerName != "Budi" {
+		t.Errorf("expected segment 25 SpeakerName 'Budi', got %q", segments[25].SpeakerName)
+	}
+	if segments[25].Text != "Halo saya Budi segmen 25." {
+		t.Errorf("expected corrected text on segment 25, got %q", segments[25].Text)
+	}
+
+	// Verify Chunk 1 segment 26 correctly mapped from relative index 1
+	if segments[26].SpeakerLabel != "Speaker 1" || segments[26].SpeakerName != "Budi" {
+		t.Errorf("expected segment 26 to be Budi/Speaker 1, got %+v", segments[26])
+	}
+}
+
+func TestService_DiarizeAndCorrectSegmentsWithLLM_MultiChunkOneHourSimulation(t *testing.T) {
+	// Simulate 100 segments (~4 chunks of 25) with 4 distinct speakers across chunks
+	mockLLM := &dummyLLM{
+		generateChatFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+			userContent := messages[0].Content
+			if strings.Contains(userContent, "ROSTER PEMBICARA RESMI") {
+				// Chunk execution
+				if strings.Contains(userContent, "0 [0.00s") {
+					// Chunk 0
+					return &dtos.ChatResponse{
+						Content: `[{"index": 0, "speaker": "Speaker 0", "speaker_name": "Alice", "text": "Part 0"}]`,
+					}, nil
+				} else if strings.Contains(userContent, "25 [250.00s") {
+					// Chunk 1
+					return &dtos.ChatResponse{
+						Content: `[{"index": 25, "speaker": "Speaker 1", "speaker_name": "Bob", "text": "Part 25"}]`,
+					}, nil
+				} else if strings.Contains(userContent, "50 [500.00s") {
+					// Chunk 2
+					return &dtos.ChatResponse{
+						Content: `[{"index": 50, "speaker": "Speaker 2", "speaker_name": "Charlie", "text": "Part 50"}]`,
+					}, nil
+				} else if strings.Contains(userContent, "75 [750.00s") {
+					// Chunk 3
+					return &dtos.ChatResponse{
+						Content: `[{"index": 75, "speaker": "Speaker 3", "speaker_name": "David", "text": "Part 75"}]`,
+					}, nil
+				}
+			}
+			// Fallback / Roster discovery
+			return &dtos.ChatResponse{
+				Content: `[
+					{"label": "Speaker 0", "name": "Alice", "role": "Host"},
+					{"label": "Speaker 1", "name": "Bob", "role": "Guest"},
+					{"label": "Speaker 2", "name": "Charlie", "role": "Guest"},
+					{"label": "Speaker 3", "name": "David", "role": "Guest"}
+				]`,
+			}, nil
+		},
+	}
+
+	svc := &Service{llm: mockLLM}
+	segments := make([]dtos.SegmentResult, 100)
+	for i := range segments {
+		segments[i] = dtos.SegmentResult{
+			ID:    i,
+			Start: float64(i * 10),
+			End:   float64(i*10 + 8),
+			Text:  fmt.Sprintf("Original segment text %d", i),
+		}
+	}
+
+	svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments)
+
+	if segments[0].SpeakerName != "Alice" {
+		t.Errorf("expected segment 0 Alice, got %s", segments[0].SpeakerName)
+	}
+	if segments[25].SpeakerName != "Bob" {
+		t.Errorf("expected segment 25 Bob, got %s", segments[25].SpeakerName)
+	}
+	if segments[50].SpeakerName != "Charlie" {
+		t.Errorf("expected segment 50 Charlie, got %s", segments[50].SpeakerName)
+	}
+	if segments[75].SpeakerName != "David" {
+		t.Errorf("expected segment 75 David, got %s", segments[75].SpeakerName)
+	}
+}
+
+func TestPruneGhostSpeakers_PreservesLegitimateTenthSpeaker(t *testing.T) {
+	roster := make(map[string]SpeakerRosterItem)
+	for i := 0; i < 10; i++ {
+		lbl := fmt.Sprintf("Speaker %d", i)
+		roster[lbl] = SpeakerRosterItem{Label: lbl, Name: lbl, Role: "Participant"}
+	}
+
+	// 10 active speakers. Speaker 9 only speaks for 2 segments (30 words, 12 seconds).
+	var segments []dtos.SegmentResult
+	for i := 0; i < 9; i++ {
+		lbl := fmt.Sprintf("Speaker %d", i)
+		for j := 0; j < 5; j++ {
+			segments = append(segments, dtos.SegmentResult{
+				SpeakerLabel: lbl,
+				SpeakerName:  lbl,
+				Text:         fmt.Sprintf("Diskusi teknis oleh pembicara %d pada sesi diskusi mendalam tentang arsitektur sistem berbasis event driven.", i),
+				Start:        float64(i*100 + j*10),
+				End:          float64(i*100 + j*10 + 8),
+			})
+		}
+	}
+	// Speaker 9 speaks at the very end
+	segments = append(segments, dtos.SegmentResult{
+		SpeakerLabel: "Speaker 9",
+		SpeakerName:  "Speaker 9",
+		Text:         "Terima kasih atas diskusinya, saya ingin menanyakan apakah arsitektur ini sudah diuji untuk beban satu jam penuh?",
+		Start:        950.0,
+		End:          960.0,
+	})
+	segments = append(segments, dtos.SegmentResult{
+		SpeakerLabel: "Speaker 9",
+		SpeakerName:  "Speaker 9",
+		Text:         "Dan bagaimana dengan konsumsi memori pada saat prosesor melakukan parsing transkrip?",
+		Start:        961.0,
+		End:          967.0,
+	})
+
+	pruned := pruneGhostSpeakers(segments, roster)
+
+	foundSpeaker9 := false
+	for _, seg := range pruned {
+		if seg.SpeakerLabel == "Speaker 9" {
+			foundSpeaker9 = true
+			break
+		}
+	}
+
+	if !foundSpeaker9 {
+		t.Errorf("expected Speaker 9 to be preserved as a legitimate 10th speaker, but was pruned")
+	}
+}
+
+
 
 

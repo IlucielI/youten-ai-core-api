@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"math/big"
 	"strings"
 	"time"
 
@@ -92,7 +93,7 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 		Email:         email,
 		PasswordHash:  passwordHash,
 		FullName:      strings.TrimSpace(req.FullName),
-		Status:        constants.UserStatusActive,
+		Status:        constants.UserStatusPending,
 		RoleID:        defaultRoleID,
 		EmailVerified: false,
 	}
@@ -105,6 +106,31 @@ func (s *Service) Register(ctx context.Context, req *dtos.RegisterRequest) (*dto
 
 	if req.AnonToken != "" {
 		s.autoClaimGuestRecordings(ctx, user.ID, req.AnonToken)
+	}
+
+	// Generate verification token and 6-digit code
+	code, rawToken, codeHash, tokenHash, err := generateVerificationCodeAndToken(email)
+	if err == nil {
+		expiresAt := time.Now().Add(24 * time.Hour)
+		_ = s.repo.CreateAuthToken(ctx, &models.AuthToken{
+			UserID:    user.ID,
+			Type:      constants.AuthTokenTypeEmailVerification,
+			TokenHash: tokenHash,
+			ExpiresAt: expiresAt,
+		})
+		_ = s.repo.CreateAuthToken(ctx, &models.AuthToken{
+			UserID:    user.ID,
+			Type:      constants.AuthTokenTypeEmailVerificationCode,
+			TokenHash: codeHash,
+			ExpiresAt: expiresAt,
+		})
+		if s.mailer != nil {
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				_ = s.sendVerificationEmail(bgCtx, user.Email, user.FullName, code, rawToken)
+			}()
+		}
 	}
 
 	resp := newUserResponse(user)
@@ -147,12 +173,16 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 		return nil, constants.ErrInvalidCredentials
 	}
 
-	if user.Status != constants.UserStatusActive {
+	if !hasher.VerifyPassword(user.PasswordHash, req.Password) {
 		return nil, constants.ErrInvalidCredentials
 	}
 
-	if !hasher.VerifyPassword(user.PasswordHash, req.Password) {
+	if user.Status != constants.UserStatusActive && user.Status != constants.UserStatusPending {
 		return nil, constants.ErrInvalidCredentials
+	}
+
+	if !user.EmailVerified || user.Status == constants.UserStatusPending {
+		return nil, constants.ErrEmailNotVerified
 	}
 
 	// Retrieve user role if available
@@ -665,4 +695,318 @@ func (s *Service) GenerateAnonToken(ctx context.Context, clientID, clientSecret 
 		Scopes:    scopes,
 	}, nil
 }
+
+// generateVerificationCodeAndToken generates a secure 6-digit OTP code and a 32-byte hex token.
+func generateVerificationCodeAndToken(email string) (code string, token string, codeHash string, tokenHash string, err error) {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(900000))
+	if err != nil {
+		return "", "", "", "", err
+	}
+	code = fmt.Sprintf("%06d", nBig.Int64()+100000)
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", "", "", "", err
+	}
+	token = hex.EncodeToString(tokenBytes)
+
+	codeHash = hasher.HashToken(email + ":" + code)
+	tokenHash = hasher.HashToken(token)
+	return code, token, codeHash, tokenHash, nil
+}
+
+// sendVerificationEmail dispatches an email containing the 6-digit OTP code and magic link.
+func (s *Service) sendVerificationEmail(ctx context.Context, email, fullName, code, rawToken string) error {
+	if s.mailer == nil {
+		return nil
+	}
+
+	appURL := strings.TrimRight(s.cfg.AppURL, "/")
+	if appURL == "" {
+		appURL = "http://localhost:3000"
+	}
+	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", appURL, rawToken)
+
+	subject := "Verifikasi Email Anda - Youten AI"
+	textBody := fmt.Sprintf(
+		"Halo %s,\n\nTerima kasih telah mendaftar di Youten AI.\nKode verifikasi email Anda adalah: %s\n\nAtau klik tautan berikut untuk verifikasi instan:\n%s\n\nKode dan tautan ini berlaku selama 24 jam.\nJika Anda tidak merasa mendaftar di Youten AI, abaikan email ini.\n\nSalam,\nTim Youten AI\n",
+		fullName, code, verifyURL,
+	)
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verifikasi Email</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f1f5f9; }
+    .wrapper { max-width: 580px; margin: 40px auto; background: #13192b; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+    .header { background: linear-gradient(135deg, #4f46e5 0%%, #7c3aed 100%%); padding: 36px 32px; text-align: center; }
+    .brand-title { font-size: 24px; font-weight: 800; color: #ffffff; margin: 0; }
+    .content { padding: 36px 32px; background: #0f1423; }
+    h2 { font-size: 20px; font-weight: 700; color: #f8fafc; margin-top: 0; margin-bottom: 16px; }
+    p { font-size: 15px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .code-box { background: #182033; border: 1px solid rgba(99,102,241,0.4); border-radius: 12px; padding: 20px; text-align: center; margin: 28px 0; }
+    .code-label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: #818cf8; letter-spacing: 1px; margin-bottom: 8px; }
+    .code-val { font-family: monospace; font-size: 34px; font-weight: 800; color: #38bdf8; letter-spacing: 6px; }
+    .btn-wrap { text-align: center; margin: 32px 0; }
+    .btn { display: inline-block; background: linear-gradient(135deg, #6366f1 0%%, #8b5cf6 100%%); color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 10px; }
+    .notice { font-size: 13px; color: #64748b; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; margin-top: 28px; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div class="brand-title">Youten AI</div>
+    </div>
+    <div class="content">
+      <h2>Verifikasi Alamat Email Anda</h2>
+      <p>Halo <strong>%s</strong>,</p>
+      <p>Terima kasih telah mendaftar di Youten AI. Silakan gunakan kode verifikasi di bawah ini untuk mengonfirmasi akun Anda:</p>
+      <div class="code-box">
+        <div class="code-label">Kode Verifikasi (OTP)</div>
+        <div class="code-val">%s</div>
+      </div>
+      <div class="btn-wrap">
+        <a href="%s" class="btn">Verifikasi Email Saya</a>
+      </div>
+      <p class="notice">Kode dan tautan ini berlaku selama 24 jam. Jika Anda tidak merasa mendaftar di Youten AI, abaikan email ini.</p>
+    </div>
+  </div>
+</body>
+</html>`, html.EscapeString(fullName), code, verifyURL)
+
+	msg := EmailMessage{
+		To:       []string{email},
+		Subject:  subject,
+		TextBody: textBody,
+		HTMLBody: htmlBody,
+	}
+	return s.mailer.Send(ctx, msg)
+}
+
+// VerifyEmail confirms email verification using 6-digit OTP code or magic link token,
+// marks the user active and email_verified=true, and generates fresh session tokens.
+func (s *Service) VerifyEmail(ctx context.Context, req *dtos.VerifyEmailRequest) (*dtos.AuthResponse, error) {
+	var user *models.User
+	var err error
+
+	token := strings.TrimSpace(req.Token)
+	code := strings.TrimSpace(req.Code)
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+
+	if token != "" {
+		tokenHash := hasher.HashToken(token)
+		authToken, err := s.repo.FindAuthTokenByHashAndType(ctx, tokenHash, constants.AuthTokenTypeEmailVerification)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, constants.ErrInvalidVerificationCode
+			}
+			return nil, s.wrapError(ctx, err)
+		}
+		if authToken == nil || authToken.ExpiresAt.Before(time.Now()) {
+			return nil, constants.ErrInvalidVerificationCode
+		}
+
+		user, err = s.repo.FindUserByIDWithRole(ctx, authToken.UserID)
+		if err != nil {
+			return nil, s.wrapError(ctx, err)
+		}
+	} else if code != "" && email != "" {
+		u, err := s.repo.FindUserByEmail(ctx, email)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, constants.ErrInvalidVerificationCode
+			}
+			return nil, s.wrapError(ctx, err)
+		}
+		if u == nil {
+			return nil, constants.ErrInvalidVerificationCode
+		}
+
+		codeHash := hasher.HashToken(email + ":" + code)
+		authToken, err := s.repo.FindAuthTokenByHashAndType(ctx, codeHash, constants.AuthTokenTypeEmailVerificationCode)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, constants.ErrInvalidVerificationCode
+			}
+			return nil, s.wrapError(ctx, err)
+		}
+		if authToken == nil || authToken.UserID != u.ID || authToken.ExpiresAt.Before(time.Now()) {
+			return nil, constants.ErrInvalidVerificationCode
+		}
+
+		user, err = s.repo.FindUserByIDWithRole(ctx, u.ID)
+		if err != nil {
+			return nil, s.wrapError(ctx, err)
+		}
+	} else {
+		return nil, constants.ErrInvalidVerificationCode
+	}
+
+	if user == nil {
+		return nil, constants.ErrInvalidVerificationCode
+	}
+
+	// Update user status
+	if err := s.repo.MarkEmailVerified(ctx, user.ID); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+	user.EmailVerified = true
+	user.Status = constants.UserStatusActive
+
+	// Revoke all verification tokens for this user
+	_ = s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, constants.AuthTokenTypeEmailVerification)
+	_ = s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, constants.AuthTokenTypeEmailVerificationCode)
+
+	// Generate authenticated session token pair
+	sessionID := uuid.New().String()
+	var roleCode string
+	var perms []string
+	if user.Role != nil {
+		roleCode = user.Role.Code
+		perms = user.Role.PermissionsList()
+	}
+
+	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID, jwt.UserRoleClaims{
+		RoleCode:    roleCode,
+		Permissions: perms,
+	})
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	refreshTokenHash := hasher.HashToken(tokenPair.RefreshToken)
+	sessionAuthToken := &models.AuthToken{
+		UserID:    user.ID,
+		Type:      constants.AuthTokenTypeRefresh,
+		TokenHash: refreshTokenHash,
+		ExpiresAt: time.Now().Add(s.cfg.JWTRefreshExpiration),
+	}
+	if err := s.repo.CreateAuthToken(ctx, sessionAuthToken); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	return &dtos.AuthResponse{
+		AccessToken:      tokenPair.AccessToken,
+		RefreshToken:     tokenPair.RefreshToken,
+		TokenType:        tokenPair.TokenType,
+		ExpiresIn:        tokenPair.ExpiresIn,
+		RefreshExpiresIn: tokenPair.RefreshExpiresIn,
+		User:             newUserResponse(user),
+	}, nil
+}
+
+// ResendVerificationEmail sends a fresh verification code and link to a pending user.
+// Enforces rate limiting (60s cooldown and max 3 resends per 24 hours).
+func (s *Service) ResendVerificationEmail(ctx context.Context, req *dtos.ResendVerificationRequest) error {
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+
+	if err := s.checkResendRateLimit(ctx, email); err != nil {
+		return err
+	}
+
+	user, err := s.repo.FindUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return s.wrapError(ctx, err)
+	}
+	if user == nil || user.EmailVerified {
+		return nil
+	}
+
+	_ = s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, constants.AuthTokenTypeEmailVerification)
+	_ = s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, constants.AuthTokenTypeEmailVerificationCode)
+
+	code, rawToken, codeHash, tokenHash, err := generateVerificationCodeAndToken(email)
+	if err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	expiresAt := time.Now().Add(24 * time.Hour)
+	if err := s.repo.CreateAuthToken(ctx, &models.AuthToken{
+		UserID:    user.ID,
+		Type:      constants.AuthTokenTypeEmailVerification,
+		TokenHash: tokenHash,
+		ExpiresAt: expiresAt,
+	}); err != nil {
+		return s.wrapError(ctx, err)
+	}
+	if err := s.repo.CreateAuthToken(ctx, &models.AuthToken{
+		UserID:    user.ID,
+		Type:      constants.AuthTokenTypeEmailVerificationCode,
+		TokenHash: codeHash,
+		ExpiresAt: expiresAt,
+	}); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	s.recordResendAttempt(ctx, email)
+
+	if s.mailer != nil {
+		return s.sendVerificationEmail(ctx, user.Email, user.FullName, code, rawToken)
+	}
+	return nil
+}
+
+func (s *Service) checkResendRateLimit(ctx context.Context, email string) error {
+	cooldownKey := fmt.Sprintf("email_verify:cooldown:%s", email)
+	dailyKey := fmt.Sprintf("email_verify:daily:%s", email)
+
+	if s.repo != nil && s.repo.Redis() != nil && s.repo.Redis().Client() != nil {
+		rdb := s.repo.Redis().Client()
+		cooldownExists, err := rdb.Exists(ctx, cooldownKey).Result()
+		if err == nil && cooldownExists > 0 {
+			return constants.ErrResendCooldown
+		}
+
+		dailyCount, err := rdb.Get(ctx, dailyKey).Int()
+		if err == nil && dailyCount >= 3 {
+			return constants.ErrResendDailyLimit
+		}
+	} else {
+		s.resendMu.Lock()
+		defer s.resendMu.Unlock()
+		if s.resendCooldowns != nil {
+			if expireTime, ok := s.resendCooldowns[email]; ok && time.Now().Before(expireTime) {
+				return constants.ErrResendCooldown
+			}
+		}
+		if s.resendDailyCounts != nil {
+			if count, ok := s.resendDailyCounts[email]; ok && count >= 3 {
+				return constants.ErrResendDailyLimit
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) recordResendAttempt(ctx context.Context, email string) {
+	cooldownKey := fmt.Sprintf("email_verify:cooldown:%s", email)
+	dailyKey := fmt.Sprintf("email_verify:daily:%s", email)
+
+	if s.repo != nil && s.repo.Redis() != nil && s.repo.Redis().Client() != nil {
+		rdb := s.repo.Redis().Client()
+		_ = rdb.Set(ctx, cooldownKey, "1", 60*time.Second).Err()
+		pipe := rdb.Pipeline()
+		pipe.Incr(ctx, dailyKey)
+		pipe.Expire(ctx, dailyKey, 24*time.Hour)
+		_, _ = pipe.Exec(ctx)
+	} else {
+		s.resendMu.Lock()
+		defer s.resendMu.Unlock()
+		if s.resendCooldowns == nil {
+			s.resendCooldowns = make(map[string]time.Time)
+		}
+		s.resendCooldowns[email] = time.Now().Add(60 * time.Second)
+
+		if s.resendDailyCounts == nil {
+			s.resendDailyCounts = make(map[string]int)
+		}
+		s.resendDailyCounts[email]++
+	}
+}
+
 

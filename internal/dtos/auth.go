@@ -107,3 +107,23 @@ type AnonTokenResponse struct {
 	Scopes    []string  `json:"scopes"`
 }
 
+// VerifyEmailRequest defines the input payload for email verification via 6-digit code or magic token.
+type VerifyEmailRequest struct {
+	Email string `json:"email,omitempty"`
+	Code  string `json:"code,omitempty"`
+	Token string `json:"token,omitempty"`
+}
+
+// ResendVerificationRequest defines the input payload for requesting a new verification email.
+type ResendVerificationRequest struct {
+	Email string `json:"email"`
+}
+
+// RegisterResponse represents the response envelope returned upon successful registration.
+type RegisterResponse struct {
+	User                 UserResponse `json:"user"`
+	RequiresVerification bool         `json:"requires_verification"`
+	Message              string       `json:"message"`
+}
+
+

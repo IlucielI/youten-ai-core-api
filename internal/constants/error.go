@@ -82,6 +82,18 @@ var (
 	// ErrImportFetchFailed is returned when downloading media from the imported URL fails.
 	ErrImportFetchFailed = apperror.New(http.StatusBadRequest, "ERR_IMPORT_FETCH_FAILED", "failed to download media from import URL")
 
+	// ErrEmailNotVerified is returned when attempting to login before verifying email address.
+	ErrEmailNotVerified = apperror.New(http.StatusForbidden, "ERR_EMAIL_NOT_VERIFIED", "email address has not been verified, please verify your email first")
+
+	// ErrInvalidVerificationCode is returned when verification code or token is invalid.
+	ErrInvalidVerificationCode = apperror.New(http.StatusBadRequest, "ERR_INVALID_VERIFICATION_CODE", "verification code or token is invalid or has expired")
+
+	// ErrResendCooldown is returned when attempting to resend verification email before cooldown expires.
+	ErrResendCooldown = apperror.New(http.StatusTooManyRequests, "ERR_RESEND_COOLDOWN", "please wait before requesting another verification email")
+
+	// ErrResendDailyLimit is returned when user exceeds maximum daily resend attempts.
+	ErrResendDailyLimit = apperror.New(http.StatusTooManyRequests, "ERR_RESEND_DAILY_LIMIT", "daily verification resend limit reached (maximum 3 times per 24 hours)")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

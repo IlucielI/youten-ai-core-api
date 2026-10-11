@@ -234,8 +234,8 @@ func TestControllers_Login_Success(t *testing.T) {
 	// 1. FindUserByEmail
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
 		WithArgs(email, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "full_name", "status", "created_at"}).
-			AddRow(userID, email, hashedPassword, "Alex Mercer", constants.UserStatusActive, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "full_name", "status", "email_verified", "created_at"}).
+			AddRow(userID, email, hashedPassword, "Alex Mercer", constants.UserStatusActive, true, now))
 
 	// 2. CreateAuthToken
 	mock.ExpectBegin()
@@ -1484,8 +1484,8 @@ func TestControllers_Login_WithAnonTokenHeader(t *testing.T) {
 	// 1. User lookup
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
 		WithArgs(email, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "role_id", "created_at"}).
-			AddRow(userID, email, hashedPassword, constants.UserStatusActive, roleID, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "role_id", "email_verified", "created_at"}).
+			AddRow(userID, email, hashedPassword, constants.UserStatusActive, roleID, true, now))
 
 	// 2. User role lookup
 	roleRows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
@@ -1541,6 +1541,78 @@ func TestControllers_Login_WithAnonTokenHeader(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestControllers_VerifyEmail_InvalidJSON(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/verify-email", bytes.NewBufferString("{invalid-json"))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.VerifyEmail(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_VerifyEmail_ValidationError(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	reqPayload := dtos.VerifyEmailRequest{}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/verify-email", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.VerifyEmail(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_ResendVerificationEmail_InvalidJSON(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/verify-email/resend", bytes.NewBufferString("{bad-json"))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ResendVerificationEmail(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestControllers_ResendVerificationEmail_ValidationError(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	reqPayload := dtos.ResendVerificationRequest{
+		Email: "invalid-email-format",
+	}
+	body, _ := json.Marshal(reqPayload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/verify-email/resend", bytes.NewBuffer(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.ResendVerificationEmail(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d. Body: %s", w.Code, w.Body.String())
 	}
 }
 

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"code-base-golang/internal/config"
@@ -29,6 +30,9 @@ type Service struct {
 	mediaFetcher       MediaFetcher
 	sseHub             sse.Hub
 	botProviders       map[string]MeetingBotProvider
+	resendMu          sync.Mutex
+	resendCooldowns   map[string]time.Time
+	resendDailyCounts map[string]int
 }
 
 // New creates a new unified service container.
@@ -38,12 +42,14 @@ func New(cfg config.Config, repo *repositories.Repositories, storage FileStorage
 		pub = publisher[0]
 	}
 	return &Service{
-		cfg:          cfg,
-		storage:      storage,
-		repo:         repo,
-		publisher:    pub,
-		sseHub:       sse.NewHub(),
-		botProviders: make(map[string]MeetingBotProvider),
+		cfg:               cfg,
+		storage:           storage,
+		repo:              repo,
+		publisher:         pub,
+		sseHub:            sse.NewHub(),
+		botProviders:      make(map[string]MeetingBotProvider),
+		resendCooldowns:   make(map[string]time.Time),
+		resendDailyCounts: make(map[string]int),
 	}
 }
 

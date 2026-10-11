@@ -161,6 +161,48 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /v1/auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify Email Address
+      description: Verifies user email using a 6-digit OTP code or magic link token and issues an active session token pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        '200':
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /v1/auth/verify-email/resend:
+    post:
+      tags: [Auth]
+      summary: Resend Verification Email
+      description: Resends a fresh 6-digit OTP code and magic link with rate limiting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+      responses:
+        '200':
+          description: Verification email resent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /v1/auth/login:
     post:
       tags: [Auth]
@@ -1958,6 +2000,32 @@ components:
           type: string
           description: Optional anonymous session token to auto-claim guest recordings
           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    VerifyEmailRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 6-digit OTP verification code
+          example: "123456"
+        token:
+          type: string
+          description: 32-byte hex magic link token
+          example: 4a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b
+        email:
+          type: string
+          format: email
+          description: Required when verifying via 6-digit OTP code
+          example: user@example.com
+
+    ResendVerificationRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
 
     LoginRequest:
       type: object

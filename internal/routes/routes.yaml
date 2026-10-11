@@ -31,6 +31,16 @@ routes:
     path: /v1/auth/register
     handler: Register
 
+  # Confirm email verification using a 6-digit OTP code or magic link token.
+  - method: POST
+    path: /v1/auth/verify-email
+    handler: VerifyEmail
+
+  # Resend email verification code and magic link with rate limiting.
+  - method: POST
+    path: /v1/auth/verify-email/resend
+    handler: ResendVerificationEmail
+
   # Authenticate and issue an access + refresh token pair.
   - method: POST
     path: /v1/auth/login

@@ -156,4 +156,19 @@ func (r *Repositories) ListUsers(ctx context.Context, q ListUsersQuery) ([]model
 	return users, total, nil
 }
 
-
+// MarkEmailVerified updates user email_verified to true and sets status to active.
+func (r *Repositories) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
+	res := r.db.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]interface{}{
+			"email_verified": true,
+			"status":         models.UserStatusActive,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}

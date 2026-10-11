@@ -439,3 +439,114 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyEmailRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.VerifyEmailRequest
+		wantErr bool
+	}{
+		{
+			name: "valid with token only",
+			req: dtos.VerifyEmailRequest{
+				Token: "abcdef1234567890abcdef1234567890",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid with email and 6-digit code",
+			req: dtos.VerifyEmailRequest{
+				Email: "test@example.com",
+				Code:  "123456",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing both token and code",
+			req: dtos.VerifyEmailRequest{
+				Email: "test@example.com",
+			},
+			wantErr: true,
+		},
+		{
+			name: "code provided but missing email",
+			req: dtos.VerifyEmailRequest{
+				Code: "123456",
+			},
+			wantErr: true,
+		},
+		{
+			name: "code provided with invalid email format",
+			req: dtos.VerifyEmailRequest{
+				Email: "not-an-email",
+				Code:  "123456",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid code format - less than 6 digits",
+			req: dtos.VerifyEmailRequest{
+				Email: "test@example.com",
+				Code:  "12345",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid code format - letters included",
+			req: dtos.VerifyEmailRequest{
+				Email: "test@example.com",
+				Code:  "12345a",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validations.ValidateVerifyEmailRequest(&tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("VerifyEmailRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResendVerificationRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     dtos.ResendVerificationRequest
+		wantErr bool
+	}{
+		{
+			name: "valid email",
+			req: dtos.ResendVerificationRequest{
+				Email: "user@example.com",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing email",
+			req: dtos.ResendVerificationRequest{
+				Email: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid email format",
+			req: dtos.ResendVerificationRequest{
+				Email: "not-an-email",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validations.ValidateResendVerificationRequest(&tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ResendVerificationRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+

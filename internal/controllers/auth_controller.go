@@ -250,3 +250,46 @@ func (c *Controllers) AnonToken(ctx *gin.Context) {
 	c.respondOK(ctx, "Anonymous token issued successfully", tokenResp)
 }
 
+// VerifyEmail handles email verification request via 6-digit OTP code or magic link token.
+func (c *Controllers) VerifyEmail(ctx *gin.Context) {
+	var req dtos.VerifyEmailRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateVerifyEmailRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	authResp, err := c.svc.VerifyEmail(ctx.Request.Context(), &req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "Email verified successfully", authResp)
+}
+
+// ResendVerificationEmail sends a fresh verification code and magic link.
+func (c *Controllers) ResendVerificationEmail(ctx *gin.Context) {
+	var req dtos.ResendVerificationRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateResendVerificationRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	if err := c.svc.ResendVerificationEmail(ctx.Request.Context(), &req); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondEmpty(ctx, "Verification email sent successfully")
+}
+

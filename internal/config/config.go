@@ -12,6 +12,7 @@ import (
 type Config struct {
 	AppName  string
 	AppEnv   string
+	AppURL   string
 	HTTPPort string
 	Version  string
 	GitHash  string
@@ -133,6 +134,7 @@ func Load() Config {
 	return Config{
 		AppName:  getEnv("APP_NAME", "code-base-golang"),
 		AppEnv:   getEnv("APP_ENV", "development"),
+		AppURL:   getEnv("APP_URL", "http://localhost:3000"),
 		HTTPPort: getEnv("HTTP_PORT", "8080"),
 		Version:  getEnv("APP_VERSION", "0.1.0"),
 		GitHash:  getEnv("GIT_HASH", "dev"),

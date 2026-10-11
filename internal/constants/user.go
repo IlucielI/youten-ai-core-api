@@ -4,6 +4,7 @@ const (
 	// User status definitions
 	UserStatusActive    = "active"
 	UserStatusSuspended = "suspended"
+	UserStatusPending   = "pending"
 
 	// Default daily quota allocations
 	DefaultUserDailyQuota  = 5
@@ -14,8 +15,10 @@ const (
 type AuthTokenType string
 
 const (
-	AuthTokenTypeRefresh AuthTokenType = "refresh"
-	AuthTokenTypeReset   AuthTokenType = "reset_password"
+	AuthTokenTypeRefresh           AuthTokenType = "refresh"
+	AuthTokenTypeReset             AuthTokenType = "reset_password"
+	AuthTokenTypeEmailVerification AuthTokenType = "email_verification"
+	AuthTokenTypeEmailVerificationCode AuthTokenType = "email_verification_code"
 )
 
 // JWTTokenType defines token types embedded in JWT claims.

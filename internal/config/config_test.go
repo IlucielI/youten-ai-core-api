@@ -16,6 +16,9 @@ func TestConfig_LoadDefaults(t *testing.T) {
 	if cfg.AppEnv != "development" {
 		t.Errorf("expected AppEnv 'development', got %q", cfg.AppEnv)
 	}
+	if cfg.AppURL != "http://localhost:3000" {
+		t.Errorf("expected AppURL 'http://localhost:3000', got %q", cfg.AppURL)
+	}
 	if cfg.HTTPPort != "8080" {
 		t.Errorf("expected HTTPPort '8080', got %q", cfg.HTTPPort)
 	}

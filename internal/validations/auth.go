@@ -147,3 +147,51 @@ func ValidateResetPasswordRequest(r *dtos.ResetPasswordRequest) error {
 		),
 	)
 }
+
+var sixDigitCodeRegex = regexp.MustCompile(`^[0-9]{6}$`)
+
+// ValidateVerifyEmailRequest validates email verification requests by OTP code or magic link token.
+func ValidateVerifyEmailRequest(r *dtos.VerifyEmailRequest) error {
+	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
+	r.Code = strings.TrimSpace(r.Code)
+	r.Token = strings.TrimSpace(r.Token)
+
+	if r.Token == "" && r.Code == "" {
+		return validation.Errors{
+			"code": validation.NewError("validation_required", "either verification code or token is required"),
+		}
+	}
+
+	if r.Code != "" {
+		if r.Email == "" {
+			return validation.Errors{
+				"email": validation.NewError("validation_required", "email is required when verifying with code"),
+			}
+		}
+		if err := is.EmailFormat.Validate(r.Email); err != nil {
+			return validation.Errors{
+				"email": validation.NewError("validation_is_email", "invalid email format"),
+			}
+		}
+		if !sixDigitCodeRegex.MatchString(r.Code) {
+			return validation.Errors{
+				"code": validation.NewError("validation_format", "verification code must be exactly 6 digits"),
+			}
+		}
+	}
+
+	return nil
+}
+
+// ValidateResendVerificationRequest validates payload for resending verification email.
+func ValidateResendVerificationRequest(r *dtos.ResendVerificationRequest) error {
+	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Email,
+			validation.Required.Error("email is required"),
+			is.EmailFormat.Error("invalid email format"),
+		),
+	)
+}
+

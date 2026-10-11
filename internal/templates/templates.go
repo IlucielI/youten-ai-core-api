@@ -155,6 +155,15 @@ func DefaultDiarizeSystemPrompt() (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
+// DefaultSpeakerRosterSystemPrompt returns the system prompt for discovering the global speaker roster.
+func DefaultSpeakerRosterSystemPrompt() (string, error) {
+	var buf bytes.Buffer
+	if err := parsedTemplates.ExecuteTemplate(&buf, "speaker_roster_system.tmpl", nil); err != nil {
+		return "", fmt.Errorf("execute speaker_roster_system.tmpl: %w", err)
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
 // RenderWorkspaceRAGUserPrompt formats query and cross-meeting retrieved chunks into user prompt.
 func RenderWorkspaceRAGUserPrompt(query string, matches []WorkspaceChunkView) (string, error) {
 	var views []WorkspaceChunkView

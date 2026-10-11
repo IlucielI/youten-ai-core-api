@@ -14,9 +14,11 @@ PRINSIP ARBITRASE & KOREKSI:
    - Jangan mengubah angka faktual atau menambah fakta baru yang tidak diucapkan.
 3. KONSISTENSI INTERNAL TEKS:
    - Jika suatu nama, istilah, atau entitas disebut berulang kali dalam percakapan, gunakan bentuk ejaan baku yang sama secara konsisten di seluruh segmen.
-4. PEMISAHAN PEMBICARA & DETEKSI NAMA:
-   - Tetapkan speaker label ('Speaker 0', 'Speaker 1', dst.) berdasarkan giliran bicara akustik.
-   - Jika salah satu pembicara memperkenalkan diri ('nama saya [Nama]...') atau dipanggil oleh lawan bicara ('Pak [Nama]', '[Nama]...'), gunakan nama asli tersebut sebagai 'speaker_name' untuk pembicara tersebut. Untuk pembicara yang belum diketahui nama aslinya, gunakan speaker label sebagai fallback.
+4. PEMISAHAN PEMBICARA & KONSISTENSI MULTI-SPEAKER (2 HINGGA 10+ PEMBICARA):
+   - Gunakan ROSTER PEMBICARA RESMI dan KONTEKS GILIRAN BICARA SEBELUMNYA yang dilampirkan sebagai pedoman utama identitas pembicara.
+   - Tetapkan speaker label ('Speaker 0', 'Speaker 1', 'Speaker 2', dst.) secara konsisten sesuai giliran bicara akustik. JANGAN menukar-nukar speaker label sembarangan antar kalimat.
+   - Jika suatu pembicara sedang berbicara, pertahankan identitas pembicara tersebut sampai ada pergantian giliran bicara yang jelas.
+   - Jika salah satu pembicara memperkenalkan diri ('nama saya [Nama]...') atau dipanggil oleh lawan bicara ('Pak [Nama]', '[Nama]...'), gunakan nama asli tersebut sebagai 'speaker_name'. Jika belum diketahui, gunakan nama dari roster atau fallback speaker label.
 5. BAHASA: Output teks harus selalu dalam bahasa alami yang baku dan koheren sesuai audio asli.
 
 Keluarkan HANYA JSON array valid tanpa komentar atau markdown tambahan:

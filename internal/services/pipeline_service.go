@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -958,20 +958,373 @@ func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 	return true
 }
 
-// diarizeAndCorrectSegmentsWithLLM uses the LLM to infer speaker turn-taking and correct obvious phonetic ASR slips across transcript segments.
-// If an acoustic speaker reference is provided (e.g. from Deepgram diarization), it runs concurrent chunk validation (up to 5 workers)
-// evaluating Deepgram dialogue foundation against Whisper timestamps and phonetic alternatives.
+// SpeakerRosterItem holds an identified speaker in the recording session.
+type SpeakerRosterItem struct {
+	Label       string `json:"label"`
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+	Speaker     string `json:"speaker,omitempty"`      // alias for label
+	SpeakerName string `json:"speaker_name,omitempty"` // alias for name
+}
+
+// Normalize standardizes field mappings for SpeakerRosterItem.
+func (s *SpeakerRosterItem) Normalize() {
+	if s.Label == "" && s.Speaker != "" {
+		s.Label = s.Speaker
+	}
+	if s.Name == "" && s.SpeakerName != "" {
+		s.Name = s.SpeakerName
+	}
+	if s.Label != "" {
+		parts := strings.Fields(s.Label)
+		if len(parts) >= 2 && strings.EqualFold(parts[0], "speaker") {
+			s.Label = "Speaker " + parts[1]
+		}
+	}
+	if s.Name == "" {
+		s.Name = s.Label
+	}
+	if s.Role == "" {
+		s.Role = "Speaker"
+	}
+}
+
+var speakerExtractRegex = regexp.MustCompile(`(?i)(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:`)
+
+// extractSpeakerLabelsFromText scans text for acoustic speaker patterns (e.g. "Speaker 0:", "Speaker 1:").
+func extractSpeakerLabelsFromText(text string) []string {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	matches := speakerExtractRegex.FindAllStringSubmatch(text, -1)
+	seen := make(map[string]bool)
+	var result []string
+	for _, m := range matches {
+		if len(m) > 1 {
+			lbl := strings.TrimSpace(m[1])
+			parts := strings.Fields(lbl)
+			if len(parts) >= 2 {
+				lbl = "Speaker " + parts[1]
+			}
+			if !seen[lbl] {
+				seen[lbl] = true
+				result = append(result, lbl)
+			}
+		}
+	}
+	return result
+}
+
+// defaultRosterFromSegments constructs a fallback roster when LLM roster discovery is unavailable.
+func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string) []SpeakerRosterItem {
+	acousticSpeakers := extractSpeakerLabelsFromText(diarizedRef)
+	if len(acousticSpeakers) > 0 {
+		var list []SpeakerRosterItem
+		for _, spk := range acousticSpeakers {
+			list = append(list, SpeakerRosterItem{
+				Label: spk,
+				Name:  spk,
+				Role:  "Speaker",
+			})
+		}
+		return list
+	}
+
+	seenLabels := make(map[string]bool)
+	var list []SpeakerRosterItem
+	for _, seg := range segments {
+		lbl := strings.TrimSpace(seg.SpeakerLabel)
+		if lbl != "" && !seenLabels[lbl] {
+			seenLabels[lbl] = true
+			list = append(list, SpeakerRosterItem{
+				Label: lbl,
+				Name:  lbl,
+				Role:  "Speaker",
+			})
+		}
+	}
+	if len(list) > 0 {
+		return list
+	}
+
+	return []SpeakerRosterItem{
+		{Label: "Speaker 0", Name: "Speaker 0", Role: "Speaker"},
+		{Label: "Speaker 1", Name: "Speaker 1", Role: "Speaker"},
+	}
+}
+
+// discoverSpeakerRoster analyzes audio foundations (acoustic reference or transcript turns)
+// to discover the global cast of participants (handles 2, 3, or 10+ speakers reliably).
+func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.SegmentResult, diarizedRef string) []SpeakerRosterItem {
+	if s.llm == nil {
+		return defaultRosterFromSegments(segments, diarizedRef)
+	}
+
+	systemPrompt, err := templates.DefaultSpeakerRosterSystemPrompt()
+	if err != nil {
+		systemPrompt = "Anda adalah AI Audio Diarization & Cast Profiler Specialist. " +
+			"Identifikasi seluruh pembicara aktif dan nama asli jika disebutkan. " +
+			"Keluarkan HANYA JSON array objek dengan keys 'label', 'name', dan 'role'."
+	}
+
+	var sb strings.Builder
+	if diarizedRef != "" {
+		sb.WriteString("REFERENSI AKUSTIK PEMBICARA:\n")
+		lines := strings.Split(diarizedRef, "\n")
+		maxIntroLines := 45
+		if len(lines) < maxIntroLines {
+			maxIntroLines = len(lines)
+		}
+		for i := 0; i < maxIntroLines; i++ {
+			if strings.TrimSpace(lines[i]) != "" {
+				sb.WriteString(lines[i] + "\n")
+			}
+		}
+		if len(lines) > 90 {
+			sb.WriteString("\n... [SAMPEL DIALOG PERTENGAHAN] ...\n")
+			mid := len(lines) / 2
+			for i := mid; i < mid+25 && i < len(lines); i++ {
+				if strings.TrimSpace(lines[i]) != "" {
+					sb.WriteString(lines[i] + "\n")
+				}
+			}
+		}
+	} else if len(segments) > 0 {
+		sb.WriteString("SAMPEL SEGMEN TRANSKRIP:\n")
+		sampleCount := 25
+		if len(segments) < sampleCount {
+			sampleCount = len(segments)
+		}
+		for i := 0; i < sampleCount; i++ {
+			sb.WriteString(fmt.Sprintf("%d: %s\n", i, segments[i].Text))
+		}
+	}
+
+	if sb.Len() == 0 {
+		return defaultRosterFromSegments(segments, diarizedRef)
+	}
+
+	temp := 0.0
+	chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
+		{Role: "user", Content: sb.String()},
+	}, dtos.ChatOptions{Temperature: &temp})
+	if err != nil {
+		log.Printf("[PIPELINE WARN] speaker roster discovery failed: %v, using default roster", err)
+		return defaultRosterFromSegments(segments, diarizedRef)
+	}
+
+	cleanJSON := strings.TrimSpace(chatRes.Content)
+	if idx := strings.Index(cleanJSON, "["); idx != -1 {
+		cleanJSON = cleanJSON[idx:]
+	}
+	if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
+		cleanJSON = cleanJSON[:idx+1]
+	}
+
+	var items []SpeakerRosterItem
+	if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
+		return defaultRosterFromSegments(segments, diarizedRef)
+	}
+
+	rosterMap := make(map[string]SpeakerRosterItem)
+	for i := range items {
+		items[i].Normalize()
+		if items[i].Label != "" {
+			rosterMap[items[i].Label] = items[i]
+		}
+	}
+
+	// Guarantee acoustic reference speakers are retained in roster
+	acousticSpeakers := extractSpeakerLabelsFromText(diarizedRef)
+	for _, spk := range acousticSpeakers {
+		if _, exists := rosterMap[spk]; !exists {
+			item := SpeakerRosterItem{
+				Label: spk,
+				Name:  spk,
+				Role:  "Participant",
+			}
+			rosterMap[spk] = item
+			items = append(items, item)
+		}
+	}
+
+	if len(items) == 0 {
+		return defaultRosterFromSegments(segments, diarizedRef)
+	}
+	return items
+}
+
+// sliceAcousticReference extracts the most relevant portion of the diarized acoustic reference
+// for a given time window [startTime, endTime] across the audio.
+// If the reference is empty or short (<= 8000 chars), it returns the full reference.
+// Otherwise, it computes a proportional slice with a generous context buffer (12%)
+// aligned to line boundaries, preventing reference truncation for long recordings (e.g. 50+ minutes).
+func sliceAcousticReference(ref string, startTime, endTime, totalDuration float64) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || len(ref) <= 8000 {
+		return ref
+	}
+
+	if totalDuration <= 0 {
+		if len(ref) > 8000 {
+			return ref[:8000]
+		}
+		return ref
+	}
+
+	fracStart := (startTime / totalDuration) - 0.12
+	if fracStart < 0 {
+		fracStart = 0
+	}
+	fracEnd := (endTime / totalDuration) + 0.12
+	if fracEnd > 1.0 {
+		fracEnd = 1.0
+	}
+
+	refLen := len(ref)
+	byteStart := int(fracStart * float64(refLen))
+	byteEnd := int(fracEnd * float64(refLen))
+
+	// Snap byteStart to next line break
+	if byteStart > 0 && byteStart < refLen {
+		if idx := strings.Index(ref[byteStart:], "\n"); idx != -1 && byteStart+idx < refLen {
+			byteStart += idx + 1
+		}
+	}
+
+	// Snap byteEnd to previous line break
+	if byteEnd < refLen && byteEnd > byteStart {
+		if idx := strings.LastIndex(ref[:byteEnd], "\n"); idx != -1 && idx > byteStart {
+			byteEnd = idx
+		}
+	}
+
+	if byteEnd <= byteStart {
+		byteStart = 0
+		if byteEnd = 8000; byteEnd > refLen {
+			byteEnd = refLen
+		}
+	}
+
+	sliced := strings.TrimSpace(ref[byteStart:byteEnd])
+	if len(sliced) > 8000 {
+		sliced = sliced[:8000]
+	}
+	return sliced
+}
+
+// pruneGhostSpeakers filters false-positive outlier speaker spikes (e.g. noise/laughter < 1.2% total words,
+// <= 3 segments) and reassigns them to adjacent primary speakers while preserving legitimate multi-speaker turns (up to 10+ speakers).
+func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]SpeakerRosterItem) []dtos.SegmentResult {
+	if len(segments) == 0 {
+		return segments
+	}
+
+	type spkStat struct {
+		words    int
+		duration float64
+		count    int
+	}
+	stats := make(map[string]*spkStat)
+	grandTotalWords := 0
+
+	for _, seg := range segments {
+		lbl := strings.TrimSpace(seg.SpeakerLabel)
+		if lbl == "" {
+			lbl = constants.DefaultSpeakerLabel
+		}
+		st, exists := stats[lbl]
+		if !exists {
+			st = &spkStat{}
+			stats[lbl] = st
+		}
+		wCount := len(strings.Fields(seg.Text))
+		st.words += wCount
+		st.duration += (seg.End - seg.Start)
+		st.count++
+		grandTotalWords += wCount
+	}
+
+	// Ghost candidate detection: only applied when > 2 distinct speakers exist and total words >= 60
+	ghosts := make(map[string]bool)
+	if len(stats) > 2 && grandTotalWords >= 60 {
+		for lbl, st := range stats {
+			name := ""
+			if item, ok := rosterMap[lbl]; ok {
+				name = item.Name
+			}
+			isGeneric := isGenericSpeakerLabel(name)
+
+			pct := float64(st.words) / float64(grandTotalWords)
+			// Outlier noise spike: generic placeholder, very low word count, and at most 3 isolated segments
+			if isGeneric && (st.words < 40 || (st.words < 120 && pct < 0.015)) && st.count <= 3 {
+				ghosts[lbl] = true
+				log.Printf("[PIPELINE INFO] Pruning ghost speaker %s (%d words, %.2f%%, %d segments)", lbl, st.words, pct*100, st.count)
+			}
+		}
+	}
+
+	if len(ghosts) > 0 {
+		for i := range segments {
+			lbl := strings.TrimSpace(segments[i].SpeakerLabel)
+			if ghosts[lbl] {
+				targetLabel := ""
+				targetName := ""
+				if i > 0 && i < len(segments)-1 && segments[i-1].SpeakerLabel == segments[i+1].SpeakerLabel && !ghosts[segments[i-1].SpeakerLabel] {
+					targetLabel = segments[i-1].SpeakerLabel
+					targetName = segments[i-1].SpeakerName
+				} else if i > 0 && !ghosts[segments[i-1].SpeakerLabel] {
+					targetLabel = segments[i-1].SpeakerLabel
+					targetName = segments[i-1].SpeakerName
+				} else if i < len(segments)-1 && !ghosts[segments[i+1].SpeakerLabel] {
+					targetLabel = segments[i+1].SpeakerLabel
+					targetName = segments[i+1].SpeakerName
+				}
+
+				if targetLabel != "" {
+					segments[i].SpeakerLabel = targetLabel
+					segments[i].SpeakerName = targetName
+				}
+			}
+		}
+	}
+
+	// Canonical name propagation from rosterMap to all segments
+	for i := range segments {
+		lbl := strings.TrimSpace(segments[i].SpeakerLabel)
+		if item, ok := rosterMap[lbl]; ok && !isGenericSpeakerLabel(item.Name) {
+			segments[i].SpeakerName = item.Name
+		} else if isGenericSpeakerLabel(segments[i].SpeakerName) {
+			if lbl != "" {
+				segments[i].SpeakerName = lbl
+			} else {
+				segments[i].SpeakerName = constants.DefaultSpeakerLabel
+			}
+		}
+	}
+
+	return segments
+}
+
+// diarizeAndCorrectSegmentsWithLLM uses a 3-pass architecture:
+// Pass 1: Global Speaker Roster Discovery across acoustic and textual dialogue.
+// Pass 2: Sequential sliding-window chunk consensus with locked roster and dynamic acoustic slicing.
+// Pass 3: Post-processing ghost speaker pruning and canonical name propagation.
 func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult, diarizedRef ...string) {
 	if len(segments) == 0 || s.llm == nil {
 		return
 	}
 
-	ref := ""
+	rawRef := ""
 	if len(diarizedRef) > 0 {
-		ref = strings.TrimSpace(diarizedRef[0])
-		if len(ref) > 15000 {
-			ref = ref[:15000]
-		}
+		rawRef = strings.TrimSpace(diarizedRef[0])
+	}
+
+	// Pass 1: Global Speaker Roster Discovery
+	rosterList := s.discoverSpeakerRoster(ctx, segments, rawRef)
+	rosterMap := make(map[string]SpeakerRosterItem)
+	for _, r := range rosterList {
+		rosterMap[r.Label] = r
 	}
 
 	systemPrompt, err := templates.DefaultDiarizeSystemPrompt()
@@ -981,98 +1334,102 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			"Keluarkan JSON array objek dengan keys 'index', 'speaker', 'speaker_name', dan 'text'."
 	}
 
-	const chunkSize = 15
-	const maxConcurrency = 5
-
-	type chunkTask struct {
-		startIdx int
-		endIdx   int
+	const chunkSize = 25
+	totalDuration := 0.0
+	if len(segments) > 0 {
+		totalDuration = segments[len(segments)-1].End
 	}
 
-	var tasks []chunkTask
+	// Pass 2: Sequential chained chunk processing with sliding context
+	var previousContext string
+
 	for i := 0; i < len(segments); i += chunkSize {
 		end := i + chunkSize
 		if end > len(segments) {
 			end = len(segments)
 		}
-		tasks = append(tasks, chunkTask{startIdx: i, endIdx: end})
-	}
 
-	sem := make(chan struct{}, maxConcurrency)
-	var wg sync.WaitGroup
+		startTime := segments[i].Start
+		endTime := segments[end-1].End
+		acousticSlice := sliceAcousticReference(rawRef, startTime, endTime, totalDuration)
 
-	for _, task := range tasks {
-		wg.Add(1)
-		go func(t chunkTask) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			var sb strings.Builder
-			if ref != "" {
-				sb.WriteString("REFERENSI AKUSTIK DEEPGRAM:\n")
-				sb.WriteString(ref)
-				sb.WriteString("\n\nSEGMEN NOMOR WHISPER:\n")
+		var sb strings.Builder
+		sb.WriteString("ROSTER PEMBICARA RESMI:\n")
+		for _, r := range rosterList {
+			if r.Name != "" && !isGenericSpeakerLabel(r.Name) {
+				sb.WriteString(fmt.Sprintf("- %s: %s (%s)\n", r.Label, r.Name, r.Role))
+			} else {
+				sb.WriteString(fmt.Sprintf("- %s\n", r.Label))
 			}
+		}
 
-			hasContent := false
-			for idx := t.startIdx; idx < t.endIdx; idx++ {
-				txt := strings.TrimSpace(segments[idx].Text)
-				if txt != "" {
-					hasContent = true
-					if segments[idx].Start > 0 || segments[idx].End > 0 {
-						sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, segments[idx].Start, segments[idx].End, txt))
-					} else {
-						sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
+		if previousContext != "" {
+			sb.WriteString("\nKONTEKS GILIRAN BICARA SEBELUMNYA:\n")
+			sb.WriteString(previousContext)
+		}
+
+		if acousticSlice != "" {
+			sb.WriteString("\nREFERENSI AKUSTIK DEEPGRAM (RENTANG WAKTU INI):\n")
+			sb.WriteString(acousticSlice)
+		}
+
+		sb.WriteString("\n\nSEGMEN NOMOR WHISPER (TENTUKAN SPEAKER & KOREKSI FONETIK):\n")
+		hasContent := false
+		for idx := i; idx < end; idx++ {
+			txt := strings.TrimSpace(segments[idx].Text)
+			if txt != "" {
+				hasContent = true
+				if segments[idx].Start > 0 || segments[idx].End > 0 {
+					sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, segments[idx].Start, segments[idx].End, txt))
+				} else {
+					sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
+				}
+			}
+		}
+
+		if !hasContent {
+			continue
+		}
+
+		temp := 0.0
+		chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
+			{Role: "user", Content: sb.String()},
+		}, dtos.ChatOptions{Temperature: &temp})
+		if err != nil {
+			log.Printf("[PIPELINE WARN] llm consensus chunk [%d:%d] failed: %v", i, end, err)
+			continue
+		}
+
+		cleanJSON := strings.TrimSpace(chatRes.Content)
+		if idx := strings.Index(cleanJSON, "["); idx != -1 {
+			cleanJSON = cleanJSON[idx:]
+		}
+		if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
+			cleanJSON = cleanJSON[:idx+1]
+		}
+
+		type correctedItem struct {
+			Index       int    `json:"index"`
+			Speaker     string `json:"speaker"`
+			SpeakerName string `json:"speaker_name"`
+			Text        string `json:"text"`
+		}
+
+		var items []correctedItem
+		if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
+			var labelMap map[string]string
+			if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
+				for idx := i; idx < end; idx++ {
+					key := strconv.Itoa(idx)
+					if val, ok := labelMap[key]; ok && strings.TrimSpace(val) != "" {
+						segments[idx].SpeakerLabel = strings.TrimSpace(val)
+						segments[idx].SpeakerName = strings.TrimSpace(val)
 					}
 				}
 			}
-
-			if !hasContent {
-				return
-			}
-
-			temp := 0.0
-			chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
-				{Role: "user", Content: sb.String()},
-			}, dtos.ChatOptions{Temperature: &temp})
-			if err != nil {
-				log.Printf("[PIPELINE WARN] llm consensus chunk [%d:%d] failed: %v", t.startIdx, t.endIdx, err)
-				return
-			}
-
-			cleanJSON := strings.TrimSpace(chatRes.Content)
-			if idx := strings.Index(cleanJSON, "["); idx != -1 {
-				cleanJSON = cleanJSON[idx:]
-			}
-			if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
-				cleanJSON = cleanJSON[:idx+1]
-			}
-
-			type correctedItem struct {
-				Index       int    `json:"index"`
-				Speaker     string `json:"speaker"`
-				SpeakerName string `json:"speaker_name"`
-				Text        string `json:"text"`
-			}
-
-			var items []correctedItem
-			if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
-				var labelMap map[string]string
-				if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
-					for idx := t.startIdx; idx < t.endIdx; idx++ {
-						key := strconv.Itoa(idx)
-						if val, ok := labelMap[key]; ok && strings.TrimSpace(val) != "" {
-							segments[idx].SpeakerLabel = strings.TrimSpace(val)
-							segments[idx].SpeakerName = strings.TrimSpace(val)
-						}
-					}
-				}
-				return
-			}
-
+		} else {
 			for _, it := range items {
-				if it.Index >= t.startIdx && it.Index < t.endIdx {
+				if it.Index >= i && it.Index < end {
 					if strings.TrimSpace(it.Speaker) != "" {
 						segments[it.Index].SpeakerLabel = strings.TrimSpace(it.Speaker)
 					}
@@ -1084,39 +1441,39 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 					if strings.TrimSpace(it.Text) != "" {
 						segments[it.Index].Text = strings.TrimSpace(it.Text)
 					}
+					// If LLM discovered a concrete real name during this chunk, record into rosterMap
+					if !isGenericSpeakerLabel(speakerName) && segments[it.Index].SpeakerLabel != "" {
+						curr := rosterMap[segments[it.Index].SpeakerLabel]
+						curr.Label = segments[it.Index].SpeakerLabel
+						curr.Name = speakerName
+						rosterMap[segments[it.Index].SpeakerLabel] = curr
+					}
 				}
 			}
-		}(task)
-	}
+		}
 
-	wg.Wait()
-
-	// Canonical name propagation:
-	// When a speaker introduces themselves or is addressed in any turn (e.g. "Putri"),
-	// propagate that discovered real name across ALL turns belonging to that SpeakerLabel.
-	discoveredNames := make(map[string]string)
-	for _, seg := range segments {
-		lbl := strings.TrimSpace(seg.SpeakerLabel)
-		name := strings.TrimSpace(seg.SpeakerName)
-		if lbl != "" && !isGenericSpeakerLabel(name) {
-			if _, exists := discoveredNames[lbl]; !exists {
-				discoveredNames[lbl] = name
+		// Update sliding window context for next chunk
+		var ctxSb strings.Builder
+		count := 0
+		for idx := end - 1; idx >= i && count < 3; idx-- {
+			if strings.TrimSpace(segments[idx].Text) != "" {
+				spk := segments[idx].SpeakerLabel
+				if spk == "" {
+					spk = constants.DefaultSpeakerLabel
+				}
+				name := segments[idx].SpeakerName
+				if name == "" {
+					name = spk
+				}
+				ctxSb.WriteString(fmt.Sprintf("- Segmen %d [%s / %s]: %s\n", idx, spk, name, segments[idx].Text))
+				count++
 			}
 		}
+		previousContext = ctxSb.String()
 	}
 
-	for i := range segments {
-		lbl := strings.TrimSpace(segments[i].SpeakerLabel)
-		if realName, ok := discoveredNames[lbl]; ok {
-			segments[i].SpeakerName = realName
-		} else if isGenericSpeakerLabel(segments[i].SpeakerName) {
-			if lbl != "" {
-				segments[i].SpeakerName = lbl
-			} else {
-				segments[i].SpeakerName = constants.DefaultSpeakerLabel
-			}
-		}
-	}
+	// Pass 3: Post-processing Ghost Speaker Pruning & Canonical Name Assignment
+	pruneGhostSpeakers(segments, rosterMap)
 }
 
 // isGenericSpeakerLabel returns true if the name is empty or a generic placeholder (e.g. "Speaker 0", "Pembicara 1").

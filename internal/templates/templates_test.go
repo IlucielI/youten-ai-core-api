@@ -169,6 +169,19 @@ func TestTemplates_DefaultDiarizeSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestTemplates_DefaultSpeakerRosterSystemPrompt(t *testing.T) {
+	prompt, err := templates.DefaultSpeakerRosterSystemPrompt()
+	if err != nil {
+		t.Fatalf("unexpected error rendering speaker roster prompt: %v", err)
+	}
+	if !strings.Contains(prompt, "Cast Profiler") {
+		t.Errorf("expected prompt to contain 'Cast Profiler', got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Speaker 0") {
+		t.Errorf("expected prompt to contain 'Speaker 0', got: %s", prompt)
+	}
+}
+
 func TestTemplates_DefaultPromptForTemplate(t *testing.T) {
 	tests := []struct {
 		category string

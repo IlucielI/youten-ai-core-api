@@ -454,8 +454,11 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
-		if lastErr == nil {
+		if lastErr == nil && structuredRes != nil {
 			break
+		}
+		if lastErr == nil && structuredRes == nil {
+			lastErr = errors.New("empty structured response from llm")
 		}
 		log.Printf("[PIPELINE WARN] recording %s: summarization attempt %d failed: %v", recording.ID.String(), attempt, lastErr)
 		if attempt < 3 {
@@ -471,6 +474,11 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 	if lastErr != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation failed: %v", lastErr))
 		return fmt.Errorf("llm generation failed: %w", lastErr)
+	}
+	if structuredRes == nil {
+		errMsg := "llm generated empty structured response"
+		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, errMsg)
+		return errors.New(errMsg)
 	}
 
 	// Deactivate older summaries for this recording

@@ -200,8 +200,11 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
-		if lastErr == nil {
+		if lastErr == nil && structuredRes != nil {
 			break
+		}
+		if lastErr == nil && structuredRes == nil {
+			lastErr = errors.New("empty structured response from llm")
 		}
 		log.Printf("[SUMMARY WARN] recording %s: summary regeneration attempt %d failed: %v", rec.ID.String(), attempt, lastErr)
 		if attempt < 3 {
@@ -214,6 +217,9 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	}
 	if lastErr != nil {
 		return nil, fmt.Errorf("llm generation failed: %w", lastErr)
+	}
+	if structuredRes == nil {
+		return nil, errors.New("llm returned nil structured response")
 	}
 
 	cleanedJSON := jsonutil.CleanMarkdownJSON(structuredRes.RawJSON)

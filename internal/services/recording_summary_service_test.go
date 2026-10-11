@@ -385,6 +385,46 @@ func TestService_RegenerateSummary_MalformedLLMJSON(t *testing.T) {
 	}
 }
 
+func TestService_RegenerateSummary_NilStructuredResponse(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	ctx := context.Background()
+
+	mockLLM := llm.NewMock()
+	mockLLM.GenerateStructuredFunc = func(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+		return nil, nil // Nil response and nil error
+	}
+	svc.SetLLM(mockLLM)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "status", "detected_language", "output_language", "selected_template"}).
+			AddRow(recID, guestToken, models.RecordingStatusCompleted, "en", "en", "GENERAL"))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_name", "text", "start_time", "end_time"}).
+			AddRow(uuid.New(), recID, "Speaker 1", "Hello world", 0.0, 5.0))
+
+	mock.ExpectQuery(`SELECT \* FROM "templates" WHERE category_key = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs("GENERAL", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "prompt", "output_schema"}).
+			AddRow(uuid.New(), "GENERAL", "Default summary prompt", "{}"))
+
+	_, err := svc.RegenerateSummary(ctx, recID, guestToken, dtos.RegenerateSummaryRequest{})
+	if err == nil {
+		t.Fatal("expected error when LLM returns nil response, got nil")
+	}
+	if !strings.Contains(err.Error(), "llm generation failed") {
+		t.Errorf("expected 'llm generation failed' error message, got: %v", err)
+	}
+}
+
 func TestService_RegenerateSummary_Success_Guest(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 	recID := uuid.New()

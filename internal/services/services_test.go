@@ -177,7 +177,8 @@ func (d *dummySTT) Transcribe(ctx context.Context, reader io.Reader, filename st
 }
 
 type dummyLLM struct {
-	chatResp string
+	chatResp         string
+	generateChatFunc func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error)
 }
 
 func (d *dummyLLM) GenerateStructured(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
@@ -185,6 +186,9 @@ func (d *dummyLLM) GenerateStructured(ctx context.Context, systemPrompt, userPro
 }
 
 func (d *dummyLLM) GenerateChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+	if d.generateChatFunc != nil {
+		return d.generateChatFunc(ctx, systemPrompt, messages, opts)
+	}
 	if d.chatResp != "" {
 		return &dtos.ChatResponse{Content: d.chatResp}, nil
 	}

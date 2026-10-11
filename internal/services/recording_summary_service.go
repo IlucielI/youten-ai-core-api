@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -194,9 +196,24 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		schema = templates.DefaultSchemaForTemplate(templateKey)
 	}
 
-	structuredRes, err := s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
-	if err != nil {
-		return nil, fmt.Errorf("llm generation failed: %w", err)
+	var structuredRes *dtos.StructuredResponse
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
+		if lastErr == nil {
+			break
+		}
+		log.Printf("[SUMMARY WARN] recording %s: summary regeneration attempt %d failed: %v", rec.ID.String(), attempt, lastErr)
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("llm generation failed: %w", lastErr)
 	}
 
 	cleanedJSON := jsonutil.CleanMarkdownJSON(structuredRes.RawJSON)

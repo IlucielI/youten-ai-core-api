@@ -1099,6 +1099,15 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 				}
 			}
 		}
+		if len(lines) > 180 {
+			sb.WriteString("\n... [SAMPEL DIALOG AKHIR] ...\n")
+			late := (len(lines) * 3) / 4
+			for i := late; i < late+20 && i < len(lines); i++ {
+				if strings.TrimSpace(lines[i]) != "" {
+					sb.WriteString(lines[i] + "\n")
+				}
+			}
+		}
 	} else if len(segments) > 0 {
 		sb.WriteString("SAMPEL SEGMEN TRANSKRIP:\n")
 		sampleCount := 25
@@ -1107,6 +1116,13 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 		}
 		for i := 0; i < sampleCount; i++ {
 			sb.WriteString(fmt.Sprintf("%d: %s\n", i, segments[i].Text))
+		}
+		if len(segments) > 60 {
+			sb.WriteString("\n... [SAMPEL PERTENGAHAN] ...\n")
+			mid := len(segments) / 2
+			for i := mid; i < mid+15 && i < len(segments); i++ {
+				sb.WriteString(fmt.Sprintf("%d: %s\n", i, segments[i].Text))
+			}
 		}
 	}
 
@@ -1266,10 +1282,10 @@ func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]Spea
 			isGeneric := isGenericSpeakerLabel(name)
 
 			pct := float64(st.words) / float64(grandTotalWords)
-			// Outlier noise spike: generic placeholder, very low word count, and at most 3 isolated segments
-			if isGeneric && (st.words < 40 || (st.words < 120 && pct < 0.015)) && st.count <= 3 {
+			// Outlier noise spike: generic placeholder, very low word count, and at most 3 isolated segments with short total duration
+			if isGeneric && (st.words < 20 || (st.words < 60 && st.duration < 5.0 && pct < 0.01)) && st.count <= 3 {
 				ghosts[lbl] = true
-				log.Printf("[PIPELINE INFO] Pruning ghost speaker %s (%d words, %.2f%%, %d segments)", lbl, st.words, pct*100, st.count)
+				log.Printf("[PIPELINE INFO] Pruning ghost speaker %s (%d words, %.2fs, %.2f%%, %d segments)", lbl, st.words, st.duration, pct*100, st.count)
 			}
 		}
 	}
@@ -1431,32 +1447,51 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
 				for idx := i; idx < end; idx++ {
 					key := strconv.Itoa(idx)
-					if val, ok := labelMap[key]; ok && strings.TrimSpace(val) != "" {
+					relKey := strconv.Itoa(idx - i)
+					val, ok := labelMap[key]
+					if !ok {
+						val, ok = labelMap[relKey]
+					}
+					if ok && strings.TrimSpace(val) != "" {
 						segments[idx].SpeakerLabel = strings.TrimSpace(val)
 						segments[idx].SpeakerName = strings.TrimSpace(val)
 					}
 				}
 			}
 		} else {
+			// Determine whether LLM returned absolute indices (i..end-1) or 0-based relative indices (0..chunkSize-1)
+			hasAbsoluteIndex := false
 			for _, it := range items {
 				if it.Index >= i && it.Index < end {
+					hasAbsoluteIndex = true
+					break
+				}
+			}
+
+			for _, it := range items {
+				targetIdx := it.Index
+				if !hasAbsoluteIndex && i > 0 && it.Index >= 0 && (i+it.Index) < end {
+					targetIdx = i + it.Index
+				}
+
+				if targetIdx >= i && targetIdx < end {
 					if strings.TrimSpace(it.Speaker) != "" {
-						segments[it.Index].SpeakerLabel = strings.TrimSpace(it.Speaker)
+						segments[targetIdx].SpeakerLabel = strings.TrimSpace(it.Speaker)
 					}
 					speakerName := strings.TrimSpace(it.SpeakerName)
 					if speakerName == "" {
-						speakerName = segments[it.Index].SpeakerLabel
+						speakerName = segments[targetIdx].SpeakerLabel
 					}
-					segments[it.Index].SpeakerName = speakerName
+					segments[targetIdx].SpeakerName = speakerName
 					if strings.TrimSpace(it.Text) != "" {
-						segments[it.Index].Text = strings.TrimSpace(it.Text)
+						segments[targetIdx].Text = strings.TrimSpace(it.Text)
 					}
 					// If LLM discovered a concrete real name during this chunk, record into rosterMap
-					if !isGenericSpeakerLabel(speakerName) && segments[it.Index].SpeakerLabel != "" {
-						curr := rosterMap[segments[it.Index].SpeakerLabel]
-						curr.Label = segments[it.Index].SpeakerLabel
+					if !isGenericSpeakerLabel(speakerName) && segments[targetIdx].SpeakerLabel != "" {
+						curr := rosterMap[segments[targetIdx].SpeakerLabel]
+						curr.Label = segments[targetIdx].SpeakerLabel
 						curr.Name = speakerName
-						rosterMap[segments[it.Index].SpeakerLabel] = curr
+						rosterMap[segments[targetIdx].SpeakerLabel] = curr
 					}
 				}
 			}

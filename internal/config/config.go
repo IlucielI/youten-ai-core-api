@@ -103,6 +103,7 @@ type Config struct {
 	LLMProvider           string
 	LLMBaseURL            string
 	LLMModel              string
+	LLMTimeout            time.Duration
 	STTModel              string
 	STTDiarizeModel       string
 	EmbeddingModel        string
@@ -225,6 +226,7 @@ func Load() Config {
 		LLMProvider:           getEnv("LLM_PROVIDER", "openai_compatible"),
 		LLMBaseURL:            getEnv("LLM_BASE_URL", "http://localhost:20128/v1"),
 		LLMModel:              getEnv("LLM_MODEL", "gpt-4o-mini"),
+		LLMTimeout:            getEnvDuration("LLM_TIMEOUT", 5*time.Minute),
 		STTModel:              getEnv("STT_MODEL", "whisper-1"),
 		STTDiarizeModel:       getEnv("STT_DIARIZE_MODEL", ""),
 		EmbeddingModel:        getEnv("EMBEDDING_MODEL", "cf/@cf/baai/bge-m3"),

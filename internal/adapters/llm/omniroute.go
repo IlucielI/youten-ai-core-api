@@ -37,7 +37,12 @@ func NewOmniRoute(cfg config.Config, customClient ...*http.Client) *OmniRouteLLM
 		model = "gpt-4o-mini"
 	}
 
-	client := &http.Client{Timeout: 3 * time.Minute}
+	timeout := cfg.LLMTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+
+	client := &http.Client{Timeout: timeout}
 	if len(customClient) > 0 && customClient[0] != nil {
 		client = customClient[0]
 	}

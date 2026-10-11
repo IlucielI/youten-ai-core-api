@@ -217,7 +217,11 @@ func TestSliceAcousticReference_ProportionalWindows(t *testing.T) {
 	// 1. Early chunk (minute 2 out of 50 minutes = 120s / 3000s)
 	earlySlice := sliceAcousticReference(refText, 60.0, 180.0, 3000.0)
 	if !strings.Contains(earlySlice, "Line 0") && !strings.Contains(earlySlice, "Line 1") {
-		t.Errorf("expected early slice to contain early lines, got: %s", earlySlice[:200])
+		msg := earlySlice
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		t.Errorf("expected early slice to contain early lines, got: %s", msg)
 	}
 
 	// 2. Late chunk (minute 48 out of 50 minutes = 2880s / 3000s)

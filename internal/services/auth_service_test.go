@@ -109,8 +109,11 @@ func TestService_Register_Success(t *testing.T) {
 	if resp.FullName != req.FullName {
 		t.Errorf("expected full_name %s, got %s", req.FullName, resp.FullName)
 	}
-	if resp.Status != constants.UserStatusActive {
-		t.Errorf("expected status %s, got %s", constants.UserStatusActive, resp.Status)
+	if resp.Status != constants.UserStatusPending {
+		t.Errorf("expected status %s, got %s", constants.UserStatusPending, resp.Status)
+	}
+	if resp.EmailVerified {
+		t.Errorf("expected EmailVerified false, got true")
 	}
 	if resp.DailyQuota != constants.DefaultUserDailyQuota {
 		t.Errorf("expected default quota %d, got %d", constants.DefaultUserDailyQuota, resp.DailyQuota)
@@ -200,8 +203,8 @@ func TestService_Login_Success(t *testing.T) {
 	// 1. Expect FindUserByEmail
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
 		WithArgs(email, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "full_name", "status", "created_at"}).
-			AddRow(userID, email, hashedPassword, "Login User", constants.UserStatusActive, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "full_name", "status", "email_verified", "created_at"}).
+			AddRow(userID, email, hashedPassword, "Login User", constants.UserStatusActive, true, now))
 
 	// 2. Expect CreateAuthToken
 	mock.ExpectBegin()
@@ -1834,8 +1837,8 @@ func TestService_Login_WithAnonToken_AutoClaim(t *testing.T) {
 	// 1. User lookup
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
 		WithArgs(email, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "role_id", "created_at"}).
-			AddRow(userID, email, hashedPassword, constants.UserStatusActive, roleID, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "password_hash", "status", "role_id", "email_verified", "created_at"}).
+			AddRow(userID, email, hashedPassword, constants.UserStatusActive, roleID, true, now))
 
 	// 2. User role lookup
 	roleRows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
@@ -1878,6 +1881,267 @@ func TestService_Login_WithAnonToken_AutoClaim(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_VerifyEmail_WithToken_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	token := "valid-hex-token-1234567890abcdef"
+	tokenHash := hasher.HashToken(token)
+	userID := uuid.New()
+	now := time.Now()
+	expiresAt := now.Add(24 * time.Hour)
+
+	// 1. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeEmailVerification, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at"}).
+			AddRow(uuid.New(), userID, constants.AuthTokenTypeEmailVerification, tokenHash, expiresAt))
+
+	// 2. FindUserByIDWithRole
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "email_verified", "created_at"}).
+			AddRow(userID, "test@example.com", "Test User", constants.UserStatusPending, false, now))
+
+	// 3. MarkEmailVerified
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "email_verified"=\$1,"status"=\$2,"updated_at"=\$3 WHERE \(id = \$4 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL`).
+		WithArgs(true, constants.UserStatusActive, sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. RevokeAllAuthTokensByUserID (verification token)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeEmailVerification).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 5. RevokeAllAuthTokensByUserID (verification code)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeEmailVerificationCode).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 6. CreateAuthToken (refresh token for session)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	req := &dtos.VerifyEmailRequest{
+		Token: token,
+	}
+
+	resp, err := svc.VerifyEmail(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error verifying email: %v", err)
+	}
+
+	if resp == nil || resp.AccessToken == "" {
+		t.Fatal("expected non-empty access token")
+	}
+	if !resp.User.EmailVerified {
+		t.Error("expected EmailVerified true")
+	}
+	if resp.User.Status != constants.UserStatusActive {
+		t.Errorf("expected status %s, got %s", constants.UserStatusActive, resp.User.Status)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_VerifyEmail_WithCode_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "code@example.com"
+	code := "123456"
+	codeHash := hasher.HashToken(email + ":" + code)
+	userID := uuid.New()
+	now := time.Now()
+	expiresAt := now.Add(24 * time.Hour)
+
+	// 1. FindUserByEmail
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "email_verified", "created_at"}).
+			AddRow(userID, email, "Code User", constants.UserStatusPending, false, now))
+
+	// 2. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(codeHash, constants.AuthTokenTypeEmailVerificationCode, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at"}).
+			AddRow(uuid.New(), userID, constants.AuthTokenTypeEmailVerificationCode, codeHash, expiresAt))
+
+	// 3. FindUserByIDWithRole
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "email_verified", "created_at"}).
+			AddRow(userID, email, "Code User", constants.UserStatusPending, false, now))
+
+	// 4. MarkEmailVerified
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "email_verified"=\$1,"status"=\$2,"updated_at"=\$3 WHERE \(id = \$4 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL`).
+		WithArgs(true, constants.UserStatusActive, sqlmock.AnyArg(), userID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 5. RevokeAllAuthTokensByUserID (verification token)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeEmailVerification).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 6. RevokeAllAuthTokensByUserID (verification code)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeEmailVerificationCode).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 7. CreateAuthToken (refresh token for session)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	req := &dtos.VerifyEmailRequest{
+		Email: email,
+		Code:  code,
+	}
+
+	resp, err := svc.VerifyEmail(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error verifying email with code: %v", err)
+	}
+
+	if resp == nil || resp.AccessToken == "" {
+		t.Fatal("expected non-empty access token")
+	}
+	if !resp.User.EmailVerified {
+		t.Error("expected EmailVerified true")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_VerifyEmail_InvalidCodeOrToken(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	// Empty request
+	_, err := svc.VerifyEmail(context.Background(), &dtos.VerifyEmailRequest{})
+	if !errors.Is(err, constants.ErrInvalidVerificationCode) {
+		t.Errorf("expected ErrInvalidVerificationCode, got %v", err)
+	}
+
+	// Non-existent token
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err = svc.VerifyEmail(context.Background(), &dtos.VerifyEmailRequest{Token: "bad-token"})
+	if !errors.Is(err, constants.ErrInvalidVerificationCode) {
+		t.Errorf("expected ErrInvalidVerificationCode, got %v", err)
+	}
+}
+
+func TestService_ResendVerificationEmail_Success(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	mailer := &mockMailer{}
+	svc.SetMailer(mailer)
+
+	email := "resend@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	// 1. FindUserByEmail
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "email_verified", "created_at"}).
+			AddRow(userID, email, "Resend User", constants.UserStatusPending, false, now))
+
+	// 2. RevokeAllAuthTokensByUserID (verification token)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeEmailVerification).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 3. RevokeAllAuthTokensByUserID (verification code)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens" SET "revoked_at"=\$1,"updated_at"=\$2 WHERE \(user_id = \$3 AND revoked_at IS NULL\) AND type = \$4`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), userID, constants.AuthTokenTypeEmailVerificationCode).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. CreateAuthToken (verification token)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	// 5. CreateAuthToken (verification code)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	req := &dtos.ResendVerificationRequest{
+		Email: email,
+	}
+
+	err := svc.ResendVerificationEmail(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error resending verification: %v", err)
+	}
+
+	if len(mailer.sent) != 1 {
+		t.Fatalf("expected 1 email sent, got %d", len(mailer.sent))
+	}
+	if mailer.sent[0].To[0] != email {
+		t.Errorf("expected email to %s, got %s", email, mailer.sent[0].To[0])
+	}
+
+	// Calling again immediately triggers cooldown rate limit
+	err2 := svc.ResendVerificationEmail(context.Background(), req)
+	if !errors.Is(err2, constants.ErrResendCooldown) {
+		t.Errorf("expected ErrResendCooldown, got %v", err2)
+	}
+}
+
+func TestService_ResendVerificationEmail_AlreadyVerified(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	email := "verified@example.com"
+	userID := uuid.New()
+	now := time.Now()
+
+	// User is already verified
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(email = \$1 AND deleted_at IS NULL\) AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(email, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "email_verified", "created_at"}).
+			AddRow(userID, email, "Verified User", constants.UserStatusActive, true, now))
+
+	req := &dtos.ResendVerificationRequest{
+		Email: email,
+	}
+
+	err := svc.ResendVerificationEmail(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error for already verified user: %v", err)
 	}
 }
 

@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -171,7 +170,7 @@ func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
 	return db
 }
 
-func (f RecordingFilter) pagination() (int, int, string) {
+func (f RecordingFilter) orderClause() string {
 	orderCol := "created_at"
 	switch f.SortBy {
 	case "title", "duration_seconds", "file_size_bytes", "created_at":
@@ -183,19 +182,7 @@ func (f RecordingFilter) pagination() (int, int, string) {
 		orderDir = "ASC"
 	}
 
-	limit := f.Limit
-	if limit <= 0 {
-		limit = 10
-	} else if limit > 100 {
-		limit = 100
-	}
-
-	offset := f.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	return limit, offset, fmt.Sprintf("%s %s", orderCol, orderDir)
+	return orderCol + " " + orderDir
 }
 
 // ListRecordingsWithFilter retrieves paginated recordings owned by a user matching criteria.
@@ -211,8 +198,7 @@ func (r *Repositories) ListRecordingsWithFilter(ctx context.Context, userID uuid
 		return nil, 0, err
 	}
 
-	limit, offset, orderClause := filter.pagination()
-	err := query.Order(orderClause).Limit(limit).Offset(offset).Find(&list).Error
+	err := query.Order(filter.orderClause()).Limit(filter.Limit).Offset(filter.Offset).Find(&list).Error
 	return list, total, err
 }
 

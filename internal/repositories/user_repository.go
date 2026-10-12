@@ -132,22 +132,6 @@ func (q ListUsersQuery) scope(db *gorm.DB) *gorm.DB {
 	return db
 }
 
-func (q ListUsersQuery) pagination() (int, int) {
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 20
-	} else if limit > 100 {
-		limit = 100
-	}
-
-	offset := q.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	return limit, offset
-}
-
 // ListUsers retrieves paginated registered users matching search query and status filter.
 func (r *Repositories) ListUsers(ctx context.Context, q ListUsersQuery) ([]models.User, int64, error) {
 	var users []models.User
@@ -161,8 +145,7 @@ func (r *Repositories) ListUsers(ctx context.Context, q ListUsersQuery) ([]model
 		return nil, 0, err
 	}
 
-	limit, offset := q.pagination()
-	err := db.Order("created_at DESC").Limit(limit).Offset(offset).Find(&users).Error
+	err := db.Order("created_at DESC").Limit(q.Limit).Offset(q.Offset).Find(&users).Error
 	return users, total, err
 }
 

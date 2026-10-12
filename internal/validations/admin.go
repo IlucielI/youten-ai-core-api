@@ -11,289 +11,169 @@ import (
 	"code-base-golang/internal/dtos"
 )
 
-// ValidateAdminUserQuotaOverrideRequest normalizes and validates quota override parameters.
-func ValidateAdminUserQuotaOverrideRequest(r *dtos.AdminUserQuotaOverrideRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
-	if r.DailyQuotaOverride != nil {
-		if *r.DailyQuotaOverride < 0 {
-			return errors.New("daily_quota_override must be greater than or equal to 0")
-		}
-		if *r.DailyQuotaOverride > 10000 {
-			return errors.New("daily_quota_override cannot exceed 10000")
-		}
+var notEmptyUUID = validation.By(func(value interface{}) error {
+	id, ok := value.(uuid.UUID)
+	if !ok || id == uuid.Nil {
+		return errors.New("cannot be blank")
 	}
 	return nil
+})
+
+// ValidateAdminUserQuotaOverrideRequest normalizes and validates quota override parameters.
+func ValidateAdminUserQuotaOverrideRequest(r *dtos.AdminUserQuotaOverrideRequest) error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.DailyQuotaOverride, validation.Min(0), validation.Max(10000)),
+	)
 }
 
 // ValidateAdminCreateRoleRequest normalizes and validates administrative role creation payloads.
 func ValidateAdminCreateRoleRequest(r *dtos.AdminCreateRoleRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("role name is required")
-	}
-	if len(r.Name) > 100 {
-		return errors.New("role name cannot exceed 100 characters")
-	}
 	r.Description = strings.TrimSpace(r.Description)
-	if len(r.Description) > 500 {
-		return errors.New("role description cannot exceed 500 characters")
-	}
-	if len(r.Permissions) == 0 {
-		return errors.New("at least one permission is required")
-	}
 	for i, p := range r.Permissions {
 		r.Permissions[i] = strings.TrimSpace(p)
-		if r.Permissions[i] == "" {
-			return errors.New("empty permission item is not allowed")
-		}
 	}
-	return nil
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Name, validation.Required, validation.Length(1, 100)),
+		validation.Field(&r.Description, validation.Length(0, 500)),
+		validation.Field(&r.Permissions, validation.Required, validation.Each(validation.Required)),
+	)
 }
 
 // ValidateAdminUpdateRoleRequest normalizes and validates administrative role update payloads.
 func ValidateAdminUpdateRoleRequest(r *dtos.AdminUpdateRoleRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("role name is required")
-	}
-	if len(r.Name) > 100 {
-		return errors.New("role name cannot exceed 100 characters")
-	}
 	r.Description = strings.TrimSpace(r.Description)
-	if len(r.Description) > 500 {
-		return errors.New("role description cannot exceed 500 characters")
-	}
-	if len(r.Permissions) == 0 {
-		return errors.New("at least one permission is required")
-	}
 	for i, p := range r.Permissions {
 		r.Permissions[i] = strings.TrimSpace(p)
-		if r.Permissions[i] == "" {
-			return errors.New("empty permission item is not allowed")
-		}
 	}
-	return nil
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Name, validation.Required, validation.Length(1, 100)),
+		validation.Field(&r.Description, validation.Length(0, 500)),
+		validation.Field(&r.Permissions, validation.Required, validation.Each(validation.Required)),
+	)
 }
 
 // ValidateAdminCreateUserRoleRequest normalizes and validates customer role creation payloads.
 func ValidateAdminCreateUserRoleRequest(r *dtos.AdminCreateUserRoleRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("name is required")
-	}
-	if len(r.Name) > 100 {
-		return errors.New("name cannot exceed 100 characters")
-	}
 	r.Code = strings.ToUpper(strings.TrimSpace(r.Code))
-	if r.Code == "" {
-		return errors.New("code is required")
-	}
-	if len(r.Code) > 50 {
-		return errors.New("code cannot exceed 50 characters")
-	}
 	r.Description = strings.TrimSpace(r.Description)
-	if len(r.Description) > 500 {
-		return errors.New("description cannot exceed 500 characters")
-	}
-	if r.DailyQuota < 1 || r.DailyQuota > 1000 {
-		return errors.New("daily_quota must be between 1 and 1000")
-	}
-	if len(r.Permissions) == 0 {
-		return errors.New("at least one permission is required")
-	}
 	for i, p := range r.Permissions {
 		r.Permissions[i] = strings.TrimSpace(p)
-		if r.Permissions[i] == "" {
-			return errors.New("empty permission item is not allowed")
-		}
 	}
-	return nil
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Name, validation.Required, validation.Length(1, 100)),
+		validation.Field(&r.Code, validation.Required, validation.Length(1, 50)),
+		validation.Field(&r.Description, validation.Length(0, 500)),
+		validation.Field(&r.DailyQuota, validation.Required, validation.Min(1), validation.Max(1000)),
+		validation.Field(&r.Permissions, validation.Required, validation.Each(validation.Required)),
+	)
 }
 
 // ValidateAdminUpdateUserRoleRequest normalizes and validates customer role update payloads.
 func ValidateAdminUpdateUserRoleRequest(r *dtos.AdminUpdateUserRoleRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	if r.Name != nil {
 		*r.Name = strings.TrimSpace(*r.Name)
-		if *r.Name == "" {
-			return errors.New("name cannot be empty")
-		}
-		if len(*r.Name) > 100 {
-			return errors.New("name cannot exceed 100 characters")
-		}
 	}
 	if r.Description != nil {
 		*r.Description = strings.TrimSpace(*r.Description)
-		if len(*r.Description) > 500 {
-			return errors.New("description cannot exceed 500 characters")
-		}
-	}
-	if r.DailyQuota != nil {
-		if *r.DailyQuota < 1 || *r.DailyQuota > 1000 {
-			return errors.New("daily_quota must be between 1 and 1000")
-		}
 	}
 	if r.Permissions != nil {
 		for i, p := range *r.Permissions {
 			(*r.Permissions)[i] = strings.TrimSpace(p)
-			if (*r.Permissions)[i] == "" {
-				return errors.New("empty permission item is not allowed")
-			}
 		}
 	}
-	return nil
+
+	rules := []*validation.FieldRules{
+		validation.Field(&r.Name, validation.NilOrNotEmpty, validation.Length(1, 100)),
+		validation.Field(&r.Description, validation.Length(0, 500)),
+		validation.Field(&r.DailyQuota, validation.Min(1), validation.Max(1000)),
+	}
+	if r.Permissions != nil {
+		rules = append(rules, validation.Field(r.Permissions, validation.Each(validation.Required)))
+	}
+
+	return validation.ValidateStruct(r, rules...)
 }
 
 // ValidateAdminAssignUserRoleRequest validates role assignment payloads.
 func ValidateAdminAssignUserRoleRequest(r *dtos.AdminAssignUserRoleRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
-	if r.RoleID == uuid.Nil {
-		return errors.New("role_id is required")
-	}
-	return nil
+	return validation.ValidateStruct(r,
+		validation.Field(&r.RoleID, notEmptyUUID),
+	)
 }
 
 // ValidateAdminCreateTemplateRequest normalizes and validates prompt template creation payloads.
 func ValidateAdminCreateTemplateRequest(r *dtos.AdminCreateTemplateRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.CategoryKey = strings.TrimSpace(r.CategoryKey)
-	if r.CategoryKey == "" {
-		return errors.New("category_key is required")
-	}
-	if len(r.CategoryKey) > 100 {
-		return errors.New("category_key cannot exceed 100 characters")
-	}
 	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("template name is required")
-	}
-	if len(r.Name) > 255 {
-		return errors.New("template name cannot exceed 255 characters")
-	}
 	r.Description = strings.TrimSpace(r.Description)
 	r.Prompt = strings.TrimSpace(r.Prompt)
-	if r.Prompt == "" {
-		return errors.New("prompt is required")
-	}
 
-	if len(r.OutputSchema) == 0 {
-		return errors.New("output_schema is required")
-	}
-
-	schemaType, ok := r.OutputSchema["type"].(string)
-	if !ok || schemaType != "object" {
-		return errors.New("output_schema must have type 'object'")
-	}
-	props, ok := r.OutputSchema["properties"].(map[string]interface{})
-	if !ok || len(props) == 0 {
-		return errors.New("output_schema must define non-empty 'properties'")
-	}
-
-	return nil
+	return validation.ValidateStruct(r,
+		validation.Field(&r.CategoryKey, validation.Required, validation.Length(1, 100)),
+		validation.Field(&r.Name, validation.Required, validation.Length(1, 255)),
+		validation.Field(&r.Description, validation.Length(0, 500)),
+		validation.Field(&r.Prompt, validation.Required),
+		validation.Field(&r.OutputSchema, validation.Required, validation.By(validateTemplateOutputSchema)),
+	)
 }
 
 // ValidateAdminUpdateTemplateRequest normalizes and validates prompt template update payloads.
 func ValidateAdminUpdateTemplateRequest(r *dtos.AdminUpdateTemplateRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("template name is required")
-	}
-	if len(r.Name) > 255 {
-		return errors.New("template name cannot exceed 255 characters")
-	}
 	r.Description = strings.TrimSpace(r.Description)
 	r.Prompt = strings.TrimSpace(r.Prompt)
-	if r.Prompt == "" {
-		return errors.New("prompt is required")
-	}
 
-	if len(r.OutputSchema) == 0 {
-		return errors.New("output_schema is required")
-	}
-
-	schemaType, ok := r.OutputSchema["type"].(string)
-	if !ok || schemaType != "object" {
-		return errors.New("output_schema must have type 'object'")
-	}
-	props, ok := r.OutputSchema["properties"].(map[string]interface{})
-	if !ok || len(props) == 0 {
-		return errors.New("output_schema must define non-empty 'properties'")
-	}
-
-	return nil
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Name, validation.Required, validation.Length(1, 255)),
+		validation.Field(&r.Description, validation.Length(0, 500)),
+		validation.Field(&r.Prompt, validation.Required),
+		validation.Field(&r.OutputSchema, validation.Required, validation.By(validateTemplateOutputSchema)),
+	)
 }
 
 // ValidateAdminTestTemplateRequest normalizes and validates prompt template test payloads.
 func ValidateAdminTestTemplateRequest(r *dtos.AdminTestTemplateRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Prompt = strings.TrimSpace(r.Prompt)
-	if r.Prompt == "" {
-		return errors.New("prompt is required")
-	}
-	if len(r.Prompt) > 20000 {
-		return errors.New("prompt exceeds maximum length of 20000 characters")
-	}
 	r.SampleTranscript = strings.TrimSpace(r.SampleTranscript)
-	if r.SampleTranscript == "" {
-		return errors.New("sample_transcript is required")
-	}
-	if len(r.SampleTranscript) > 100000 {
-		return errors.New("sample_transcript exceeds maximum length of 100000 characters")
-	}
-	if len(r.OutputSchema) == 0 {
-		return errors.New("output_schema is required")
-	}
 
-	schemaType, ok := r.OutputSchema["type"].(string)
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Prompt, validation.Required, validation.Length(1, 20000)),
+		validation.Field(&r.SampleTranscript, validation.Required, validation.Length(1, 100000)),
+		validation.Field(&r.OutputSchema, validation.Required, validation.By(validateTemplateOutputSchema)),
+	)
+}
+
+func validateTemplateOutputSchema(value interface{}) error {
+	schema, ok := value.(map[string]interface{})
+	if !ok || len(schema) == 0 {
+		return errors.New("is required")
+	}
+	schemaType, ok := schema["type"].(string)
 	if !ok || schemaType != "object" {
-		return errors.New("output_schema must have type 'object'")
+		return errors.New("must have type 'object'")
 	}
-	props, ok := r.OutputSchema["properties"].(map[string]interface{})
+	props, ok := schema["properties"].(map[string]interface{})
 	if !ok || len(props) == 0 {
-		return errors.New("output_schema must define non-empty 'properties'")
+		return errors.New("must define non-empty 'properties'")
 	}
-
 	return nil
 }
 
 // ValidateDLQRetryRequest validates dead-letter message retry payloads.
 func ValidateDLQRetryRequest(r *dtos.DLQRetryRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
-	if r.RecordingID == uuid.Nil {
-		return errors.New("recording_id is required")
-	}
-	return nil
+	return validation.ValidateStruct(r,
+		validation.Field(&r.RecordingID, notEmptyUUID),
+	)
 }
 
 // ValidateUpdateSystemConfigRequest validates system configuration update payloads.
 func ValidateUpdateSystemConfigRequest(r *dtos.UpdateSystemConfigRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	if r.MaintenanceMode == nil && r.AllowGuestUploads == nil && r.BotWaitlistEnabled == nil {
 		return errors.New("at least one configuration flag must be provided")
 	}
@@ -302,25 +182,17 @@ func ValidateUpdateSystemConfigRequest(r *dtos.UpdateSystemConfigRequest) error 
 
 // ValidateResolveReportRequest normalizes and validates report resolution payloads.
 func ValidateResolveReportRequest(r *dtos.ResolveReportRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Action = strings.ToUpper(strings.TrimSpace(r.Action))
-	switch r.Action {
-	case "DISMISS", "SUSPEND_RECORDING", "BAN_USER":
-		// valid
-	default:
-		return errors.New("action must be DISMISS, SUSPEND_RECORDING, or BAN_USER")
-	}
 	r.ResolutionNote = strings.TrimSpace(r.ResolutionNote)
-	return nil
+
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Action, validation.Required, validation.In("DISMISS", "SUSPEND_RECORDING", "BAN_USER")),
+		validation.Field(&r.ResolutionNote, validation.Length(0, 1000)),
+	)
 }
 
 // ValidateAdminLoginRequest validates administrator login credentials.
 func ValidateAdminLoginRequest(r *dtos.AdminLoginRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Username, validation.Required, validation.Length(3, 100)),
 		validation.Field(&r.Password, validation.Required, validation.Length(6, 100)),
@@ -329,9 +201,6 @@ func ValidateAdminLoginRequest(r *dtos.AdminLoginRequest) error {
 
 // ValidateAdminJobListQuery validates administrative job listing pagination queries.
 func ValidateAdminJobListQuery(q *dtos.AdminJobListQuery) error {
-	if q == nil {
-		return errors.New("query is required")
-	}
 	return validation.ValidateStruct(q,
 		validation.Field(&q.Page, validation.Min(1)),
 		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
@@ -340,9 +209,6 @@ func ValidateAdminJobListQuery(q *dtos.AdminJobListQuery) error {
 
 // ValidateAdminRoleListQuery validates administrative role listing pagination queries.
 func ValidateAdminRoleListQuery(q *dtos.AdminRoleListQuery) error {
-	if q == nil {
-		return errors.New("query is required")
-	}
 	return validation.ValidateStruct(q,
 		validation.Field(&q.Page, validation.Min(1)),
 		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
@@ -352,9 +218,6 @@ func ValidateAdminRoleListQuery(q *dtos.AdminRoleListQuery) error {
 
 // ValidateAdminUserRoleListQuery validates customer user role listing pagination queries.
 func ValidateAdminUserRoleListQuery(q *dtos.AdminUserRoleListQuery) error {
-	if q == nil {
-		return errors.New("query is required")
-	}
 	return validation.ValidateStruct(q,
 		validation.Field(&q.Page, validation.Min(1)),
 		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
@@ -364,9 +227,6 @@ func ValidateAdminUserRoleListQuery(q *dtos.AdminUserRoleListQuery) error {
 
 // ValidateAdminTemplateListQuery validates prompt template listing pagination queries.
 func ValidateAdminTemplateListQuery(q *dtos.AdminTemplateListQuery) error {
-	if q == nil {
-		return errors.New("query is required")
-	}
 	return validation.ValidateStruct(q,
 		validation.Field(&q.Page, validation.Min(1)),
 		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
@@ -376,9 +236,6 @@ func ValidateAdminTemplateListQuery(q *dtos.AdminTemplateListQuery) error {
 
 // ValidateAdminForgotPasswordRequest validates a password reset request payload for admin.
 func ValidateAdminForgotPasswordRequest(r *dtos.AdminForgotPasswordRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Email,
@@ -390,9 +247,6 @@ func ValidateAdminForgotPasswordRequest(r *dtos.AdminForgotPasswordRequest) erro
 
 // ValidateAdminResetPasswordRequest validates an admin password reset confirmation payload.
 func ValidateAdminResetPasswordRequest(r *dtos.AdminResetPasswordRequest) error {
-	if r == nil {
-		return errors.New("request is required")
-	}
 	r.Token = strings.TrimSpace(r.Token)
 	if r.ConfirmPassword != "" && r.NewPassword != r.ConfirmPassword {
 		return errors.New("confirm_password does not match new_password")
@@ -411,12 +265,8 @@ func ValidateAdminResetPasswordRequest(r *dtos.AdminResetPasswordRequest) error 
 
 // ValidateAdminDLQListQuery validates DLQ monitoring pagination queries.
 func ValidateAdminDLQListQuery(q *dtos.AdminDLQListQuery) error {
-	if q == nil {
-		return errors.New("query is required")
-	}
 	return validation.ValidateStruct(q,
 		validation.Field(&q.Page, validation.Min(1)),
 		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
 	)
 }
-

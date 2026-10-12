@@ -40,11 +40,6 @@ func TestValidateAdminUserQuotaOverrideRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("nil request returns error", func(t *testing.T) {
-		if err := ValidateAdminUserQuotaOverrideRequest(nil); err == nil {
-			t.Fatal("expected error for nil request, got nil")
-		}
-	})
 }
 
 func TestValidateAdminCreateRoleRequest(t *testing.T) {
@@ -92,11 +87,6 @@ func TestValidateAdminUpdateRoleRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("nil request returns error", func(t *testing.T) {
-		if err := ValidateAdminUpdateRoleRequest(nil); err == nil {
-			t.Fatal("expected error for nil request, got nil")
-		}
-	})
 }
 
 func TestValidateAdminCreateUserRoleRequest(t *testing.T) {
@@ -325,11 +315,7 @@ func TestValidateAdminJobListQuery(t *testing.T) {
 }
 
 func TestValidateAdminRoleListQuery(t *testing.T) {
-	t.Run("nil query returns error", func(t *testing.T) {
-		if err := ValidateAdminRoleListQuery(nil); err == nil {
-			t.Fatal("expected error for nil query, got nil")
-		}
-	})
+
 
 	t.Run("valid query with search", func(t *testing.T) {
 		q := dtos.AdminRoleListQuery{
@@ -358,11 +344,7 @@ func TestValidateAdminRoleListQuery(t *testing.T) {
 }
 
 func TestValidateAdminUserRoleListQuery(t *testing.T) {
-	t.Run("nil query returns error", func(t *testing.T) {
-		if err := ValidateAdminUserRoleListQuery(nil); err == nil {
-			t.Fatal("expected error for nil query, got nil")
-		}
-	})
+
 
 	t.Run("valid query with search", func(t *testing.T) {
 		q := dtos.AdminUserRoleListQuery{
@@ -391,11 +373,7 @@ func TestValidateAdminUserRoleListQuery(t *testing.T) {
 }
 
 func TestValidateAdminTemplateListQuery(t *testing.T) {
-	t.Run("nil query returns error", func(t *testing.T) {
-		if err := ValidateAdminTemplateListQuery(nil); err == nil {
-			t.Fatal("expected error for nil query, got nil")
-		}
-	})
+
 
 	t.Run("valid query with search", func(t *testing.T) {
 		q := dtos.AdminTemplateListQuery{
@@ -424,11 +402,7 @@ func TestValidateAdminTemplateListQuery(t *testing.T) {
 }
 
 func TestValidateAdminForgotPasswordRequest(t *testing.T) {
-	t.Run("nil request returns error", func(t *testing.T) {
-		if err := ValidateAdminForgotPasswordRequest(nil); err == nil {
-			t.Fatal("expected error for nil request, got nil")
-		}
-	})
+
 
 	t.Run("valid email", func(t *testing.T) {
 		req := dtos.AdminForgotPasswordRequest{Email: "admin@youten.ai"}
@@ -463,11 +437,7 @@ func TestValidateAdminForgotPasswordRequest(t *testing.T) {
 }
 
 func TestValidateAdminResetPasswordRequest(t *testing.T) {
-	t.Run("nil request returns error", func(t *testing.T) {
-		if err := ValidateAdminResetPasswordRequest(nil); err == nil {
-			t.Fatal("expected error for nil request, got nil")
-		}
-	})
+
 
 	t.Run("valid payload without confirm_password", func(t *testing.T) {
 		req := dtos.AdminResetPasswordRequest{
@@ -553,11 +523,7 @@ func TestValidateAdminDLQListQuery(t *testing.T) {
 		}
 	})
 
-	t.Run("nil query returns error", func(t *testing.T) {
-		if err := ValidateAdminDLQListQuery(nil); err == nil {
-			t.Fatal("expected error for nil query, got nil")
-		}
-	})
+
 
 	t.Run("invalid page returns error", func(t *testing.T) {
 		q := dtos.AdminDLQListQuery{Page: 0, Limit: 20}

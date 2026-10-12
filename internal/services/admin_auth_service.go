@@ -5,8 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"html"
 	"strings"
 	"time"
 
@@ -18,6 +16,7 @@ import (
 	"code-base-golang/internal/payload"
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
+	"code-base-golang/internal/templates"
 )
 
 // AdminLogin authenticates staff administrator credentials and issues an admin access token.
@@ -130,17 +129,16 @@ func (s *Service) AdminForgotPassword(ctx context.Context, req dtos.AdminForgotP
 	}
 
 	if s.mailer != nil && admin.Email != "" {
+		htmlBody, textBody, err := templates.RenderAdminResetPasswordEmail(admin.FullName, rawToken)
+		if err != nil {
+			return s.wrapError(ctx, err)
+		}
+
 		msg := dtos.EmailMessage{
-			To:      []string{admin.Email},
-			Subject: "Reset Your Admin Password - Youten AI",
-			TextBody: fmt.Sprintf(
-				"Hello %s,\n\nYou requested an administrator password reset. Use the token below within 15 minutes to reset your password:\n\n%s\n\nIf you did not request this, please disregard this email.\n",
-				admin.FullName, rawToken,
-			),
-			HTMLBody: fmt.Sprintf(
-				"<p>Hello <strong>%s</strong>,</p><p>You requested an administrator password reset. Use the token below within 15 minutes to reset your password:</p><p><strong style=\"font-size: 18px;\">%s</strong></p><p>If you did not request this, please disregard this email.</p>",
-				html.EscapeString(admin.FullName), rawToken,
-			),
+			To:       []string{admin.Email},
+			Subject:  "Reset Your Admin Password - Youten AI",
+			TextBody: textBody,
+			HTMLBody: htmlBody,
 		}
 		if err := s.mailer.Send(ctx, msg); err != nil {
 			return s.wrapError(ctx, err)

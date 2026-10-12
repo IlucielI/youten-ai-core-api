@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -120,13 +119,9 @@ func (q ListUsersQuery) scope(db *gorm.DB) *gorm.DB {
 		db = db.Where("status = ?", q.Status)
 	}
 
-	cleanSearch := strings.TrimSpace(q.Search)
-	if cleanSearch != "" {
-		if len(cleanSearch) > 100 {
-			cleanSearch = cleanSearch[:100]
-		}
-		searchPattern := "%" + cleanSearch + "%"
-		db = db.Where("email ILIKE ? OR full_name ILIKE ?", searchPattern, searchPattern)
+	if q.Search != "" {
+		pattern := "%" + q.Search + "%"
+		db = db.Where("email ILIKE ? OR full_name ILIKE ?", pattern, pattern)
 	}
 
 	return db

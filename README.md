@@ -61,6 +61,7 @@ The boilerplate adheres strictly to **Clean Architecture** and idiomatic Go desi
 3. **Dependency Injection**: Controllers, services, and repositories receive dependencies via constructors without relying on global state.
 4. **Configuration as Code**: Strongly-typed configuration parsed cleanly from environment variables with sensible defaults.
 5. **Declarative Routing**: Routes are declared in `internal/routes/routes.yaml` and resolved cleanly at startup.
+6. **Developer & AI Guidelines**: Coding standards, clean code conventions, and anti-patterns to avoid are codified in [`AGENTS.md`](AGENTS.md).
 
 ---
 
@@ -86,7 +87,7 @@ The boilerplate adheres strictly to **Clean Architecture** and idiomatic Go desi
     ├── dtos/               # Request payloads and API response definitions
     ├── middlewares/        # Middlewares (CORS, Rate Limiter, JWT Auth, Basic Auth, Client Meta, Logger, Recovery)
     ├── models/             # Domain entities and base models (BaseModel, JSONMap)
-    ├── payload/            # Worker message payloads (Id, MustParse, domain payloads)
+    ├── queue/              # Worker message payloads and serialization (MustParse, domain queue payloads)
     ├── pkg/                # Reusable packages (AppError, Context Metadata, JWT utilities, Migration)
     ├── repositories/       # Data access layer interfacing with GORM & Redis
     ├── routes/             # YAML-based route registration (routes.yaml) and engine setup

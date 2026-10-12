@@ -17,12 +17,6 @@ import (
 
 // AdminGetDLQMessages retrieves failed and stuck pipeline items for DLQ monitoring.
 func (s *Service) AdminGetDLQMessages(ctx context.Context, meta dtos.AdminActionMeta, page, limit int) (*dtos.DLQMessagesResponse, error) {
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 100 {
-		limit = 20
-	}
 	offset := (page - 1) * limit
 
 	// Recordings stuck in intermediate states for > 15 minutes are considered stuck
@@ -74,7 +68,6 @@ func (s *Service) AdminGetDLQMessages(ctx context.Context, meta dtos.AdminAction
 
 // AdminListJobs retrieves paginated generation and pipeline recordings across all users and statuses.
 func (s *Service) AdminListJobs(ctx context.Context, meta dtos.AdminActionMeta, query dtos.AdminJobListQuery) (*dtos.AdminJobListResponse, error) {
-	query.SetDefaults()
 	offset := (query.Page - 1) * query.Limit
 
 	recs, total, err := s.repo.ListAllRecordingsForAdmin(ctx, query.Status, query.Search, query.Limit, offset)

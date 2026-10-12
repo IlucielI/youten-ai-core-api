@@ -133,6 +133,13 @@ func (c *Controllers) AdminListJobs(ctx *gin.Context) {
 		return
 	}
 
+	query.SetDefaults()
+
+	if err := validations.ValidateAdminJobListQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
 	resp, err := c.svc.AdminListJobs(ctx.Request.Context(), meta, query)
 	if err != nil {
 		c.wrapError(ctx, err)

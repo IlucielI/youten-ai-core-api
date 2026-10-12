@@ -310,14 +310,14 @@ func TestValidateAdminLoginRequest(t *testing.T) {
 
 func TestValidateAdminJobListQuery(t *testing.T) {
 	t.Run("valid query", func(t *testing.T) {
-		q := dtos.AdminJobListQuery{Page: 1, Limit: 20}
+		q := dtos.AdminJobListQuery{PaginationQuery: dtos.PaginationQuery{Page: 1, Limit: 20}}
 		if err := ValidateAdminJobListQuery(&q); err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
 	})
 
 	t.Run("invalid page returns error", func(t *testing.T) {
-		q := dtos.AdminJobListQuery{Page: 0, Limit: 20}
+		q := dtos.AdminJobListQuery{PaginationQuery: dtos.PaginationQuery{Page: 0, Limit: 20}}
 		if err := ValidateAdminJobListQuery(&q); err == nil {
 			t.Fatal("expected error for page 0, got nil")
 		}

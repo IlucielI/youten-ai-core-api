@@ -68,9 +68,7 @@ func (s *Service) AdminGetDLQMessages(ctx context.Context, meta dtos.AdminAction
 
 // AdminListJobs retrieves paginated generation and pipeline recordings across all users and statuses.
 func (s *Service) AdminListJobs(ctx context.Context, meta dtos.AdminActionMeta, query dtos.AdminJobListQuery) (*dtos.AdminJobListResponse, error) {
-	offset := (query.Page - 1) * query.Limit
-
-	recs, total, err := s.repo.ListAllRecordingsForAdmin(ctx, query.Status, query.Search, query.Limit, offset)
+	recs, total, err := s.repo.ListAllRecordingsForAdmin(ctx, query.Status, query.Search, query.Limit, query.Offset())
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
@@ -101,17 +99,12 @@ func (s *Service) AdminListJobs(ctx context.Context, meta dtos.AdminActionMeta, 
 		items = append(items, item)
 	}
 
-	totalPages := 0
-	if query.Limit > 0 {
-		totalPages = int((total + int64(query.Limit) - 1) / int64(query.Limit))
-	}
-
 	return &dtos.AdminJobListResponse{
 		Items:      items,
 		Total:      total,
 		Page:       query.Page,
 		Limit:      query.Limit,
-		TotalPages: totalPages,
+		TotalPages: dtos.CalculateTotalPages(total, query.Limit),
 	}, nil
 }
 

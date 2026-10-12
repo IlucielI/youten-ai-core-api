@@ -13,6 +13,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/payload"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -111,21 +112,19 @@ func (s *Service) AdminCreateRole(ctx context.Context, meta dtos.AdminActionMeta
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "role.create",
 		Entity:   "role",
 		EntityID: &roleIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"name":        role.Name,
 			"permissions": req.Permissions,
 		},
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.AdminRoleItem{
 		ID:          role.ID,
@@ -187,21 +186,19 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta dtos.AdminActionMeta
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "role.update",
 		Entity:   "role",
 		EntityID: &roleIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"name":        role.Name,
 			"permissions": req.Permissions,
 		},
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.AdminRoleItem{
 		ID:          role.ID,
@@ -333,12 +330,12 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta dtos.AdminAction
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "user_role.create",
 		Entity:   "user_role",
 		EntityID: &roleIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"name":        role.Name,
 			"code":        role.Code,
 			"daily_quota": role.DailyQuota,
@@ -348,9 +345,7 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta dtos.AdminAction
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.AdminUserRoleItem{
 		ID:          role.ID,
@@ -432,12 +427,12 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta dtos.AdminAction
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "user_role.update",
 		Entity:   "user_role",
 		EntityID: &roleIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"name":        role.Name,
 			"code":        role.Code,
 			"daily_quota": role.DailyQuota,
@@ -446,9 +441,7 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta dtos.AdminAction
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	rawPerms := role.PermissionsList()
 	perms := make([]string, 0, len(rawPerms))

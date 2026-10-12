@@ -727,17 +727,17 @@ func (s *Service) sendVerificationEmail(ctx context.Context, email, fullName, co
 	}
 	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", appURL, rawToken)
 
-	subject := "Verifikasi Email Anda - Youten AI"
+	subject := "Verify Your Email - Youten AI"
 	textBody := fmt.Sprintf(
-		"Halo %s,\n\nTerima kasih telah mendaftar di Youten AI.\nKode verifikasi email Anda adalah: %s\n\nAtau klik tautan berikut untuk verifikasi instan:\n%s\n\nKode dan tautan ini berlaku selama 24 jam.\nJika Anda tidak merasa mendaftar di Youten AI, abaikan email ini.\n\nSalam,\nTim Youten AI\n",
+		"Hello %s,\n\nThank you for signing up with Youten AI.\nYour email verification code is: %s\n\nOr click the link below to verify instantly:\n%s\n\nThis code and link are valid for 24 hours.\nIf you did not sign up for Youten AI, please ignore this email.\n\nBest regards,\nThe Youten AI Team\n",
 		fullName, code, verifyURL,
 	)
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verifikasi Email</title>
+  <title>Verify Your Email</title>
   <style>
     body { margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f1f5f9; }
     .wrapper { max-width: 580px; margin: 40px auto; background: #13192b; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
@@ -760,17 +760,17 @@ func (s *Service) sendVerificationEmail(ctx context.Context, email, fullName, co
       <div class="brand-title">Youten AI</div>
     </div>
     <div class="content">
-      <h2>Verifikasi Alamat Email Anda</h2>
-      <p>Halo <strong>%s</strong>,</p>
-      <p>Terima kasih telah mendaftar di Youten AI. Silakan gunakan kode verifikasi di bawah ini untuk mengonfirmasi akun Anda:</p>
+      <h2>Verify Your Email Address</h2>
+      <p>Hello <strong>%s</strong>,</p>
+      <p>Thank you for signing up with Youten AI. Please use the verification code below to confirm your account:</p>
       <div class="code-box">
-        <div class="code-label">Kode Verifikasi (OTP)</div>
+        <div class="code-label">Verification Code (OTP)</div>
         <div class="code-val">%s</div>
       </div>
       <div class="btn-wrap">
-        <a href="%s" class="btn">Verifikasi Email Saya</a>
+        <a href="%s" class="btn">Verify My Email</a>
       </div>
-      <p class="notice">Kode dan tautan ini berlaku selama 24 jam. Jika Anda tidak merasa mendaftar di Youten AI, abaikan email ini.</p>
+      <p class="notice">This code and link are valid for 24 hours. If you did not sign up for Youten AI, please ignore this email.</p>
     </div>
   </div>
 </body>

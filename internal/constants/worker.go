@@ -18,4 +18,10 @@ const (
 
 	// Domain event alias
 	DomainEventRecordingCreated = TopicRecordingUploaded
+
+	// Dead-letter and fallback pipeline queue/topic identifiers
+	QueueRecordingDLQ    = "recording.dlq"
+	TopicPipelineUnknown = "pipeline.unknown"
+	QueuePipelineUnknown = "pipeline.unknown"
 )
+

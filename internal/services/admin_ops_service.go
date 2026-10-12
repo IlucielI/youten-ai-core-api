@@ -136,9 +136,9 @@ func resolveDLQQueueAndTopic(status, sourceType string) (string, string) {
 	case models.RecordingStatusIndexing:
 		return constants.TopicRecordingIndex, constants.TopicRecordingIndex
 	case models.RecordingStatusFailed:
-		return "recording.dlq", constants.TopicRecordingFailed
+		return constants.QueueRecordingDLQ, constants.TopicRecordingFailed
 	default:
-		return "pipeline.unknown", "pipeline.unknown"
+		return constants.QueuePipelineUnknown, constants.TopicPipelineUnknown
 	}
 }
 

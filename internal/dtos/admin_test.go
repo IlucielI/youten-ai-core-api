@@ -317,7 +317,7 @@ func TestDLQMessagesResponse(t *testing.T) {
 		Items: []DLQMessageItem{
 			{
 				RecordingID:  recID,
-				Queue:        "recording.dlq",
+				Queue:        constants.QueueRecordingDLQ,
 				RoutingKey:   "recording.failed",
 				Stage:        "FAILED",
 				Status:       "FAILED",

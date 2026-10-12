@@ -960,8 +960,8 @@ func TestService_AdminGetDLQMessages(t *testing.T) {
 		if len(resp.Items) != 2 {
 			t.Fatalf("expected 2 items, got %d", len(resp.Items))
 		}
-		if resp.Items[0].Queue != "recording.dlq" {
-			t.Errorf("expected recording.dlq, got %s", resp.Items[0].Queue)
+		if resp.Items[0].Queue != constants.QueueRecordingDLQ {
+			t.Errorf("expected %s, got %s", constants.QueueRecordingDLQ, resp.Items[0].Queue)
 		}
 		if resp.Items[0].UserEmail != "user@example.com" {
 			t.Errorf("expected user@example.com, got %s", resp.Items[0].UserEmail)

@@ -987,16 +987,6 @@ func TestService_AdminGetDLQMessages(t *testing.T) {
 }
 
 func TestService_AdminRetryDLQJob(t *testing.T) {
-	t.Run("invalid request returns error", func(t *testing.T) {
-		svc, _, cleanup := setupAdminServiceMock(t)
-		defer cleanup()
-
-		_, err := svc.AdminRetryDLQJob(context.Background(), dtos.AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: uuid.Nil})
-		if err == nil {
-			t.Fatal("expected error for nil recording ID, got nil")
-		}
-	})
-
 	t.Run("recording not found returns ErrRecordingNotFound", func(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()

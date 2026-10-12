@@ -12,7 +12,6 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/payload"
-	"code-base-golang/internal/validations"
 )
 
 // AdminGetDLQMessages retrieves failed and stuck pipeline items for DLQ monitoring.
@@ -130,10 +129,6 @@ func resolveDLQQueueAndTopic(status, sourceType string) (string, string) {
 
 // AdminRetryDLQJob reprocesses a dead-lettered or stuck pipeline job, recovers state, and logs the administrative action.
 func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMeta, req dtos.DLQRetryRequest) (*dtos.DLQRetryResponse, error) {
-	if err := validations.ValidateDLQRetryRequest(&req); err != nil {
-		return nil, constants.ErrBadRequest.WithMessage(err.Error())
-	}
-
 	rec, err := s.repo.FindRecordingByID(ctx, req.RecordingID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

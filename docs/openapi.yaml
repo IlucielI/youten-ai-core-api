@@ -1403,6 +1403,21 @@ paths:
       security:
         - AdminAuth: []
       description: Lists all customer user roles with permissions and quotas (requires roles:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: search
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           description: User roles list
@@ -2634,6 +2649,8 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/AdminUserRoleItem'
+                pagination:
+                  $ref: '#/components/schemas/PaginationMeta'
 
     AdminUserRoleItemResponse:
       allOf:

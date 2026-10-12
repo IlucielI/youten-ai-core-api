@@ -139,9 +139,34 @@ type AdminUserRoleItem struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// AdminUserRoleListResponse encapsulates the list of customer user roles.
+// AdminUserRoleListQuery defines query parameters for paginating and filtering customer user roles.
+type AdminUserRoleListQuery struct {
+	Search string `form:"search" json:"search"`
+	Page   int    `form:"page" json:"page"`
+	Limit  int    `form:"limit" json:"limit"`
+}
+
+// SetDefaults ensures fallback defaults for pagination parameters.
+func (q *AdminUserRoleListQuery) SetDefaults() {
+	q.Search = strings.TrimSpace(q.Search)
+	if len(q.Search) > 100 {
+		q.Search = q.Search[:100]
+	}
+
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Limit < 1 {
+		q.Limit = 10
+	} else if q.Limit > 100 {
+		q.Limit = 100
+	}
+}
+
+// AdminUserRoleListResponse encapsulates the list of customer user roles and pagination metadata.
 type AdminUserRoleListResponse struct {
-	Items []AdminUserRoleItem `json:"items"`
+	Items      []AdminUserRoleItem `json:"items"`
+	Pagination PaginationMeta      `json:"pagination"`
 }
 
 // AdminCreateUserRoleRequest defines the payload for creating a customer user role.

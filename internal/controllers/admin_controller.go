@@ -174,7 +174,20 @@ func (c *Controllers) AdminUpdateRole(ctx *gin.Context) {
 
 // AdminListUserRoles handles GET /v1/admin/user-roles.
 func (c *Controllers) AdminListUserRoles(ctx *gin.Context) {
-	resp, err := c.svc.AdminListUserRoles(ctx.Request.Context())
+	var query dtos.AdminUserRoleListQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
+		return
+	}
+
+	query.SetDefaults()
+
+	if err := validations.ValidateAdminUserRoleListQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	resp, err := c.svc.AdminListUserRoles(ctx.Request.Context(), query)
 	if err != nil {
 		c.wrapError(ctx, err)
 		return

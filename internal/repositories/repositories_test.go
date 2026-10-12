@@ -727,7 +727,7 @@ func TestRepositories_UserRole(t *testing.T) {
 			AddRow(roleID, "Free Member", "FREE", 5, true).
 			AddRow(uuid.New(), "Pro Member", "PRO", 25, false)
 
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" ORDER BY daily_quota ASC, created_at ASC`)).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" ORDER BY is_default DESC, daily_quota ASC, created_at ASC`)).
 			WillReturnRows(rows)
 
 		roles, err := repo.ListUserRoles(context.Background())
@@ -736,6 +736,29 @@ func TestRepositories_UserRole(t *testing.T) {
 		}
 		if len(roles) != 2 {
 			t.Fatalf("expected 2 roles, got %d", len(roles))
+		}
+	})
+
+	t.Run("ListUserRolesPaginated success", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "user_roles" WHERE name ILIKE $1 OR code ILIKE $2 OR description ILIKE $3`)).
+			WithArgs("%pro%", "%pro%", "%pro%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" WHERE name ILIKE $1 OR code ILIKE $2 OR description ILIKE $3 ORDER BY is_default DESC, daily_quota ASC, created_at ASC LIMIT $4`)).
+			WithArgs("%pro%", "%pro%", "%pro%", 10).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+				AddRow(uuid.New(), "Pro Member", "PRO", 25, false))
+
+		roles, total, err := repo.ListUserRolesPaginated(context.Background(), ListUserRolesQuery{
+			Search: "pro",
+			Offset: 0,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 1 || len(roles) != 1 {
+			t.Fatalf("expected 1 role and total 1, got len=%d total=%d", len(roles), total)
 		}
 	})
 

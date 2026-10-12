@@ -348,3 +348,15 @@ func ValidateAdminRoleListQuery(q *dtos.AdminRoleListQuery) error {
 		validation.Field(&q.Search, validation.Length(0, 100)),
 	)
 }
+
+// ValidateAdminUserRoleListQuery validates customer user role listing pagination queries.
+func ValidateAdminUserRoleListQuery(q *dtos.AdminUserRoleListQuery) error {
+	if q == nil {
+		return errors.New("query is required")
+	}
+	return validation.ValidateStruct(q,
+		validation.Field(&q.Page, validation.Min(1)),
+		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
+		validation.Field(&q.Search, validation.Length(0, 100)),
+	)
+}

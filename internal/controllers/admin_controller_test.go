@@ -1617,7 +1617,7 @@ func TestControllers_AdminLogin(t *testing.T) {
 func TestControllers_AdminUserRoles(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("AdminListUserRoles returns 200", func(t *testing.T) {
+	t.Run("AdminListUserRoles returns 200 with pagination", func(t *testing.T) {
 		ctrls, mock, cleanup := setupAdminTestControllers(t)
 		defer cleanup()
 
@@ -1626,13 +1626,49 @@ func TestControllers_AdminUserRoles(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"id", "name", "code", "description", "permissions", "daily_quota", "is_default", "created_at", "updated_at"}).
 			AddRow(roleID, "Free Member", "FREE", "Free tier", []byte(`["recordings:create"]`), 5, true, now, now)
 
-		mock.ExpectQuery(`SELECT \* FROM "user_roles" ORDER BY daily_quota ASC, created_at ASC`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "user_roles"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" ORDER BY is_default DESC, daily_quota ASC, created_at ASC LIMIT $1`)).
+			WithArgs(10).
 			WillReturnRows(rows)
 
 		r := gin.New()
 		r.GET("/v1/admin/user-roles", ctrls.AdminListUserRoles)
 
 		req := httptest.NewRequest(http.MethodGet, "/v1/admin/user-roles", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("AdminListUserRoles returns 200 with search query parameters", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		roleID := uuid.New()
+		now := time.Now()
+		rows := sqlmock.NewRows([]string{"id", "name", "code", "description", "permissions", "daily_quota", "is_default", "created_at", "updated_at"}).
+			AddRow(roleID, "Free Member", "FREE", "Free tier", []byte(`["recordings:create"]`), 5, true, now, now)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "user_roles" WHERE name ILIKE $1 OR code ILIKE $2 OR description ILIKE $3`)).
+			WithArgs("%free%", "%free%", "%free%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" WHERE name ILIKE $1 OR code ILIKE $2 OR description ILIKE $3 ORDER BY is_default DESC, daily_quota ASC, created_at ASC LIMIT $4 OFFSET $5`)).
+			WithArgs("%free%", "%free%", "%free%", 5, 5).
+			WillReturnRows(rows)
+
+		r := gin.New()
+		r.GET("/v1/admin/user-roles", ctrls.AdminListUserRoles)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/user-roles?search=free&page=2&limit=5", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 

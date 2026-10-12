@@ -53,10 +53,40 @@ func (r *Repositories) ClearDefaultUserRoles(ctx context.Context, exceptID uuid.
 	return q.Update("is_default", false).Error
 }
 
-// ListUserRoles retrieves all available user roles ordered by daily quota ascending.
+// ListUserRolesQuery holds filter criteria for listing customer user roles.
+type ListUserRolesQuery struct {
+	Search string
+	Offset int
+	Limit  int
+}
+
+// ListUserRolesPaginated retrieves paginated user roles matching search criteria,
+// ordering default user roles first.
+func (r *Repositories) ListUserRolesPaginated(ctx context.Context, q ListUserRolesQuery) ([]models.UserRole, int64, error) {
+	var roles []models.UserRole
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&models.UserRole{})
+	if q.Search != "" {
+		pattern := "%" + q.Search + "%"
+		query = query.Where("name ILIKE ? OR code ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := query.Order("is_default DESC, daily_quota ASC, created_at ASC").Limit(q.Limit).Offset(q.Offset).Find(&roles).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return roles, total, nil
+}
+
+// ListUserRoles retrieves all available user roles ordered by default flag and daily quota ascending.
 func (r *Repositories) ListUserRoles(ctx context.Context) ([]models.UserRole, error) {
 	var roles []models.UserRole
-	if err := r.db.WithContext(ctx).Order("daily_quota ASC, created_at ASC").Find(&roles).Error; err != nil {
+	if err := r.db.WithContext(ctx).Order("is_default DESC, daily_quota ASC, created_at ASC").Find(&roles).Error; err != nil {
 		return nil, err
 	}
 	return roles, nil

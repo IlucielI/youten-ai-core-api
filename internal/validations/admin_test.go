@@ -356,3 +356,36 @@ func TestValidateAdminRoleListQuery(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateAdminUserRoleListQuery(t *testing.T) {
+	t.Run("nil query returns error", func(t *testing.T) {
+		if err := ValidateAdminUserRoleListQuery(nil); err == nil {
+			t.Fatal("expected error for nil query, got nil")
+		}
+	})
+
+	t.Run("valid query with search", func(t *testing.T) {
+		q := dtos.AdminUserRoleListQuery{
+			Search: "PRO",
+			Page:   1,
+			Limit:  10,
+		}
+		if err := ValidateAdminUserRoleListQuery(&q); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("invalid page returns error", func(t *testing.T) {
+		q := dtos.AdminUserRoleListQuery{Page: 0, Limit: 10}
+		if err := ValidateAdminUserRoleListQuery(&q); err == nil {
+			t.Fatal("expected error for page 0, got nil")
+		}
+	})
+
+	t.Run("invalid limit returns error", func(t *testing.T) {
+		q := dtos.AdminUserRoleListQuery{Page: 1, Limit: 101}
+		if err := ValidateAdminUserRoleListQuery(&q); err == nil {
+			t.Fatal("expected error for limit > 100, got nil")
+		}
+	})
+}

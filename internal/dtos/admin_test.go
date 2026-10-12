@@ -192,6 +192,82 @@ func TestAdminRoleListResponse(t *testing.T) {
 	}
 }
 
+func TestAdminUserRoleListQuery_SetDefaults(t *testing.T) {
+	t.Run("defaults assigned when fields are empty or negative", func(t *testing.T) {
+		q := AdminUserRoleListQuery{
+			Page:  0,
+			Limit: -5,
+		}
+		q.SetDefaults()
+
+		if q.Page != 1 {
+			t.Errorf("expected page 1, got %d", q.Page)
+		}
+		if q.Limit != 10 {
+			t.Errorf("expected limit 10, got %d", q.Limit)
+		}
+		if q.Search != "" {
+			t.Errorf("expected empty search, got %q", q.Search)
+		}
+	})
+
+	t.Run("limit capped at 100 and search trimmed", func(t *testing.T) {
+		longSearch := strings.Repeat("u", 150)
+		q := AdminUserRoleListQuery{
+			Search: "  " + longSearch + "  ",
+			Page:   3,
+			Limit:  200,
+		}
+		q.SetDefaults()
+
+		if q.Page != 3 {
+			t.Errorf("expected page 3, got %d", q.Page)
+		}
+		if q.Limit != 100 {
+			t.Errorf("expected limit 100, got %d", q.Limit)
+		}
+		if len(q.Search) != 100 {
+			t.Errorf("expected search length 100, got %d", len(q.Search))
+		}
+	})
+}
+
+func TestAdminUserRoleListResponse(t *testing.T) {
+	id := uuid.New()
+	now := time.Now()
+	resp := AdminUserRoleListResponse{
+		Items: []AdminUserRoleItem{
+			{
+				ID:          id,
+				Name:        "Free Member",
+				Code:        "FREE",
+				Description: "Free tier",
+				Permissions: []string{"recordings:create"},
+				DailyQuota:  5,
+				IsDefault:   true,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+		},
+		Pagination: PaginationMeta{
+			CurrentPage: 1,
+			PageSize:    10,
+			TotalItems:  1,
+			TotalPages:  1,
+		},
+	}
+
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].Code != "FREE" {
+		t.Errorf("expected code FREE, got %s", resp.Items[0].Code)
+	}
+	if resp.Pagination.TotalItems != 1 || resp.Pagination.TotalPages != 1 {
+		t.Errorf("unexpected pagination: %+v", resp.Pagination)
+	}
+}
+
 
 func TestAdminTemplateListResponse(t *testing.T) {
 	id := uuid.New()

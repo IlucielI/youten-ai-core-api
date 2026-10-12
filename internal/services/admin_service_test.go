@@ -1455,7 +1455,7 @@ func TestService_AdminStatsAndCosts(t *testing.T) {
 }
 
 func TestService_AdminUserRoles(t *testing.T) {
-	t.Run("AdminListUserRoles returns role items", func(t *testing.T) {
+	t.Run("AdminListUserRoles returns role items and pagination meta", func(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
@@ -1464,10 +1464,14 @@ func TestService_AdminUserRoles(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"id", "name", "code", "description", "permissions", "daily_quota", "is_default", "created_at", "updated_at"}).
 			AddRow(roleID, "Free Member", "FREE", "Free tier", []byte(`["recordings:create"]`), 5, true, now, now)
 
-		mock.ExpectQuery(`SELECT \* FROM "user_roles" ORDER BY daily_quota ASC, created_at ASC`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "user_roles"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" ORDER BY is_default DESC, daily_quota ASC, created_at ASC LIMIT $1`)).
+			WithArgs(10).
 			WillReturnRows(rows)
 
-		resp, err := svc.AdminListUserRoles(context.Background())
+		resp, err := svc.AdminListUserRoles(context.Background(), dtos.AdminUserRoleListQuery{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1476,6 +1480,9 @@ func TestService_AdminUserRoles(t *testing.T) {
 		}
 		if resp.Items[0].Code != "FREE" || !resp.Items[0].IsDefault {
 			t.Errorf("unexpected item: %+v", resp.Items[0])
+		}
+		if resp.Pagination.CurrentPage != 1 || resp.Pagination.PageSize != 10 || resp.Pagination.TotalItems != 1 || resp.Pagination.TotalPages != 1 {
+			t.Errorf("unexpected pagination: %+v", resp.Pagination)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
 			t.Errorf("unfulfilled expectations: %v", err)

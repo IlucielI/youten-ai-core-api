@@ -386,9 +386,19 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta AdminActionMeta, rol
 	}, nil
 }
 
-// AdminListUserRoles retrieves all customer user roles with permissions.
-func (s *Service) AdminListUserRoles(ctx context.Context) (*dtos.AdminUserRoleListResponse, error) {
-	roles, err := s.repo.ListUserRoles(ctx)
+// AdminListUserRoles retrieves paginated customer user roles with permissions,
+// ordering default user roles first.
+func (s *Service) AdminListUserRoles(ctx context.Context, q dtos.AdminUserRoleListQuery) (*dtos.AdminUserRoleListResponse, error) {
+	q.SetDefaults()
+
+	offset := (q.Page - 1) * q.Limit
+	repoQuery := repositories.ListUserRolesQuery{
+		Search: q.Search,
+		Offset: offset,
+		Limit:  q.Limit,
+	}
+
+	roles, total, err := s.repo.ListUserRolesPaginated(ctx, repoQuery)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
@@ -416,7 +426,22 @@ func (s *Service) AdminListUserRoles(ctx context.Context) (*dtos.AdminUserRoleLi
 		})
 	}
 
-	return &dtos.AdminUserRoleListResponse{Items: items}, nil
+	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
+	if totalPages == 0 && total == 0 {
+		totalPages = 0
+	} else if totalPages == 0 {
+		totalPages = 1
+	}
+
+	return &dtos.AdminUserRoleListResponse{
+		Items: items,
+		Pagination: dtos.PaginationMeta{
+			CurrentPage: q.Page,
+			PageSize:    q.Limit,
+			TotalItems:  total,
+			TotalPages:  totalPages,
+		},
+	}, nil
 }
 
 // AdminCreateUserRole creates a new customer user role and writes an audit log.

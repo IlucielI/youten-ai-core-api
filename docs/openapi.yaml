@@ -322,8 +322,8 @@ paths:
       tags: [Auth]
       summary: Update Profile
       security:
-        - BearerAuth: []
-      description: Updates display name or profile preferences.
+        - BearerAuth: [profile:manage]
+      description: Updates display name or profile preferences. Requires 'profile:manage' permission.
       requestBody:
         required: true
         content:
@@ -345,8 +345,8 @@ paths:
       tags: [Auth]
       summary: Change Password
       security:
-        - BearerAuth: []
-      description: Changes the current account password after verifying current credentials.
+        - BearerAuth: [profile:manage]
+      description: Changes the current account password after verifying current credentials. Requires 'profile:manage' permission.
       requestBody:
         required: true
         content:
@@ -639,8 +639,9 @@ paths:
     get:
       tags: [Intelligence & Search]
       summary: Cross-Recording Semantic Vector Search
+      description: Search semantically across all recordings. Requires 'workspace:search' permission.
       security:
-        - BearerAuth: []
+        - BearerAuth: [workspace:search]
       parameters:
         - name: q
           in: query
@@ -664,8 +665,9 @@ paths:
     post:
       tags: [Intelligence & Search]
       summary: Workspace Memory Multi-Recording AI Chat
+      description: Multi-recording memory synthesis and answers. Requires 'workspace:memory' permission.
       security:
-        - BearerAuth: []
+        - BearerAuth: [workspace:memory]
       requestBody:
         required: true
         content:
@@ -808,8 +810,9 @@ paths:
     patch:
       tags: [Collaboration]
       summary: Toggle Public Share Link
+      description: Toggle read-only sharing for a recording. Requires 'recordings:share' permission.
       security:
-        - BearerAuth: []
+        - BearerAuth: [recordings:share]
       parameters:
         - name: id
           in: path

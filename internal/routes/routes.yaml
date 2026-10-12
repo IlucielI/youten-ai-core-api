@@ -78,12 +78,14 @@ routes:
     path: /v1/auth/me
     handler: UpdateProfile
     auth: true
+    permission: "profile:manage"
 
   # Change the authenticated user's password.
   - method: PUT
     path: /v1/auth/change-password
     handler: ChangePassword
     auth: true
+    permission: "profile:manage"
 
   # Retrieve available active summary prompt templates.
   - method: GET
@@ -126,12 +128,14 @@ routes:
     path: /v1/recordings/search
     handler: SearchRecordings
     auth: true
+    permission: "workspace:search"
 
   # Cross-recording workspace memory AI chat (registered users).
   - method: POST
     path: /v1/recordings/ask
     handler: AskWorkspaceMemory
     auth: true
+    permission: "workspace:memory"
 
   # Workspace speakers directory (registered users).
   - method: GET
@@ -174,6 +178,7 @@ routes:
     path: /v1/recordings/:id/share
     handler: ToggleRecordingShare
     auth: true
+    permission: "recordings:share"
 
   # Public read-only shared recording viewer.
   - method: GET

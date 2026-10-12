@@ -858,4 +858,99 @@ func TestRouter_ScopedRoutes(t *testing.T) {
 	})
 }
 
+func TestRouter_UserPermissionRoutes(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+
+	t.Run("search without workspace:search permission returns 403", func(t *testing.T) {
+		validator := &mockScopedValidator{
+			user: &ctxmeta.AuthUser{
+				UserID:      uuid.New(),
+				Email:       "free@example.com",
+				RoleCode:    "FREE",
+				Permissions: []string{"recordings:create", "recordings:read", "profile:manage"},
+				IsGuest:     false,
+			},
+		}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodGet, "/v1/recordings/search?q=test", nil)
+		req.Header.Set("Authorization", "Bearer free-user-token")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for search without workspace:search, got %d", w.Code)
+		}
+	})
+
+	t.Run("search with workspace:search permission passes middleware", func(t *testing.T) {
+		validator := &mockScopedValidator{
+			user: &ctxmeta.AuthUser{
+				UserID:      uuid.New(),
+				Email:       "pro@example.com",
+				RoleCode:    "PRO",
+				Permissions: []string{"workspace:search", "workspace:memory"},
+				IsGuest:     false,
+			},
+		}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodGet, "/v1/recordings/search?q=test", nil)
+		req.Header.Set("Authorization", "Bearer pro-user-token")
+		r.ServeHTTP(w, req)
+
+		if w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden {
+			t.Fatalf("expected user with workspace:search to pass middleware, got %d", w.Code)
+		}
+	})
+
+	t.Run("ask memory without workspace:memory permission returns 403", func(t *testing.T) {
+		validator := &mockScopedValidator{
+			user: &ctxmeta.AuthUser{
+				UserID:      uuid.New(),
+				Email:       "free@example.com",
+				RoleCode:    "FREE",
+				Permissions: []string{"recordings:create", "recordings:read"},
+				IsGuest:     false,
+			},
+		}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, "/v1/recordings/ask", strings.NewReader(`{"question":"what?"}`))
+		req.Header.Set("Authorization", "Bearer free-user-token")
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for ask without workspace:memory, got %d", w.Code)
+		}
+	})
+
+	t.Run("guest user attempting user permission route returns 401", func(t *testing.T) {
+		validator := &mockScopedValidator{
+			user: &ctxmeta.AuthUser{
+				UserID:      uuid.New(),
+				SessionID:   uuid.New().String(),
+				RoleCode:    "ANON",
+				Permissions: []string{"workspace:search"},
+				IsGuest:     true,
+			},
+		}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodGet, "/v1/recordings/search?q=test", nil)
+		req.Header.Set("Authorization", "Bearer guest-token")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 Unauthorized for guest on user permission route, got %d", w.Code)
+		}
+	})
+}
+
+
 

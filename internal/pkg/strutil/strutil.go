@@ -1,6 +1,7 @@
 package strutil
 
 import (
+	"crypto/subtle"
 	"strings"
 	"unicode"
 )
@@ -136,4 +137,10 @@ func DetectLanguage(text string, fallback string) string {
 	}
 	return "id"
 }
+
+// ConstantTimeEqual performs a constant-time comparison of two strings to prevent timing side channels.
+func ConstantTimeEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
 

@@ -2,17 +2,12 @@ package services
 
 import (
 	"context"
-	"crypto/subtle"
 
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/pkg/strutil"
 )
-
-// constantTimeEqual compares two secrets without leaking timing information.
-func constantTimeEqual(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
 
 // authorizeRecordingAccess centralizes recording ownership verification. Access is granted when the
 // caller is the authenticated owner, presents the matching ownership token, or satisfies the share
@@ -28,19 +23,19 @@ func (s *Service) authorizeRecordingAccess(ctx context.Context, rec *models.Reco
 		return true
 	}
 
-	if ownershipToken != "" && constantTimeEqual(ownershipToken, rec.OwnershipToken) {
+	if ownershipToken != "" && strutil.ConstantTimeEqual(ownershipToken, rec.OwnershipToken) {
 		return true
 	}
 
 	// Also grant access when the request carries an anonymous guest token matching the recording ownership anchor
 	if authUser, ok := ctxmeta.GetAuthUser(ctx); ok && authUser.IsGuest && authUser.SessionID != "" {
-		if constantTimeEqual(authUser.SessionID, rec.OwnershipToken) {
+		if strutil.ConstantTimeEqual(authUser.SessionID, rec.OwnershipToken) {
 			return true
 		}
 	}
 
 	if policy.AllowShareToken && ownershipToken != "" && rec.IsShareEnabled && rec.ShareToken != nil &&
-		constantTimeEqual(ownershipToken, *rec.ShareToken) {
+		strutil.ConstantTimeEqual(ownershipToken, *rec.ShareToken) {
 		return true
 	}
 

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/jsonutil"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // InitiateRecordingChatStream validates ownership, retrieves relevant context chunks via vector search,
@@ -42,7 +42,7 @@ func (s *Service) InitiateRecordingChatStream(
 
 	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
 		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+	} else if ownershipToken != "" && strutil.ConstantTimeEqual(ownershipToken, rec.OwnershipToken) {
 		hasAccess = true
 	}
 

@@ -154,3 +154,27 @@ func TestDetectLanguage(t *testing.T) {
 	}
 }
 
+func TestConstantTimeEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        string
+		b        string
+		expected bool
+	}{
+		{"identical strings", "super-secret-token", "super-secret-token", true},
+		{"empty strings", "", "", true},
+		{"different lengths", "secret", "secret1", false},
+		{"different characters", "abc", "abd", false},
+		{"case sensitive difference", "Secret", "secret", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := strutil.ConstantTimeEqual(tt.a, tt.b); got != tt.expected {
+				t.Errorf("ConstantTimeEqual(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.expected)
+			}
+		})
+	}
+}
+
+

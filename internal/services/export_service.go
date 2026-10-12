@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +41,7 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 
 	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
 		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+	} else if ownershipToken != "" && strutil.ConstantTimeEqual(ownershipToken, rec.OwnershipToken) {
 		hasAccess = true
 	} else if rec.IsShareEnabled {
 		hasAccess = true

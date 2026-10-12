@@ -109,8 +109,8 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminAct
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "user.quota_override",
-		Entity:   "user",
+		Action:   constants.AuditActionUserQuotaOverride,
+		Entity:   constants.AuditEntityUser,
 		EntityID: &entityIDStr,
 		Payload: map[string]any{
 			"previous_override": prevOverride,
@@ -155,8 +155,8 @@ func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta dtos.AdminAc
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "user.revoke_sessions",
-		Entity:   "user",
+		Action:   constants.AuditActionUserRevokeSessions,
+		Entity:   constants.AuditEntityUser,
 		EntityID: &entityIDStr,
 		Payload: map[string]any{
 			"target_email": user.Email,
@@ -217,8 +217,8 @@ func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminAction
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "user.assign_role",
-		Entity:   "user",
+		Action:   constants.AuditActionUserAssignRole,
+		Entity:   constants.AuditEntityUser,
 		EntityID: &userIDStr,
 		Payload: map[string]any{
 			"previous_role_id": user.RoleID,

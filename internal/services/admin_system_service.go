@@ -141,8 +141,8 @@ func (s *Service) AdminResolveReport(ctx context.Context, meta dtos.AdminActionM
 	entityIDStr := reportID.String()
 	auditLog := payload.AdminAuditPayload{
 		AdminID:   &adminIDVal,
-		Action:    "report.resolve",
-		Entity:    "report",
+		Action:    constants.AuditActionReportResolve,
+		Entity:    constants.AuditEntityReport,
 		EntityID:  &entityIDStr,
 		Payload:   auditPayloadData,
 		IPAddress: ip,

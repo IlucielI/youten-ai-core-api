@@ -114,8 +114,8 @@ func (s *Service) AdminCreateRole(ctx context.Context, meta dtos.AdminActionMeta
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "role.create",
-		Entity:   "role",
+		Action:   constants.AuditActionRoleCreate,
+		Entity:   constants.AuditEntityRole,
 		EntityID: &roleIDStr,
 		Payload: map[string]any{
 			"name":        role.Name,
@@ -188,8 +188,8 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta dtos.AdminActionMeta
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "role.update",
-		Entity:   "role",
+		Action:   constants.AuditActionRoleUpdate,
+		Entity:   constants.AuditEntityRole,
 		EntityID: &roleIDStr,
 		Payload: map[string]any{
 			"name":        role.Name,
@@ -332,8 +332,8 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta dtos.AdminAction
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "user_role.create",
-		Entity:   "user_role",
+		Action:   constants.AuditActionUserRoleCreate,
+		Entity:   constants.AuditEntityUserRole,
 		EntityID: &roleIDStr,
 		Payload: map[string]any{
 			"name":        role.Name,
@@ -429,8 +429,8 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta dtos.AdminAction
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "user_role.update",
-		Entity:   "user_role",
+		Action:   constants.AuditActionUserRoleUpdate,
+		Entity:   constants.AuditEntityUserRole,
 		EntityID: &roleIDStr,
 		Payload: map[string]any{
 			"name":        role.Name,

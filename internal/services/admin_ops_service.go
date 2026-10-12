@@ -197,8 +197,8 @@ func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMet
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "pipeline.dlq_retry",
-		Entity:   "recording",
+		Action:   constants.AuditActionPipelineDLQRetry,
+		Entity:   constants.AuditEntityRecording,
 		EntityID: &entityIDStr,
 		Payload: map[string]any{
 			"previous_status": previousStatus,
@@ -268,8 +268,8 @@ func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta dtos.AdminAc
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:   &adminIDVal,
-		Action:    "config.update_flags",
-		Entity:    "system_config",
+		Action:    constants.AuditActionConfigUpdateFlags,
+		Entity:    constants.AuditEntitySystemConfig,
 		Payload:   cfgPayload,
 		IPAddress: ip,
 		UserAgent: ua,

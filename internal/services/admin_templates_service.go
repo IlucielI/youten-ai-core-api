@@ -112,8 +112,8 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta dtos.AdminAction
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "template.create",
-		Entity:   "template",
+		Action:   constants.AuditActionTemplateCreate,
+		Entity:   constants.AuditEntityTemplate,
 		EntityID: &tmplIDStr,
 		Payload: map[string]any{
 			"category_key": tmpl.CategoryKey,
@@ -185,8 +185,8 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminAction
 
 	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
-		Action:   "template.update",
-		Entity:   "template",
+		Action:   constants.AuditActionTemplateUpdate,
+		Entity:   constants.AuditEntityTemplate,
 		EntityID: &tmplIDStr,
 		Payload: map[string]any{
 			"category_key":   tmpl.CategoryKey,

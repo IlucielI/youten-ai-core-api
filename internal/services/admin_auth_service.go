@@ -63,8 +63,8 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 	entityIDStr := admin.ID.String()
 	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
 		AdminID:   &admin.ID,
-		Action:    "ADMIN_LOGIN",
-		Entity:    "ADMIN_USER",
+		Action:    constants.AuditActionAdminLogin,
+		Entity:    constants.AuditEntityAdminUser,
 		EntityID:  &entityIDStr,
 		IPAddress: ipPtr,
 		UserAgent: uaPtr,
@@ -204,8 +204,8 @@ func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPas
 	entityIDStr := admin.ID.String()
 	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
 		AdminID:   &admin.ID,
-		Action:    "ADMIN_PASSWORD_RESET",
-		Entity:    "ADMIN_USER",
+		Action:    constants.AuditActionAdminPasswordReset,
+		Entity:    constants.AuditEntityAdminUser,
 		EntityID:  &entityIDStr,
 		IPAddress: ipPtr,
 		UserAgent: uaPtr,

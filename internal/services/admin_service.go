@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
 	"code-base-golang/internal/repositories"
+	"code-base-golang/internal/validations"
 )
 
 // AdminActionMeta carries administrative actor and request provenance for audit logging.
@@ -85,7 +86,7 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 
 // AdminOverrideUserQuota sets or resets a user's daily quota override and records an administrative audit log.
 func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta AdminActionMeta, userID uuid.UUID, req dtos.AdminUserQuotaOverrideRequest) (*dtos.AdminUserQuotaResponse, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUserQuotaOverrideRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -221,7 +222,7 @@ func (s *Service) AdminListRoles(ctx context.Context) (*dtos.AdminRoleListRespon
 
 // AdminCreateRole creates a new custom administrative role and writes an audit log.
 func (s *Service) AdminCreateRole(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateRoleRequest) (*dtos.AdminRoleItem, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminCreateRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -286,7 +287,7 @@ func (s *Service) AdminCreateRole(ctx context.Context, meta AdminActionMeta, req
 
 // AdminUpdateRole modifies an existing administrative role (protecting system roles).
 func (s *Service) AdminUpdateRole(ctx context.Context, meta AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateRoleRequest) (*dtos.AdminRoleItem, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUpdateRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -395,7 +396,7 @@ func (s *Service) AdminListUserRoles(ctx context.Context) (*dtos.AdminUserRoleLi
 
 // AdminCreateUserRole creates a new customer user role and writes an audit log.
 func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminCreateUserRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -488,7 +489,7 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta,
 
 // AdminUpdateUserRole modifies an existing customer user role.
 func (s *Service) AdminUpdateUserRole(ctx context.Context, meta AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUpdateUserRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -595,7 +596,7 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta AdminActionMeta,
 
 // AdminAssignUserRole assigns a customer user role to a user.
 func (s *Service) AdminAssignUserRole(ctx context.Context, meta AdminActionMeta, userID uuid.UUID, req dtos.AdminAssignUserRoleRequest) (*dtos.UserResponse, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminAssignUserRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -685,7 +686,7 @@ func (s *Service) AdminListTemplates(ctx context.Context) (*dtos.AdminTemplateLi
 
 // AdminCreateTemplate creates a new prompt template and writes an administrative audit log.
 func (s *Service) AdminCreateTemplate(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateTemplateRequest) (*dtos.AdminTemplateItem, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminCreateTemplateRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -757,7 +758,7 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta AdminActionMeta,
 
 // AdminUpdateTemplate modifies an existing prompt template and increments version when prompt or schema changes.
 func (s *Service) AdminUpdateTemplate(ctx context.Context, meta AdminActionMeta, templateID uuid.UUID, req dtos.AdminUpdateTemplateRequest) (*dtos.AdminTemplateItem, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUpdateTemplateRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -834,7 +835,7 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta AdminActionMeta,
 
 // AdminTestTemplate executes a sandbox dry run of a prompt and schema against a sample transcript.
 func (s *Service) AdminTestTemplate(ctx context.Context, meta AdminActionMeta, req dtos.AdminTestTemplateRequest) (*dtos.AdminTestTemplateResponse, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminTestTemplateRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -991,7 +992,7 @@ func resolveDLQQueueAndTopic(status, sourceType string) (string, string) {
 
 // AdminRetryDLQJob reprocesses a dead-lettered or stuck pipeline job, recovers state, and logs the administrative action.
 func (s *Service) AdminRetryDLQJob(ctx context.Context, meta AdminActionMeta, req dtos.DLQRetryRequest) (*dtos.DLQRetryResponse, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateDLQRetryRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 
@@ -1189,7 +1190,7 @@ func (s *Service) AdminListReports(ctx context.Context, q dtos.AdminReportListQu
 
 // AdminResolveReport executes administrative resolution on a reported recording ticket.
 func (s *Service) AdminResolveReport(ctx context.Context, meta AdminActionMeta, reportID uuid.UUID, req dtos.ResolveReportRequest) (*dtos.ResolveReportResponse, error) {
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateResolveReportRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
 

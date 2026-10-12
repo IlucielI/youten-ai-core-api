@@ -3,7 +3,6 @@ package dtos
 import (
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
 )
 
@@ -11,14 +10,6 @@ import (
 type AdminLoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-}
-
-// Validate validates the AdminLoginRequest fields.
-func (r AdminLoginRequest) Validate() error {
-	return validation.ValidateStruct(&r,
-		validation.Field(&r.Username, validation.Required, validation.Length(3, 100)),
-		validation.Field(&r.Password, validation.Required, validation.Length(6, 100)),
-	)
 }
 
 // AdminUserDTO represents staff user details included in authentication responses.

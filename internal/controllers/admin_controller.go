@@ -10,6 +10,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/services"
+	"code-base-golang/internal/validations"
 )
 
 // getAdminActionMeta extracts authenticated administrator metadata from the request context.
@@ -62,7 +63,7 @@ func (c *Controllers) AdminOverrideUserQuota(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUserQuotaOverrideRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -123,7 +124,7 @@ func (c *Controllers) AdminCreateRole(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminCreateRoleRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -157,7 +158,7 @@ func (c *Controllers) AdminUpdateRole(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUpdateRoleRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -195,7 +196,7 @@ func (c *Controllers) AdminCreateUserRole(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminCreateUserRoleRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -229,7 +230,7 @@ func (c *Controllers) AdminUpdateUserRole(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUpdateUserRoleRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -263,7 +264,7 @@ func (c *Controllers) AdminAssignUserRole(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminAssignUserRoleRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -301,7 +302,7 @@ func (c *Controllers) AdminCreateTemplate(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminCreateTemplateRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -335,7 +336,7 @@ func (c *Controllers) AdminUpdateTemplate(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminUpdateTemplateRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -362,7 +363,7 @@ func (c *Controllers) AdminTestTemplate(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminTestTemplateRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -413,7 +414,7 @@ func (c *Controllers) AdminRetryDLQJob(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateDLQRetryRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -455,7 +456,7 @@ func (c *Controllers) AdminUpdateSystemConfig(ctx *gin.Context) {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid json payload"))
 		return
 	}
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateUpdateSystemConfigRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -510,7 +511,7 @@ func (c *Controllers) AdminResolveReport(ctx *gin.Context) {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid JSON payload"))
 		return
 	}
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateResolveReportRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
@@ -608,7 +609,7 @@ func (c *Controllers) AdminLogin(ctx *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
+	if err := validations.ValidateAdminLoginRequest(&req); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}

@@ -1,7 +1,6 @@
 package dtos
 
 import (
-	"errors"
 	"strings"
 	"time"
 
@@ -57,18 +56,6 @@ type AdminUserQuotaOverrideRequest struct {
 	DailyQuotaOverride *int `json:"daily_quota_override"`
 }
 
-// Validate ensures daily quota override is non-negative and bounded.
-func (r *AdminUserQuotaOverrideRequest) Validate() error {
-	if r.DailyQuotaOverride != nil {
-		if *r.DailyQuotaOverride < 0 {
-			return errors.New("daily_quota_override must be non-negative or null")
-		}
-		if *r.DailyQuotaOverride > 10000 {
-			return errors.New("daily_quota_override cannot exceed 10000")
-		}
-	}
-	return nil
-}
 
 // AdminUserQuotaResponse represents the result of a daily quota override mutation.
 type AdminUserQuotaResponse struct {
@@ -107,61 +94,11 @@ type AdminCreateRoleRequest struct {
 	Permissions []string `json:"permissions"`
 }
 
-// Validate ensures role creation payload meets domain invariants.
-func (r *AdminCreateRoleRequest) Validate() error {
-	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("role name is required")
-	}
-	if len(r.Name) > 100 {
-		return errors.New("role name cannot exceed 100 characters")
-	}
-	r.Description = strings.TrimSpace(r.Description)
-	if len(r.Description) > 500 {
-		return errors.New("role description cannot exceed 500 characters")
-	}
-	if len(r.Permissions) == 0 {
-		return errors.New("at least one permission is required")
-	}
-	for i, p := range r.Permissions {
-		r.Permissions[i] = strings.TrimSpace(p)
-		if r.Permissions[i] == "" {
-			return errors.New("empty permission item is not allowed")
-		}
-	}
-	return nil
-}
-
 // AdminUpdateRoleRequest defines the payload for updating an administrative RBAC role.
 type AdminUpdateRoleRequest struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Permissions []string `json:"permissions"`
-}
-
-// Validate ensures role update payload meets domain invariants.
-func (r *AdminUpdateRoleRequest) Validate() error {
-	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("role name is required")
-	}
-	if len(r.Name) > 100 {
-		return errors.New("role name cannot exceed 100 characters")
-	}
-	r.Description = strings.TrimSpace(r.Description)
-	if len(r.Description) > 500 {
-		return errors.New("role description cannot exceed 500 characters")
-	}
-	if len(r.Permissions) == 0 {
-		return errors.New("at least one permission is required")
-	}
-	for i, p := range r.Permissions {
-		r.Permissions[i] = strings.TrimSpace(p)
-		if r.Permissions[i] == "" {
-			return errors.New("empty permission item is not allowed")
-		}
-	}
-	return nil
 }
 
 // AdminUserRoleItem represents a customer user role with permissions and daily quota.
@@ -192,38 +129,6 @@ type AdminCreateUserRoleRequest struct {
 	IsDefault   bool     `json:"is_default"`
 }
 
-// Validate ensures user role creation payload meets domain constraints.
-func (r *AdminCreateUserRoleRequest) Validate() error {
-	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("name is required")
-	}
-	if len(r.Name) > 100 {
-		return errors.New("name cannot exceed 100 characters")
-	}
-	r.Code = strings.ToUpper(strings.TrimSpace(r.Code))
-	if r.Code == "" {
-		return errors.New("code is required")
-	}
-	if len(r.Code) > 50 {
-		return errors.New("code cannot exceed 50 characters")
-	}
-	r.Description = strings.TrimSpace(r.Description)
-	if len(r.Description) > 500 {
-		return errors.New("description cannot exceed 500 characters")
-	}
-	if r.DailyQuota < 1 || r.DailyQuota > 1000 {
-		return errors.New("daily_quota must be between 1 and 1000")
-	}
-	for i, p := range r.Permissions {
-		r.Permissions[i] = strings.TrimSpace(p)
-		if r.Permissions[i] == "" {
-			return errors.New("empty permission item is not allowed")
-		}
-	}
-	return nil
-}
-
 // AdminUpdateUserRoleRequest defines the payload for updating a customer user role.
 type AdminUpdateUserRoleRequest struct {
 	Name        *string   `json:"name,omitempty"`
@@ -233,50 +138,9 @@ type AdminUpdateUserRoleRequest struct {
 	IsDefault   *bool     `json:"is_default,omitempty"`
 }
 
-// Validate ensures user role update payload meets domain constraints.
-func (r *AdminUpdateUserRoleRequest) Validate() error {
-	if r.Name != nil {
-		*r.Name = strings.TrimSpace(*r.Name)
-		if *r.Name == "" {
-			return errors.New("name cannot be empty")
-		}
-		if len(*r.Name) > 100 {
-			return errors.New("name cannot exceed 100 characters")
-		}
-	}
-	if r.Description != nil {
-		*r.Description = strings.TrimSpace(*r.Description)
-		if len(*r.Description) > 500 {
-			return errors.New("description cannot exceed 500 characters")
-		}
-	}
-	if r.DailyQuota != nil {
-		if *r.DailyQuota < 1 || *r.DailyQuota > 1000 {
-			return errors.New("daily_quota must be between 1 and 1000")
-		}
-	}
-	if r.Permissions != nil {
-		for i, p := range *r.Permissions {
-			(*r.Permissions)[i] = strings.TrimSpace(p)
-			if (*r.Permissions)[i] == "" {
-				return errors.New("empty permission item is not allowed")
-			}
-		}
-	}
-	return nil
-}
-
 // AdminAssignUserRoleRequest defines the payload for assigning a role to a user.
 type AdminAssignUserRoleRequest struct {
 	RoleID uuid.UUID `json:"role_id"`
-}
-
-// Validate ensures role assignment payload has a valid role ID.
-func (r *AdminAssignUserRoleRequest) Validate() error {
-	if r.RoleID == uuid.Nil {
-		return errors.New("role_id is required")
-	}
-	return nil
 }
 
 // AdminTemplateItem represents a prompt template in administrative views.
@@ -308,45 +172,6 @@ type AdminCreateTemplateRequest struct {
 	IsActive     *bool                  `json:"is_active"`
 }
 
-// Validate ensures template creation payload meets domain invariants and Draft-07 JSON schema rules.
-func (r *AdminCreateTemplateRequest) Validate() error {
-	r.CategoryKey = strings.TrimSpace(r.CategoryKey)
-	if r.CategoryKey == "" {
-		return errors.New("category_key is required")
-	}
-	if len(r.CategoryKey) > 100 {
-		return errors.New("category_key cannot exceed 100 characters")
-	}
-	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("template name is required")
-	}
-	if len(r.Name) > 255 {
-		return errors.New("template name cannot exceed 255 characters")
-	}
-	r.Description = strings.TrimSpace(r.Description)
-	r.Prompt = strings.TrimSpace(r.Prompt)
-	if r.Prompt == "" {
-		return errors.New("prompt is required")
-	}
-
-	if len(r.OutputSchema) == 0 {
-		return errors.New("output_schema is required")
-	}
-
-	// Validate Draft-07 JSON schema structure
-	schemaType, ok := r.OutputSchema["type"].(string)
-	if !ok || schemaType != "object" {
-		return errors.New("output_schema must have type 'object'")
-	}
-	props, ok := r.OutputSchema["properties"].(map[string]interface{})
-	if !ok || len(props) == 0 {
-		return errors.New("output_schema must define non-empty 'properties'")
-	}
-
-	return nil
-}
-
 // AdminUpdateTemplateRequest defines the payload for updating an existing prompt template.
 type AdminUpdateTemplateRequest struct {
 	Name         string                 `json:"name"`
@@ -356,75 +181,11 @@ type AdminUpdateTemplateRequest struct {
 	IsActive     *bool                  `json:"is_active"`
 }
 
-// Validate ensures update payload meets domain invariants and Draft-07 JSON schema rules.
-func (r *AdminUpdateTemplateRequest) Validate() error {
-	r.Name = strings.TrimSpace(r.Name)
-	if r.Name == "" {
-		return errors.New("template name is required")
-	}
-	if len(r.Name) > 255 {
-		return errors.New("template name cannot exceed 255 characters")
-	}
-	r.Description = strings.TrimSpace(r.Description)
-	r.Prompt = strings.TrimSpace(r.Prompt)
-	if r.Prompt == "" {
-		return errors.New("prompt is required")
-	}
-
-	if len(r.OutputSchema) == 0 {
-		return errors.New("output_schema is required")
-	}
-
-	// Validate Draft-07 JSON schema structure
-	schemaType, ok := r.OutputSchema["type"].(string)
-	if !ok || schemaType != "object" {
-		return errors.New("output_schema must have type 'object'")
-	}
-	props, ok := r.OutputSchema["properties"].(map[string]interface{})
-	if !ok || len(props) == 0 {
-		return errors.New("output_schema must define non-empty 'properties'")
-	}
-
-	return nil
-}
-
 // AdminTestTemplateRequest defines the payload for testing prompt templates in sandbox.
 type AdminTestTemplateRequest struct {
 	Prompt           string                 `json:"prompt"`
 	OutputSchema     map[string]interface{} `json:"output_schema"`
 	SampleTranscript string                 `json:"sample_transcript"`
-}
-
-// Validate ensures sandbox test payload has necessary inputs.
-func (r *AdminTestTemplateRequest) Validate() error {
-	r.Prompt = strings.TrimSpace(r.Prompt)
-	if r.Prompt == "" {
-		return errors.New("prompt is required")
-	}
-	if len(r.Prompt) > 20000 {
-		return errors.New("prompt exceeds maximum length of 20000 characters")
-	}
-	r.SampleTranscript = strings.TrimSpace(r.SampleTranscript)
-	if r.SampleTranscript == "" {
-		return errors.New("sample_transcript is required")
-	}
-	if len(r.SampleTranscript) > 100000 {
-		return errors.New("sample_transcript exceeds maximum length of 100000 characters")
-	}
-	if len(r.OutputSchema) == 0 {
-		return errors.New("output_schema is required")
-	}
-
-	schemaType, ok := r.OutputSchema["type"].(string)
-	if !ok || schemaType != "object" {
-		return errors.New("output_schema must have type 'object'")
-	}
-	props, ok := r.OutputSchema["properties"].(map[string]interface{})
-	if !ok || len(props) == 0 {
-		return errors.New("output_schema must define non-empty 'properties'")
-	}
-
-	return nil
 }
 
 // AdminTestTemplateResponse represents the dry run sandbox output and metrics.
@@ -467,22 +228,6 @@ type DLQRetryRequest struct {
 	Stage       string    `json:"stage,omitempty"`
 }
 
-// Validate ensures recording_id is provided and optional stage is valid.
-func (r *DLQRetryRequest) Validate() error {
-	if r.RecordingID == uuid.Nil {
-		return errors.New("recording_id is required")
-	}
-	r.Stage = strings.ToUpper(strings.TrimSpace(r.Stage))
-	if r.Stage != "" {
-		switch r.Stage {
-		case "QUEUED", "EXTRACTING", "TRANSCRIBING", "SUMMARIZING", "INDEXING":
-			// valid
-		default:
-			return errors.New("invalid stage, allowed values: QUEUED, EXTRACTING, TRANSCRIBING, SUMMARIZING, INDEXING")
-		}
-	}
-	return nil
-}
 
 // DLQRetryResponse returns details of the re-initiated pipeline job.
 type DLQRetryResponse struct {
@@ -507,13 +252,6 @@ type UpdateSystemConfigRequest struct {
 	BotWaitlistEnabled *bool `json:"bot_waitlist_enabled,omitempty"`
 }
 
-// Validate ensures at least one configuration flag is provided for update.
-func (r *UpdateSystemConfigRequest) Validate() error {
-	if r.MaintenanceMode == nil && r.AllowGuestUploads == nil && r.BotWaitlistEnabled == nil {
-		return errors.New("at least one configuration flag must be provided")
-	}
-	return nil
-}
 
 // AdminReportListQuery defines filter and pagination parameters for the abuse reports queue.
 type AdminReportListQuery struct {
@@ -564,18 +302,6 @@ type ResolveReportRequest struct {
 	ResolutionNote string `json:"resolution_note"`
 }
 
-// Validate ensures resolution action is one of DISMISS, SUSPEND_RECORDING, BAN_USER.
-func (r *ResolveReportRequest) Validate() error {
-	r.Action = strings.ToUpper(strings.TrimSpace(r.Action))
-	switch r.Action {
-	case "DISMISS", "SUSPEND_RECORDING", "BAN_USER":
-		// valid
-	default:
-		return errors.New("action must be DISMISS, SUSPEND_RECORDING, or BAN_USER")
-	}
-	r.ResolutionNote = strings.TrimSpace(r.ResolutionNote)
-	return nil
-}
 
 // ResolveReportResponse represents outcome of report resolution.
 type ResolveReportResponse struct {

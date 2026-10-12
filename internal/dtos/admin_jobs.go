@@ -3,7 +3,6 @@ package dtos
 import (
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
 )
 
@@ -23,14 +22,6 @@ func (q *AdminJobListQuery) SetDefaults() {
 	if q.Limit < 1 || q.Limit > 100 {
 		q.Limit = 20
 	}
-}
-
-// Validate validates query parameters.
-func (q AdminJobListQuery) Validate() error {
-	return validation.ValidateStruct(&q,
-		validation.Field(&q.Page, validation.Min(1)),
-		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
-	)
 }
 
 // AdminJobItem represents a single generation job or recording row in admin listings.

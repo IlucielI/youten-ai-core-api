@@ -498,6 +498,20 @@ func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.A
 		}, nil
 	}
 
+	// 3. Attempt validation as staff administrator token
+	adminClaims, adErr := jwt.ValidateAdminToken(s.cfg, tokenStr)
+	if adErr == nil && adminClaims != nil && adminClaims.TokenType == constants.JWTTokenTypeAdminAccess {
+		return &ctxmeta.AuthUser{
+			UserID:      adminClaims.AdminID,
+			Email:       adminClaims.Username,
+			SessionID:   adminClaims.AdminID.String(),
+			RoleCode:    "ADMIN",
+			Permissions: []string{"*"},
+			DailyQuota:  999999,
+			IsGuest:     false,
+		}, nil
+	}
+
 	return nil, constants.ErrInvalidToken
 }
 

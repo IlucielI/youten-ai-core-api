@@ -30,26 +30,31 @@ routes:
   - method: POST
     path: /v1/auth/register
     handler: Register
+    auth: true
 
   # Confirm email verification using a 6-digit OTP code or magic link token.
   - method: POST
     path: /v1/auth/verify-email
     handler: VerifyEmail
+    auth: true
 
   # Resend email verification code and magic link with rate limiting.
   - method: POST
     path: /v1/auth/verify-email/resend
     handler: ResendVerificationEmail
+    auth: true
 
   # Authenticate and issue an access + refresh token pair.
   - method: POST
     path: /v1/auth/login
     handler: Login
+    auth: true
 
-  # Rotate an expired access token using a valid refresh token (public: access token may be expired).
+  # Rotate an expired access token using a valid refresh token.
   - method: POST
     path: /v1/auth/refresh
     handler: RefreshToken
+    auth: true
 
   # Terminate the current session and revoke its refresh token.
   - method: POST
@@ -61,11 +66,13 @@ routes:
   - method: POST
     path: /v1/auth/forgot-password
     handler: ForgotPassword
+    auth: true
 
   # Confirm a password reset using a valid reset token.
   - method: POST
     path: /v1/auth/reset-password
     handler: ResetPassword
+    auth: true
 
   # Retrieve the authenticated user's profile and remaining quota.
   - method: GET
@@ -91,7 +98,7 @@ routes:
   - method: GET
     path: /v1/templates
     handler: ListTemplates
-    optional_auth: true
+    auth: true
 
   # Generate a presigned URL for direct-to-S3 recording upload.
   - method: POST
@@ -147,7 +154,7 @@ routes:
   - method: GET
     path: /v1/recordings/:id
     handler: GetRecordingDetail
-    optional_auth: true
+    auth: true
 
   # List and filter the authenticated user's recordings.
   - method: GET
@@ -184,106 +191,109 @@ routes:
   - method: GET
     path: /v1/recordings/shared/:token
     handler: GetSharedRecording
+    auth: true
 
   # Stream real-time pipeline progress via SSE.
   - method: GET
     path: /v1/recordings/:id/progress
     handler: StreamRecordingProgress
-    optional_auth: true
+    auth: true
 
   # Smart retry of a failed pipeline stage without re-upload.
   - method: POST
     path: /v1/recordings/:id/retry
     handler: RetryRecording
-    optional_auth: true
+    auth: true
 
   # Interactive grounded RAG AI chat with SSE typewriter streaming.
   - method: POST
     path: /v1/recordings/:id/chat
     handler: StreamRecordingChat
-    optional_auth: true
+    auth: true
 
   # Rename transcript speaker labels.
   - method: PUT
     path: /v1/recordings/:id/speakers
     handler: UpdateTranscriptSpeakers
-    optional_auth: true
+    auth: true
 
   # Update individual transcript segment text.
   - method: PATCH
     path: /v1/recordings/:id/segments/:segmentId
     handler: UpdateTranscriptSegment
-    optional_auth: true
+    auth: true
 
   # Regenerate the summary with a new template/angle.
   - method: POST
     path: /v1/recordings/:id/regenerate
     handler: RegenerateSummary
-    optional_auth: true
+    auth: true
 
   # List all summary versions of a recording.
   - method: GET
     path: /v1/recordings/:id/summaries
     handler: ListSummaryVersions
-    optional_auth: true
+    auth: true
 
   # Activate a specific summary version.
   - method: PATCH
     path: /v1/recordings/:id/summaries/:versionId/activate
     handler: ActivateSummaryVersion
-    optional_auth: true
+    auth: true
 
   # Create a timestamped inline comment.
   - method: POST
     path: /v1/recordings/:id/comments
     handler: CreateInlineComment
-    optional_auth: true
+    auth: true
 
   # List a recording's inline comments.
   - method: GET
     path: /v1/recordings/:id/comments
     handler: ListInlineComments
-    optional_auth: true
+    auth: true
 
   # Delete an inline comment.
   - method: DELETE
     path: /v1/recordings/:id/comments/:commentId
     handler: DeleteInlineComment
-    optional_auth: true
+    auth: true
 
   # Export the active summary and transcript (PDF, viewer allowed).
   - method: GET
     path: /v1/recordings/:id/export
     handler: ExportRecording
-    optional_auth: true
+    auth: true
 
   # Join the meeting voice bot beta waitlist.
   - method: POST
     path: /v1/waitlist/bot
     handler: JoinBotWaitlist
+    auth: true
 
   # Dispatch a voice bot to join a meeting or voice channel.
   - method: POST
     path: /v1/recordings/meeting-bot
     handler: DispatchMeetingBot
-    optional_auth: true
+    auth: true
 
   # Check real-time lifecycle status of a meeting bot session.
   - method: GET
     path: /v1/recordings/meeting-bot/:id/status
     handler: GetBotSessionStatus
-    optional_auth: true
+    auth: true
 
   # Command a meeting bot to leave the meeting and finish recording.
   - method: POST
     path: /v1/recordings/meeting-bot/:id/stop
     handler: StopBotSession
-    optional_auth: true
+    auth: true
 
   # Report ingestion and voice bot platform capabilities.
   - method: GET
     path: /v1/capabilities
     handler: GetCapabilities
+    auth: true
 
   # Asynchronous webhook for Google Meet bot worker status and recording upload callbacks.
   - method: POST
@@ -304,16 +314,19 @@ routes:
   - method: POST
     path: /v1/admin/login
     handler: AdminLogin
+    auth: true
 
   # Request staff administrator password reset email (CMS).
   - method: POST
     path: /v1/admin/forgot-password
     handler: AdminForgotPassword
+    auth: true
 
   # Reset staff administrator password using recovery token (CMS).
   - method: POST
     path: /v1/admin/reset-password
     handler: AdminResetPassword
+    auth: true
 
   # Admin list registered users (CMS).
   - method: GET

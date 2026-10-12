@@ -11,6 +11,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/payload"
 	"code-base-golang/internal/validations"
 )
 
@@ -194,12 +195,12 @@ func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMet
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "pipeline.dlq_retry",
 		Entity:   "recording",
 		EntityID: &entityIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"previous_status": previousStatus,
 			"requested_stage": previousStage,
 			"resumed_status":  status,
@@ -208,9 +209,7 @@ func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMet
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.DLQRetryResponse{
 		RecordingID: rec.ID,
@@ -261,23 +260,21 @@ func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta dtos.AdminAc
 		ua = &meta.UserAgent
 	}
 
-	payload := models.JSONMap{
+	cfgPayload := map[string]any{
 		"maintenance_mode":     cfg.MaintenanceMode,
 		"allow_guest_uploads":  cfg.AllowGuestUploads,
 		"bot_waitlist_enabled": cfg.BotWaitlistEnabled,
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:   &adminIDVal,
 		Action:    "config.update_flags",
 		Entity:    "system_config",
-		Payload:   payload,
+		Payload:   cfgPayload,
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.SystemConfigResponse{
 		MaintenanceMode:    cfg.MaintenanceMode,

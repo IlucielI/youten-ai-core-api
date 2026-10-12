@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/apperror"
+	"code-base-golang/internal/pkg/ctxmeta"
 )
 
 func TestControllers_wrapError(t *testing.T) {
@@ -181,3 +183,76 @@ func TestControllers_respondHelpers(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_getAdminActionMeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls := New(config.Config{}, nil)
+
+	t.Run("returns unauthorized error when context lacks admin auth", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/users", nil)
+		ctx.Request = req
+
+		meta, ok := ctrls.getAdminActionMeta(ctx)
+		if ok {
+			t.Fatal("expected ok to be false")
+		}
+		if meta.AdminID != uuid.Nil {
+			t.Fatalf("expected nil admin ID, got %v", meta.AdminID)
+		}
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("returns valid AdminActionMeta when admin auth exists", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		adminID := uuid.New()
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/users", nil)
+		req.Header.Set("User-Agent", "TestAgent/1.0")
+		req.RemoteAddr = "192.168.1.1:12345"
+
+		cCtx := ctxmeta.WithAdminAuthUser(req.Context(), ctxmeta.AdminAuthUser{
+			AdminID:  adminID,
+			Username: "admin_tester",
+		})
+		cCtx = ctxmeta.WithClientMeta(cCtx, "192.168.1.1", "TestAgent/1.0")
+		ctx.Request = req.WithContext(cCtx)
+
+		meta, ok := ctrls.getAdminActionMeta(ctx)
+		if !ok {
+			t.Fatal("expected ok to be true")
+		}
+		if meta.AdminID != adminID {
+			t.Fatalf("expected admin ID %v, got %v", adminID, meta.AdminID)
+		}
+		if meta.IPAddress != "192.168.1.1" {
+			t.Errorf("expected IP 192.168.1.1, got %s", meta.IPAddress)
+		}
+		if meta.UserAgent != "TestAgent/1.0" {
+			t.Errorf("expected User-Agent TestAgent/1.0, got %s", meta.UserAgent)
+		}
+	})
+}
+
+func TestControllers_getClientActionMeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls := New(config.Config{}, nil)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/login", nil)
+	cCtx := ctxmeta.WithClientMeta(req.Context(), "10.0.0.1", "AdminClient/2.0")
+	ctx.Request = req.WithContext(cCtx)
+
+	meta := ctrls.getClientActionMeta(ctx)
+	if meta.IPAddress != "10.0.0.1" {
+		t.Errorf("expected IP 10.0.0.1, got %s", meta.IPAddress)
+	}
+	if meta.UserAgent != "AdminClient/2.0" {
+		t.Errorf("expected User-Agent AdminClient/2.0, got %s", meta.UserAgent)
+	}
+}
+

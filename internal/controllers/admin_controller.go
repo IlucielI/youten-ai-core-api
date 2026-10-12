@@ -8,26 +8,8 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
-	"code-base-golang/internal/pkg/ctxmeta"
-	"code-base-golang/internal/services"
 	"code-base-golang/internal/validations"
 )
-
-// getAdminActionMeta extracts authenticated administrator metadata from the request context.
-// If the caller is unauthenticated or the admin ID is nil, it responds with HTTP 401 Unauthorized and returns false.
-func (c *Controllers) getAdminActionMeta(ctx *gin.Context) (services.AdminActionMeta, bool) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
-		return services.AdminActionMeta{}, false
-	}
-
-	return services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
-	}, true
-}
 
 // AdminListUsers handles GET /v1/admin/users.
 func (c *Controllers) AdminListUsers(ctx *gin.Context) {
@@ -614,12 +596,9 @@ func (c *Controllers) AdminLogin(ctx *gin.Context) {
 		return
 	}
 
-	meta := &services.AdminActionMeta{
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
-	}
+	meta := c.getClientActionMeta(ctx)
 
-	resp, err := c.svc.AdminLogin(ctx.Request.Context(), req, meta)
+	resp, err := c.svc.AdminLogin(ctx.Request.Context(), req, &meta)
 	if err != nil {
 		c.wrapError(ctx, err)
 		return

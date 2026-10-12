@@ -157,19 +157,9 @@ func (s *Service) ListRecordings(ctx context.Context, query dtos.RecordingFilter
 		}
 	}
 
-	totalPages := 0
-	if query.Limit > 0 {
-		totalPages = int((total + int64(query.Limit) - 1) / int64(query.Limit))
-	}
-
 	return &dtos.RecordingListResponse{
-		Items: items,
-		Pagination: dtos.PaginationMeta{
-			CurrentPage: query.Page,
-			PageSize:    query.Limit,
-			TotalItems:  total,
-			TotalPages:  totalPages,
-		},
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(query.Page, query.Limit, total),
 	}, nil
 }
 

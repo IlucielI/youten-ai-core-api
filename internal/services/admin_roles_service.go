@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"strings"
 
 	"github.com/google/uuid"
@@ -56,21 +55,9 @@ func (s *Service) AdminListRoles(ctx context.Context, q dtos.AdminRoleListQuery)
 		})
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
-	if totalPages == 0 && total == 0 {
-		totalPages = 0
-	} else if totalPages == 0 {
-		totalPages = 1
-	}
-
 	return &dtos.AdminRoleListResponse{
-		Items: items,
-		Pagination: dtos.PaginationMeta{
-			CurrentPage: q.Page,
-			PageSize:    q.Limit,
-			TotalItems:  total,
-			TotalPages:  totalPages,
-		},
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(q.Page, q.Limit, total),
 	}, nil
 }
 
@@ -231,21 +218,9 @@ func (s *Service) AdminListUserRoles(ctx context.Context, q dtos.AdminUserRoleLi
 		})
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
-	if totalPages == 0 && total == 0 {
-		totalPages = 0
-	} else if totalPages == 0 {
-		totalPages = 1
-	}
-
 	return &dtos.AdminUserRoleListResponse{
-		Items: items,
-		Pagination: dtos.PaginationMeta{
-			CurrentPage: q.Page,
-			PageSize:    q.Limit,
-			TotalItems:  total,
-			TotalPages:  totalPages,
-		},
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(q.Page, q.Limit, total),
 	}, nil
 }
 

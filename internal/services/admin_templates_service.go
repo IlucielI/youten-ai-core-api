@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"reflect"
 	"time"
 
@@ -51,21 +50,9 @@ func (s *Service) AdminListTemplates(ctx context.Context, q dtos.AdminTemplateLi
 		})
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
-	if totalPages == 0 && total == 0 {
-		totalPages = 0
-	} else if totalPages == 0 {
-		totalPages = 1
-	}
-
 	return &dtos.AdminTemplateListResponse{
-		Items: items,
-		Pagination: dtos.PaginationMeta{
-			CurrentPage: q.Page,
-			PageSize:    q.Limit,
-			TotalItems:  total,
-			TotalPages:  totalPages,
-		},
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(q.Page, q.Limit, total),
 	}, nil
 }
 

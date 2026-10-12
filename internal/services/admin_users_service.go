@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"math"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -54,21 +53,9 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 		})
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
-	if totalPages == 0 && total == 0 {
-		totalPages = 0
-	} else if totalPages == 0 {
-		totalPages = 1
-	}
-
 	return &dtos.AdminUserListResponse{
-		Items: items,
-		Pagination: dtos.PaginationMeta{
-			CurrentPage: q.Page,
-			PageSize:    q.Limit,
-			TotalItems:  total,
-			TotalPages:  totalPages,
-		},
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(q.Page, q.Limit, total),
 	}, nil
 }
 

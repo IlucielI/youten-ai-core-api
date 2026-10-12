@@ -54,19 +54,9 @@ func (s *Service) AdminListReports(ctx context.Context, q dtos.AdminReportListQu
 		items = append(items, item)
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
-	if totalPages < 1 {
-		totalPages = 1
-	}
-
 	return &dtos.AdminReportListResponse{
-		Items: items,
-		Pagination: dtos.PaginationMeta{
-			CurrentPage: q.Page,
-			PageSize:    q.Limit,
-			TotalItems:  total,
-			TotalPages:  totalPages,
-		},
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(q.Page, q.Limit, total),
 	}, nil
 }
 
@@ -189,19 +179,9 @@ func (s *Service) AdminListAuditLogs(ctx context.Context, q dtos.AdminAuditLogLi
 		items = append(items, item)
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
-	if totalPages < 1 {
-		totalPages = 1
-	}
-
 	return &dtos.AdminAuditLogListResponse{
-		Items: items,
-		Pagination: dtos.PaginationMeta{
-			CurrentPage: q.Page,
-			PageSize:    q.Limit,
-			TotalItems:  total,
-			TotalPages:  totalPages,
-		},
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(q.Page, q.Limit, total),
 	}, nil
 }
 

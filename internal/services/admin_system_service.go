@@ -12,6 +12,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/payload"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -129,7 +130,7 @@ func (s *Service) AdminResolveReport(ctx context.Context, meta dtos.AdminActionM
 		ua = &meta.UserAgent
 	}
 
-	payload := models.JSONMap{
+	auditPayloadData := map[string]any{
 		"report_id":       reportID.String(),
 		"recording_id":    report.RecordingID.String(),
 		"action":          req.Action,
@@ -138,18 +139,16 @@ func (s *Service) AdminResolveReport(ctx context.Context, meta dtos.AdminActionM
 	}
 
 	entityIDStr := reportID.String()
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:   &adminIDVal,
 		Action:    "report.resolve",
 		Entity:    "report",
 		EntityID:  &entityIDStr,
-		Payload:   payload,
+		Payload:   auditPayloadData,
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.ResolveReportResponse{
 		ReportID:       reportID,

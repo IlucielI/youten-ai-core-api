@@ -47,25 +47,14 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 	}
 
 	// Record audit log asynchronously via broker
-	var ipPtr, uaPtr *string
-	if meta != nil {
-		if meta.IPAddress != "" {
-			ip := meta.IPAddress
-			ipPtr = &ip
-		}
-		if meta.UserAgent != "" {
-			ua := meta.UserAgent
-			uaPtr = &ua
-		}
-	}
 	entityIDStr := admin.ID.String()
 	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
 		AdminID:   &admin.ID,
 		Action:    constants.AuditActionAdminLogin,
 		Entity:    constants.AuditEntityAdmin,
 		EntityID:  &entityIDStr,
-		IPAddress: ipPtr,
-		UserAgent: uaPtr,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	})
 
 	roleName := ""
@@ -184,25 +173,14 @@ func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPas
 		return s.wrapError(ctx, err)
 	}
 
-	var ipPtr, uaPtr *string
-	if meta != nil {
-		if meta.IPAddress != "" {
-			ip := meta.IPAddress
-			ipPtr = &ip
-		}
-		if meta.UserAgent != "" {
-			ua := meta.UserAgent
-			uaPtr = &ua
-		}
-	}
 	entityIDStr := admin.ID.String()
 	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
 		AdminID:   &admin.ID,
 		Action:    constants.AuditActionAdminPasswordReset,
 		Entity:    constants.AuditEntityAdmin,
 		EntityID:  &entityIDStr,
-		IPAddress: ipPtr,
-		UserAgent: uaPtr,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	})
 
 	return nil

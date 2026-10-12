@@ -99,19 +99,9 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta dtos.AdminAction
 		return nil, s.wrapError(ctx, err)
 	}
 
-	adminIDVal := meta.AdminID
 	tmplIDStr := tmpl.ID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionTemplateCreate,
 		Entity:   constants.AuditEntityTemplate,
 		EntityID: &tmplIDStr,
@@ -120,8 +110,8 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta dtos.AdminAction
 			"name":         tmpl.Name,
 			"version":      tmpl.Version,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 
@@ -172,19 +162,9 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminAction
 		return nil, s.wrapError(ctx, err)
 	}
 
-	adminIDVal := meta.AdminID
 	tmplIDStr := tmpl.ID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionTemplateUpdate,
 		Entity:   constants.AuditEntityTemplate,
 		EntityID: &tmplIDStr,
@@ -195,8 +175,8 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminAction
 			"prompt_changed": promptChanged,
 			"schema_changed": schemaChanged,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 

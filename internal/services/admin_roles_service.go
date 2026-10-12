@@ -101,19 +101,9 @@ func (s *Service) AdminCreateRole(ctx context.Context, meta dtos.AdminActionMeta
 		return nil, s.wrapError(ctx, err)
 	}
 
-	adminIDVal := meta.AdminID
 	roleIDStr := role.ID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionRoleCreate,
 		Entity:   constants.AuditEntityRole,
 		EntityID: &roleIDStr,
@@ -121,8 +111,8 @@ func (s *Service) AdminCreateRole(ctx context.Context, meta dtos.AdminActionMeta
 			"name":        role.Name,
 			"permissions": req.Permissions,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 
@@ -175,19 +165,9 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta dtos.AdminActionMeta
 		return nil, s.wrapError(ctx, err)
 	}
 
-	adminIDVal := meta.AdminID
 	roleIDStr := role.ID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionRoleUpdate,
 		Entity:   constants.AuditEntityRole,
 		EntityID: &roleIDStr,
@@ -195,8 +175,8 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta dtos.AdminActionMeta
 			"name":        role.Name,
 			"permissions": req.Permissions,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 
@@ -319,19 +299,9 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta dtos.AdminAction
 		}
 	}
 
-	adminIDVal := meta.AdminID
 	roleIDStr := role.ID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserRoleCreate,
 		Entity:   constants.AuditEntityUserRole,
 		EntityID: &roleIDStr,
@@ -342,8 +312,8 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta dtos.AdminAction
 			"permissions": perms,
 			"is_default":  role.IsDefault,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 
@@ -416,19 +386,9 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta dtos.AdminAction
 		return nil, s.wrapError(ctx, err)
 	}
 
-	adminIDVal := meta.AdminID
 	roleIDStr := role.ID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserRoleUpdate,
 		Entity:   constants.AuditEntityUserRole,
 		EntityID: &roleIDStr,
@@ -438,8 +398,8 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta dtos.AdminAction
 			"daily_quota": role.DailyQuota,
 			"is_default":  role.IsDefault,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 

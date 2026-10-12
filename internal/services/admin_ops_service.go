@@ -183,20 +183,9 @@ func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMet
 		stage = models.RecordingStatusExtracting
 	}
 
-	// Persist admin audit log
-	adminIDVal := meta.AdminID
 	entityIDStr := req.RecordingID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionPipelineDLQRetry,
 		Entity:   constants.AuditEntityRecording,
 		EntityID: &entityIDStr,
@@ -206,8 +195,8 @@ func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMet
 			"resumed_status":  status,
 			"resumed_stage":   stage,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 
@@ -249,17 +238,6 @@ func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta dtos.AdminAc
 		return nil, s.wrapError(ctx, err)
 	}
 
-	// Persist admin audit log
-	adminIDVal := meta.AdminID
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	cfgPayload := map[string]any{
 		"maintenance_mode":     cfg.MaintenanceMode,
 		"allow_guest_uploads":  cfg.AllowGuestUploads,
@@ -267,12 +245,12 @@ func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta dtos.AdminAc
 	}
 
 	auditLog := payload.AdminAuditPayload{
-		AdminID:   &adminIDVal,
+		AdminID:   meta.AdminIDPtr(),
 		Action:    constants.AuditActionConfigUpdateFlags,
 		Entity:    constants.AuditEntitySystemConfig,
 		Payload:   cfgPayload,
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 

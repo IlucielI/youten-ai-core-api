@@ -119,17 +119,6 @@ func (s *Service) AdminResolveReport(ctx context.Context, meta dtos.AdminActionM
 		return nil, s.wrapError(ctx, err)
 	}
 
-	// Persist admin audit log
-	adminIDVal := meta.AdminID
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditPayloadData := map[string]any{
 		"report_id":       reportID.String(),
 		"recording_id":    report.RecordingID.String(),
@@ -140,13 +129,13 @@ func (s *Service) AdminResolveReport(ctx context.Context, meta dtos.AdminActionM
 
 	entityIDStr := reportID.String()
 	auditLog := payload.AdminAuditPayload{
-		AdminID:   &adminIDVal,
+		AdminID:   meta.AdminIDPtr(),
 		Action:    constants.AuditActionReportResolve,
 		Entity:    constants.AuditEntityReport,
 		EntityID:  &entityIDStr,
 		Payload:   auditPayloadData,
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 

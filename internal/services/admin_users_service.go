@@ -95,20 +95,9 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminAct
 	user.DailyQuotaOverride = req.DailyQuotaOverride
 	effectiveQuota := resolveDailyQuota(user)
 
-	// Persist administrative audit log
-	adminIDVal := meta.AdminID
 	entityIDStr := userID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserQuotaOverride,
 		Entity:   constants.AuditEntityUser,
 		EntityID: &entityIDStr,
@@ -116,8 +105,8 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminAct
 			"previous_override": prevOverride,
 			"new_override":      req.DailyQuotaOverride,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 
@@ -142,27 +131,17 @@ func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta dtos.AdminAc
 		return nil, s.wrapError(ctx, err)
 	}
 
-	adminIDVal := meta.AdminID
 	entityIDStr := userID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserRevokeSessions,
 		Entity:   constants.AuditEntityUser,
 		EntityID: &entityIDStr,
 		Payload: map[string]any{
 			"target_email": user.Email,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 
@@ -204,19 +183,9 @@ func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminAction
 		return nil, s.wrapError(ctx, err)
 	}
 
-	adminIDVal := meta.AdminID
 	userIDStr := user.ID.String()
-	var ip *string
-	var ua *string
-	if meta.IPAddress != "" {
-		ip = &meta.IPAddress
-	}
-	if meta.UserAgent != "" {
-		ua = &meta.UserAgent
-	}
-
 	auditLog := payload.AdminAuditPayload{
-		AdminID:  &adminIDVal,
+		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserAssignRole,
 		Entity:   constants.AuditEntityUser,
 		EntityID: &userIDStr,
@@ -226,8 +195,8 @@ func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminAction
 			"new_role_code":    role.Code,
 			"new_role_name":    role.Name,
 		},
-		IPAddress: ip,
-		UserAgent: ua,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
 	}
 	s.emitAdminAuditLog(ctx, auditLog)
 

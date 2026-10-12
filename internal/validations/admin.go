@@ -6,18 +6,9 @@ import (
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/go-ozzo/ozzo-validation/v4/is"
-	"github.com/google/uuid"
 
 	"code-base-golang/internal/dtos"
 )
-
-var notEmptyUUID = validation.By(func(value interface{}) error {
-	id, ok := value.(uuid.UUID)
-	if !ok || id == uuid.Nil {
-		return errors.New("cannot be blank")
-	}
-	return nil
-})
 
 // ValidateAdminUserQuotaOverrideRequest normalizes and validates quota override parameters.
 func ValidateAdminUserQuotaOverrideRequest(r *dtos.AdminUserQuotaOverrideRequest) error {

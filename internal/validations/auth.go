@@ -1,7 +1,6 @@
 package validations
 
 import (
-	"regexp"
 	"strings"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -9,8 +8,6 @@ import (
 
 	"code-base-golang/internal/dtos"
 )
-
-var digitRegex = regexp.MustCompile(`[0-9]`)
 
 // ValidateRegisterRequest normalizes and validates a registration payload.
 func ValidateRegisterRequest(r *dtos.RegisterRequest) error {
@@ -147,8 +144,6 @@ func ValidateResetPasswordRequest(r *dtos.ResetPasswordRequest) error {
 		),
 	)
 }
-
-var sixDigitCodeRegex = regexp.MustCompile(`^[0-9]{6}$`)
 
 // ValidateVerifyEmailRequest validates email verification requests by OTP code or magic link token.
 func ValidateVerifyEmailRequest(r *dtos.VerifyEmailRequest) error {

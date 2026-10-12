@@ -2,9 +2,6 @@
 package controllers
 
 import (
-	"net/http"
-	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -18,22 +15,12 @@ import (
 func (c *Controllers) PresignUpload(ctx *gin.Context) {
 	var req dtos.PresignUploadRequest
 	if err := ctx.ShouldBind(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidatePresignUploadRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -56,22 +43,12 @@ func (c *Controllers) PresignUpload(ctx *gin.Context) {
 func (c *Controllers) UploadRecording(ctx *gin.Context) {
 	var req dtos.UploadRecordingRequest
 	if err := ctx.ShouldBind(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateUploadRecordingRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -88,22 +65,12 @@ func (c *Controllers) UploadRecording(ctx *gin.Context) {
 func (c *Controllers) ImportURL(ctx *gin.Context) {
 	var req dtos.ImportURLRequest
 	if err := ctx.ShouldBind(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateImportURLRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 

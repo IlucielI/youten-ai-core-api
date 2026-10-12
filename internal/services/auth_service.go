@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"html"
 	"math/big"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
+	"code-base-golang/internal/templates"
 )
 
 // resolveDailyQuota returns the effective daily quota for a user, honoring a per-user override when set.
@@ -388,17 +388,19 @@ func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRe
 
 	// Dispatch transactional email if mailer is configured
 	if s.mailer != nil {
+		htmlBody, textBody, err := templates.RenderResetPasswordEmail(templates.ResetPasswordEmailData{
+			FullName: user.FullName,
+			Token:    rawToken,
+		})
+		if err != nil {
+			return s.wrapError(ctx, fmt.Errorf("render reset password email template: %w", err))
+		}
+
 		msg := EmailMessage{
-			To:      []string{user.Email},
-			Subject: "Reset Your Password - Youten AI",
-			TextBody: fmt.Sprintf(
-				"Hello %s,\n\nYou requested a password reset. Use the token below within 15 minutes to reset your password:\n\n%s\n\nIf you did not request this, please disregard this email.\n",
-				user.FullName, rawToken,
-			),
-			HTMLBody: fmt.Sprintf(
-				"<p>Hello <strong>%s</strong>,</p><p>You requested a password reset. Use the token below within 15 minutes to reset your password:</p><p><strong style=\"font-size: 18px;\">%s</strong></p><p>If you did not request this, please disregard this email.</p>",
-				html.EscapeString(user.FullName), rawToken,
-			),
+			To:       []string{user.Email},
+			Subject:  "Reset Your Password - Youten AI",
+			TextBody: textBody,
+			HTMLBody: htmlBody,
 		}
 		if err := s.mailer.Send(ctx, msg); err != nil {
 			return s.wrapError(ctx, err)
@@ -727,58 +729,18 @@ func (s *Service) sendVerificationEmail(ctx context.Context, email, fullName, co
 	}
 	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", appURL, rawToken)
 
-	subject := "Verifikasi Email Anda - Youten AI"
-	textBody := fmt.Sprintf(
-		"Halo %s,\n\nTerima kasih telah mendaftar di Youten AI.\nKode verifikasi email Anda adalah: %s\n\nAtau klik tautan berikut untuk verifikasi instan:\n%s\n\nKode dan tautan ini berlaku selama 24 jam.\nJika Anda tidak merasa mendaftar di Youten AI, abaikan email ini.\n\nSalam,\nTim Youten AI\n",
-		fullName, code, verifyURL,
-	)
-	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verifikasi Email</title>
-  <style>
-    body { margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f1f5f9; }
-    .wrapper { max-width: 580px; margin: 40px auto; background: #13192b; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
-    .header { background: linear-gradient(135deg, #4f46e5 0%%, #7c3aed 100%%); padding: 36px 32px; text-align: center; }
-    .brand-title { font-size: 24px; font-weight: 800; color: #ffffff; margin: 0; }
-    .content { padding: 36px 32px; background: #0f1423; }
-    h2 { font-size: 20px; font-weight: 700; color: #f8fafc; margin-top: 0; margin-bottom: 16px; }
-    p { font-size: 15px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
-    .code-box { background: #182033; border: 1px solid rgba(99,102,241,0.4); border-radius: 12px; padding: 20px; text-align: center; margin: 28px 0; }
-    .code-label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: #818cf8; letter-spacing: 1px; margin-bottom: 8px; }
-    .code-val { font-family: monospace; font-size: 34px; font-weight: 800; color: #38bdf8; letter-spacing: 6px; }
-    .btn-wrap { text-align: center; margin: 32px 0; }
-    .btn { display: inline-block; background: linear-gradient(135deg, #6366f1 0%%, #8b5cf6 100%%); color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 10px; }
-    .notice { font-size: 13px; color: #64748b; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; margin-top: 28px; }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="header">
-      <div class="brand-title">Youten AI</div>
-    </div>
-    <div class="content">
-      <h2>Verifikasi Alamat Email Anda</h2>
-      <p>Halo <strong>%s</strong>,</p>
-      <p>Terima kasih telah mendaftar di Youten AI. Silakan gunakan kode verifikasi di bawah ini untuk mengonfirmasi akun Anda:</p>
-      <div class="code-box">
-        <div class="code-label">Kode Verifikasi (OTP)</div>
-        <div class="code-val">%s</div>
-      </div>
-      <div class="btn-wrap">
-        <a href="%s" class="btn">Verifikasi Email Saya</a>
-      </div>
-      <p class="notice">Kode dan tautan ini berlaku selama 24 jam. Jika Anda tidak merasa mendaftar di Youten AI, abaikan email ini.</p>
-    </div>
-  </div>
-</body>
-</html>`, html.EscapeString(fullName), code, verifyURL)
+	htmlBody, textBody, err := templates.RenderVerifyEmail(templates.VerifyEmailData{
+		FullName:  fullName,
+		Code:      code,
+		VerifyURL: verifyURL,
+	})
+	if err != nil {
+		return s.wrapError(ctx, fmt.Errorf("render verification email template: %w", err))
+	}
 
 	msg := EmailMessage{
 		To:       []string{email},
-		Subject:  subject,
+		Subject:  "Verify Your Email - Youten AI",
 		TextBody: textBody,
 		HTMLBody: htmlBody,
 	}

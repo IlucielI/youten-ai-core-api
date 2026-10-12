@@ -13,6 +13,9 @@ const (
 	TopicRecordingCompleted  = "recording.completed"
 	TopicRecordingFailed     = "recording.failed"
 
+	// Administrative domain events
+	TopicAdminAuditLog = "admin.audit.created"
+
 	// Domain event alias
 	DomainEventRecordingCreated = TopicRecordingUploaded
 )

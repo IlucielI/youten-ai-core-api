@@ -15,6 +15,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/payload"
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
 )
@@ -47,7 +48,7 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 		return nil, s.wrapError(ctx, err)
 	}
 
-	// Record audit log
+	// Record audit log asynchronously via broker
 	var ipPtr, uaPtr *string
 	if meta != nil {
 		if meta.IPAddress != "" {
@@ -60,16 +61,14 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 		}
 	}
 	entityIDStr := admin.ID.String()
-	if err := s.repo.CreateAdminAuditLog(ctx, &models.AdminAuditLog{
+	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
 		AdminID:   &admin.ID,
 		Action:    "ADMIN_LOGIN",
 		Entity:    "ADMIN_USER",
 		EntityID:  &entityIDStr,
 		IPAddress: ipPtr,
 		UserAgent: uaPtr,
-	}); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	})
 
 	roleName := ""
 	var perms []string
@@ -203,7 +202,7 @@ func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPas
 		}
 	}
 	entityIDStr := admin.ID.String()
-	_ = s.repo.CreateAdminAuditLog(ctx, &models.AdminAuditLog{
+	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
 		AdminID:   &admin.ID,
 		Action:    "ADMIN_PASSWORD_RESET",
 		Entity:    "ADMIN_USER",

@@ -51,6 +51,7 @@ func TestWorkerServer_RegisterWorker(t *testing.T) {
 		constants.TopicRecordingIndex,
 		constants.TopicRecordingAnalytics,
 		constants.TopicRecordingChapterize,
+		constants.TopicAdminAuditLog,
 	}
 
 	for _, topic := range expectedTopics {
@@ -89,6 +90,9 @@ func TestWorkerServer_Handlers_NilServiceOrBadJSON(t *testing.T) {
 	if server.HandleRecordingChapterize(ctx, goodJSON) {
 		t.Error("expected false when svc is nil")
 	}
+	if server.HandleAdminAuditLog(ctx, goodJSON) {
+		t.Error("expected false when svc is nil")
+	}
 
 	// Bad JSON
 	if server.HandleRecordingImport(ctx, badJSON) {
@@ -110,6 +114,9 @@ func TestWorkerServer_Handlers_NilServiceOrBadJSON(t *testing.T) {
 		t.Error("expected false on bad json")
 	}
 	if server.HandleRecordingChapterize(ctx, badJSON) {
+		t.Error("expected false on bad json")
+	}
+	if server.HandleAdminAuditLog(ctx, badJSON) {
 		t.Error("expected false on bad json")
 	}
 }

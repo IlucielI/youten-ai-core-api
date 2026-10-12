@@ -43,6 +43,7 @@ func (w *WorkerServer) RegisterWorker() {
 	w.sub.MustSubscribe(constants.TopicRecordingIndex, w.HandleRecordingIndex)
 	w.sub.MustSubscribe(constants.TopicRecordingAnalytics, w.HandleRecordingAnalytics)
 	w.sub.MustSubscribe(constants.TopicRecordingChapterize, w.HandleRecordingChapterize)
+	w.sub.MustSubscribe(constants.TopicAdminAuditLog, w.HandleAdminAuditLog)
 
 	log.Println("Done RegisterWorker")
 }
@@ -206,5 +207,23 @@ func (w *WorkerServer) HandleRecordingChapterize(ctx context.Context, msg []byte
 		log.Printf("[WORKER ERROR] Chapterization failed for recording %s: %v", p.RecordingID.String(), err)
 	}
 	log.Printf("[WORKER] Finished Chapterization for recording %s", p.RecordingID.String())
+	return true
+}
+
+// HandleAdminAuditLog persists an administrative audit log received from the message broker.
+func (w *WorkerServer) HandleAdminAuditLog(ctx context.Context, msg []byte) bool {
+	if w.svc == nil {
+		return false
+	}
+	var p payload.AdminAuditPayload
+	if err := payload.Parse(msg, &p); err != nil {
+		log.Printf("[WORKER ERROR] failed to parse admin audit payload: %v", err)
+		return false
+	}
+
+	if err := w.svc.RecordAdminAuditLog(ctx, p); err != nil {
+		log.Printf("[WORKER ERROR] failed to persist admin audit log: %v", err)
+		return false
+	}
 	return true
 }

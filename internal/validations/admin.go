@@ -174,10 +174,12 @@ func ValidateDLQRetryRequest(r *dtos.DLQRetryRequest) error {
 
 // ValidateUpdateSystemConfigRequest validates system configuration update payloads.
 func ValidateUpdateSystemConfigRequest(r *dtos.UpdateSystemConfigRequest) error {
-	if r.MaintenanceMode == nil && r.AllowGuestUploads == nil && r.BotWaitlistEnabled == nil {
-		return errors.New("at least one configuration flag must be provided")
-	}
-	return nil
+	return validation.Validate(r, validation.By(func(value interface{}) error {
+		if r.MaintenanceMode == nil && r.AllowGuestUploads == nil && r.BotWaitlistEnabled == nil {
+			return errors.New("at least one configuration flag must be provided")
+		}
+		return nil
+	}))
 }
 
 // ValidateResolveReportRequest normalizes and validates report resolution payloads.
@@ -248,9 +250,6 @@ func ValidateAdminForgotPasswordRequest(r *dtos.AdminForgotPasswordRequest) erro
 // ValidateAdminResetPasswordRequest validates an admin password reset confirmation payload.
 func ValidateAdminResetPasswordRequest(r *dtos.AdminResetPasswordRequest) error {
 	r.Token = strings.TrimSpace(r.Token)
-	if r.ConfirmPassword != "" && r.NewPassword != r.ConfirmPassword {
-		return errors.New("confirm_password does not match new_password")
-	}
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Token,
 			validation.Required.Error("token is required"),
@@ -260,6 +259,12 @@ func ValidateAdminResetPasswordRequest(r *dtos.AdminResetPasswordRequest) error 
 			validation.Length(8, 72).Error("new_password must be between 8 and 72 characters"),
 			validation.Match(digitRegex).Error("new_password must contain at least one digit"),
 		),
+		validation.Field(&r.ConfirmPassword, validation.By(func(value interface{}) error {
+			if r.ConfirmPassword != "" && r.NewPassword != r.ConfirmPassword {
+				return errors.New("confirm_password does not match new_password")
+			}
+			return nil
+		})),
 	)
 }
 

@@ -144,20 +144,8 @@ func (s *Service) GetBotSessionStatus(ctx context.Context, sessionID uuid.UUID) 
 		return nil, constants.ErrNotFound
 	}
 
-	// Live status synchronization with provider if external ID is present
-	if session.ExternalSessionID != nil && session.Status == constants.BotSessionStatusRecording {
-		if provider, exists := s.BotProvider(session.Provider); exists && provider.IsEnabled() {
-			if liveStatus, err := provider.GetStatus(ctx, *session.ExternalSessionID); err == nil && liveStatus != nil {
-				if liveStatus.Status != session.Status {
-					session.Status = liveStatus.Status
-					session.StartedAt = liveStatus.StartedAt
-					session.EndedAt = liveStatus.EndedAt
-					if err := s.repo.UpdateBotSessionStatus(ctx, sessionID, liveStatus.Status, nil, liveStatus.StartedAt, liveStatus.EndedAt); err != nil {
-						return nil, err
-					}
-				}
-			}
-		}
+	if err := s.syncBotSessionLiveStatus(ctx, session); err != nil {
+		return nil, err
 	}
 
 	return &dtos.BotSessionStatusResponse{
@@ -172,6 +160,29 @@ func (s *Service) GetBotSessionStatus(ctx context.Context, sessionID uuid.UUID) 
 		EndedAt:      session.EndedAt,
 		ErrorMessage: session.ErrorMessage,
 	}, nil
+}
+
+// syncBotSessionLiveStatus queries the live provider status for active recording sessions and persists any state changes.
+func (s *Service) syncBotSessionLiveStatus(ctx context.Context, session *models.BotSession) error {
+	if session.ExternalSessionID == nil || session.Status != constants.BotSessionStatusRecording {
+		return nil
+	}
+
+	provider, exists := s.BotProvider(session.Provider)
+	if !exists || !provider.IsEnabled() {
+		return nil
+	}
+
+	liveStatus, err := provider.GetStatus(ctx, *session.ExternalSessionID)
+	if err != nil || liveStatus == nil || liveStatus.Status == session.Status {
+		return nil
+	}
+
+	session.Status = liveStatus.Status
+	session.StartedAt = liveStatus.StartedAt
+	session.EndedAt = liveStatus.EndedAt
+
+	return s.repo.UpdateBotSessionStatus(ctx, session.ID, liveStatus.Status, nil, liveStatus.StartedAt, liveStatus.EndedAt)
 }
 
 // StopBotSession commands an active voice bot to leave the meeting/channel and conclude recording.

@@ -35,7 +35,7 @@ func (s *Service) UpdateTranscriptSpeakers(ctx context.Context, id uuid.UUID, ow
 	}
 
 	// Ownership verification (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -66,7 +66,7 @@ func (s *Service) UpdateTranscriptSegment(ctx context.Context, id uuid.UUID, seg
 	}
 
 	// Ownership verification (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -107,7 +107,7 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	}
 
 	// Verify ownership (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -286,7 +286,7 @@ func (s *Service) ListSummaryVersions(ctx context.Context, id uuid.UUID, ownersh
 	}
 
 	// Verify ownership (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -314,7 +314,7 @@ func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, vers
 	}
 
 	// Verify ownership (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 

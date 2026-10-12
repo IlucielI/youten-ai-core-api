@@ -30,7 +30,7 @@ func (s *Service) GetRecordingDetail(ctx context.Context, id uuid.UUID, ownershi
 	}
 
 	// Ownership verification: owner, ownership token, or active share token.
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareToken: true}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{AllowShareToken: true}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -248,7 +248,7 @@ func (s *Service) GetRecordingProgress(ctx context.Context, id uuid.UUID, owners
 	}
 
 	// Ownership verification: owner, ownership token, or active share token.
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareToken: true}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{AllowShareToken: true}) {
 		return nil, nil, nil, constants.ErrForbidden
 	}
 

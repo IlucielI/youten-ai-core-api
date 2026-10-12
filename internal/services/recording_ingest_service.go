@@ -457,7 +457,7 @@ func (s *Service) RetryRecordingPipeline(ctx context.Context, id uuid.UUID, owne
 	}
 
 	// 1. Ownership verification: owner, ownership token, or active share token.
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareToken: true}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{AllowShareToken: true}) {
 		return nil, constants.ErrForbidden
 	}
 

@@ -409,3 +409,14 @@ func (s *SpeakerRosterItem) Normalize() {
 		s.Role = "Speaker"
 	}
 }
+
+// RecordingAccessPolicy configures which non-owner principals may access a recording.
+type RecordingAccessPolicy struct {
+	// AllowShareToken grants access when the supplied token matches the recording's active
+	// share token. Used by read/progress/retry flows that honor share links.
+	AllowShareToken bool
+	// AllowShareOpen grants access to anyone while sharing is enabled, regardless of token.
+	// Used by collaborative comment flows on publicly shared recordings.
+	AllowShareOpen bool
+}
+

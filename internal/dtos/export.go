@@ -68,3 +68,17 @@ type JSONExportTranscriptSeg struct {
 	EndTime   float64 `json:"end_time"`
 	Text      string  `json:"text"`
 }
+
+// FormattedSection represents a structured summary section with heading and item list for export rendering.
+type FormattedSection struct {
+	Heading string   `json:"heading"`
+	Items   []string `json:"items"`
+}
+
+// FormattedSummary represents an aggregate structured summary document for document export.
+type FormattedSummary struct {
+	Overview    string             `json:"overview"`
+	Sections    []FormattedSection `json:"sections"`
+	ActionItems []string           `json:"action_items"`
+}
+

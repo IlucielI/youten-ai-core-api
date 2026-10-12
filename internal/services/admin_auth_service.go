@@ -20,7 +20,7 @@ import (
 )
 
 // AdminLogin authenticates staff administrator credentials and issues an admin access token.
-func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, meta *AdminActionMeta) (*dtos.AdminLoginResponse, error) {
+func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, meta *dtos.AdminActionMeta) (*dtos.AdminLoginResponse, error) {
 	admin, err := s.repo.FindAdminByUsername(ctx, req.Username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -131,7 +131,7 @@ func (s *Service) AdminForgotPassword(ctx context.Context, req dtos.AdminForgotP
 	}
 
 	if s.mailer != nil && admin.Email != "" {
-		msg := EmailMessage{
+		msg := dtos.EmailMessage{
 			To:      []string{admin.Email},
 			Subject: "Reset Your Admin Password - Youten AI",
 			TextBody: fmt.Sprintf(
@@ -152,7 +152,7 @@ func (s *Service) AdminForgotPassword(ctx context.Context, req dtos.AdminForgotP
 }
 
 // AdminResetPassword confirms an administrator password recovery request using a valid, unexpired token.
-func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPasswordRequest, meta *AdminActionMeta) error {
+func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPasswordRequest, meta *dtos.AdminActionMeta) error {
 	token := strings.TrimSpace(req.Token)
 	tokenHash := hasher.HashToken(token)
 

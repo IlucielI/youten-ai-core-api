@@ -12,20 +12,19 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
-	"code-base-golang/internal/services"
 )
 
 type waitlistMockMailer struct {
 	pingErr error
 	sendErr error
-	sent    []services.EmailMessage
+	sent    []dtos.EmailMessage
 }
 
 func (m *waitlistMockMailer) Ping(ctx context.Context) error {
 	return m.pingErr
 }
 
-func (m *waitlistMockMailer) Send(ctx context.Context, msg services.EmailMessage) error {
+func (m *waitlistMockMailer) Send(ctx context.Context, msg dtos.EmailMessage) error {
 	if m.sendErr != nil {
 		return m.sendErr
 	}

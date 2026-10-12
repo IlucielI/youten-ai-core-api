@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/services"
 )
@@ -196,7 +197,7 @@ func (e *Extractor) NormalizeURL(rawURL string) (string, error) {
 }
 
 // FetchMetadata retrieves file attributes from Google Drive headers.
-func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*services.MediaMetadata, error) {
+func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.MediaMetadata, error) {
 	id, err := e.ExtractID(rawURL)
 	if err != nil {
 		return nil, err
@@ -236,7 +237,7 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*services
 		title = fmt.Sprintf("Google Drive (%s)", id)
 	}
 
-	return &services.MediaMetadata{
+	return &dtos.MediaMetadata{
 		ID:        id,
 		Title:     title,
 		Thumbnail: fmt.Sprintf("https://drive.google.com/thumbnail?id=%s", id),
@@ -246,7 +247,7 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*services
 // ExtractAudio securely downloads the Google Drive media file, handles virus scan
 // confirmation redirects, converts video to mono audio when required, and returns
 // a resource-managed ExtractedAudio stream.
-func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 	id, err := e.ExtractID(rawURL)
 	if err != nil {
 		return nil, err
@@ -349,7 +350,7 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*services.
 			return nil, fmt.Errorf("audio conversion failed: %w", convErr)
 		}
 
-		return &services.ExtractedAudio{
+		return &dtos.ExtractedAudio{
 			Stream:          convResult.Reader,
 			SizeBytes:       convResult.SizeBytes,
 			DurationSeconds: convResult.DurationSeconds,
@@ -365,7 +366,7 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*services.
 		path: tempFilePath,
 	}
 
-	return &services.ExtractedAudio{
+	return &dtos.ExtractedAudio{
 		Stream:          audioStream,
 		SizeBytes:       written,
 		DurationSeconds: 0,

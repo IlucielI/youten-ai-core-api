@@ -74,7 +74,7 @@ func (s *Service) AdminListRoles(ctx context.Context, q dtos.AdminRoleListQuery)
 }
 
 // AdminCreateRole creates a new custom administrative role and writes an audit log.
-func (s *Service) AdminCreateRole(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateRoleRequest) (*dtos.AdminRoleItem, error) {
+func (s *Service) AdminCreateRole(ctx context.Context, meta dtos.AdminActionMeta, req dtos.AdminCreateRoleRequest) (*dtos.AdminRoleItem, error) {
 	if err := validations.ValidateAdminCreateRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
@@ -139,7 +139,7 @@ func (s *Service) AdminCreateRole(ctx context.Context, meta AdminActionMeta, req
 }
 
 // AdminUpdateRole modifies an existing administrative role (protecting system roles).
-func (s *Service) AdminUpdateRole(ctx context.Context, meta AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateRoleRequest) (*dtos.AdminRoleItem, error) {
+func (s *Service) AdminUpdateRole(ctx context.Context, meta dtos.AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateRoleRequest) (*dtos.AdminRoleItem, error) {
 	if err := validations.ValidateAdminUpdateRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
@@ -273,7 +273,7 @@ func (s *Service) AdminListUserRoles(ctx context.Context, q dtos.AdminUserRoleLi
 }
 
 // AdminCreateUserRole creates a new customer user role and writes an audit log.
-func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
+func (s *Service) AdminCreateUserRole(ctx context.Context, meta dtos.AdminActionMeta, req dtos.AdminCreateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
 	if err := validations.ValidateAdminCreateUserRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
@@ -366,7 +366,7 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta AdminActionMeta,
 }
 
 // AdminUpdateUserRole modifies an existing customer user role.
-func (s *Service) AdminUpdateUserRole(ctx context.Context, meta AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
+func (s *Service) AdminUpdateUserRole(ctx context.Context, meta dtos.AdminActionMeta, roleID uuid.UUID, req dtos.AdminUpdateUserRoleRequest) (*dtos.AdminUserRoleItem, error) {
 	if err := validations.ValidateAdminUpdateUserRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}

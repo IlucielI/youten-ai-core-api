@@ -102,7 +102,7 @@ func (s *Service) DispatchMeetingBot(ctx context.Context, req dtos.DispatchBotRe
 	}
 
 	// Dispatch to concrete provider
-	params := BotDispatchParams{
+	params := dtos.BotDispatchParams{
 		SessionID:   sessionID,
 		RecordingID: recordingID,
 		Provider:    req.Provider,

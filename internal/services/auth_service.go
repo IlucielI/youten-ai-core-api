@@ -388,7 +388,7 @@ func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRe
 
 	// Dispatch transactional email if mailer is configured
 	if s.mailer != nil {
-		msg := EmailMessage{
+		msg := dtos.EmailMessage{
 			To:      []string{user.Email},
 			Subject: "Reset Your Password - Youten AI",
 			TextBody: fmt.Sprintf(
@@ -776,7 +776,7 @@ func (s *Service) sendVerificationEmail(ctx context.Context, email, fullName, co
 </body>
 </html>`, html.EscapeString(fullName), code, verifyURL)
 
-	msg := EmailMessage{
+	msg := dtos.EmailMessage{
 		To:       []string{email},
 		Subject:  subject,
 		TextBody: textBody,

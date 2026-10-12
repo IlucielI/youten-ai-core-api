@@ -39,7 +39,7 @@ func (s *Service) JoinBotWaitlist(ctx context.Context, req dtos.WaitlistRequest)
 
 	// Dispatch transactional confirmation email if mailer is configured (Penpot template 12-D)
 	if s.mailer != nil {
-		msg := EmailMessage{
+		msg := dtos.EmailMessage{
 			To:      []string{saved.Email},
 			Subject: "Welcome to Youten Voice Bot Beta Waitlist!",
 			TextBody: fmt.Sprintf(

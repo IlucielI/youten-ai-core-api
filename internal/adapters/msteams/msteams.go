@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/apperror"
 	"code-base-golang/internal/services"
 )
@@ -92,7 +93,7 @@ func ValidateMeetingURL(rawURL string) error {
 }
 
 // Dispatch initiates joining a Microsoft Teams meeting.
-func (a *Adapter) Dispatch(ctx context.Context, params services.BotDispatchParams) (string, error) {
+func (a *Adapter) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (string, error) {
 	if !a.cfg.Enabled {
 		return "", apperror.New(http.StatusServiceUnavailable, "PROVIDER_DISABLED", "microsoft teams voice bot provider is disabled")
 	}
@@ -131,13 +132,13 @@ func (a *Adapter) Dispatch(ctx context.Context, params services.BotDispatchParam
 }
 
 // GetStatus checks the live status of an active Microsoft Teams bot session.
-func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*services.BotProviderStatus, error) {
+func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*dtos.BotProviderStatus, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sess, exists := a.sessions[externalSessionID]
 	if !exists {
-		return &services.BotProviderStatus{
+		return &dtos.BotProviderStatus{
 			ExternalSessionID: externalSessionID,
 			Status:            constants.BotSessionStatusCompleted,
 		}, nil
@@ -150,7 +151,7 @@ func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*ser
 		endedAt = &ended
 	}
 
-	return &services.BotProviderStatus{
+	return &dtos.BotProviderStatus{
 		ExternalSessionID: sess.SessionID,
 		Status:            sess.Status,
 		StartedAt:         &startedAt,

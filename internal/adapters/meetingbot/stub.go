@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/apperror"
-	"code-base-golang/internal/services"
 )
 
 // StubAdapter provides a no-op placeholder for future bot providers (Google Meet, Teams, Zoom).
@@ -30,12 +30,12 @@ func (s *StubAdapter) IsEnabled() bool {
 }
 
 // Dispatch returns 501 Not Implemented.
-func (s *StubAdapter) Dispatch(ctx context.Context, params services.BotDispatchParams) (string, error) {
+func (s *StubAdapter) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (string, error) {
 	return "", apperror.New(http.StatusNotImplemented, "FEATURE_COMING_SOON", fmt.Sprintf("%s voice bot integration is coming soon", s.providerName))
 }
 
 // GetStatus returns 501 Not Implemented.
-func (s *StubAdapter) GetStatus(ctx context.Context, externalSessionID string) (*services.BotProviderStatus, error) {
+func (s *StubAdapter) GetStatus(ctx context.Context, externalSessionID string) (*dtos.BotProviderStatus, error) {
 	return nil, apperror.New(http.StatusNotImplemented, "FEATURE_COMING_SOON", fmt.Sprintf("%s voice bot integration is coming soon", s.providerName))
 }
 

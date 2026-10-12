@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 type mockPublisher struct {
@@ -82,7 +82,7 @@ func TestMSTeamsAdapter(t *testing.T) {
 
 	t.Run("dispatch when disabled", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: false})
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://teams.microsoft.com/l/meetup-join/abc",
 		})
 		if err == nil {
@@ -95,7 +95,7 @@ func TestMSTeamsAdapter(t *testing.T) {
 
 	t.Run("dispatch with invalid url", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://invalid.com",
 		})
 		if err == nil {
@@ -117,7 +117,7 @@ func TestMSTeamsAdapter(t *testing.T) {
 		recID := uuid.New()
 		url := "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc"
 
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			SessionID:   sessID,
 			RecordingID: recID,
 			MeetingURL:  url,
@@ -163,7 +163,7 @@ func TestMSTeamsAdapter(t *testing.T) {
 
 	t.Run("stop active session", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://teams.microsoft.com/l/meetup-join/active",
 		})
 		if err != nil {
@@ -193,7 +193,7 @@ func TestMSTeamsAdapter(t *testing.T) {
 
 	t.Run("update session state", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://teams.live.com/meet/test12345",
 		})
 		if err != nil {

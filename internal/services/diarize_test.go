@@ -236,7 +236,7 @@ func TestSliceAcousticReference_ProportionalWindows(t *testing.T) {
 }
 
 func TestPruneGhostSpeakers_RemovesNoiseSpikes(t *testing.T) {
-	roster := map[string]SpeakerRosterItem{
+	roster := map[string]dtos.SpeakerRosterItem{
 		"Speaker 0": {Label: "Speaker 0", Name: "Caesar", Role: "Host"},
 		"Speaker 1": {Label: "Speaker 1", Name: "Bernadya", Role: "Guest"},
 		"Speaker 2": {Label: "Speaker 2", Name: "Speaker 2", Role: "Speaker"},
@@ -273,7 +273,7 @@ func TestPruneGhostSpeakers_RemovesNoiseSpikes(t *testing.T) {
 }
 
 func TestPruneGhostSpeakers_PreservesLegitimateThirdSpeaker(t *testing.T) {
-	roster := map[string]SpeakerRosterItem{
+	roster := map[string]dtos.SpeakerRosterItem{
 		"Speaker 0": {Label: "Speaker 0", Name: "Host", Role: "Host"},
 		"Speaker 1": {Label: "Speaker 1", Name: "Guest 1", Role: "Guest"},
 		"Speaker 2": {Label: "Speaker 2", Name: "Guest 2", Role: "Guest"},
@@ -448,10 +448,10 @@ func TestService_DiarizeAndCorrectSegmentsWithLLM_MultiChunkOneHourSimulation(t 
 }
 
 func TestPruneGhostSpeakers_PreservesLegitimateTenthSpeaker(t *testing.T) {
-	roster := make(map[string]SpeakerRosterItem)
+	roster := make(map[string]dtos.SpeakerRosterItem)
 	for i := 0; i < 10; i++ {
 		lbl := fmt.Sprintf("Speaker %d", i)
-		roster[lbl] = SpeakerRosterItem{Label: lbl, Name: lbl, Role: "Participant"}
+		roster[lbl] = dtos.SpeakerRosterItem{Label: lbl, Name: lbl, Role: "Participant"}
 	}
 
 	// 10 active speakers. Speaker 9 only speaks for 2 segments (30 words, 12 seconds).

@@ -17,7 +17,6 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/services"
 )
 
 type mockTestBotProvider struct {
@@ -33,12 +32,12 @@ func (p *mockTestBotProvider) IsEnabled() bool {
 	return p.enabled
 }
 
-func (p *mockTestBotProvider) Dispatch(ctx context.Context, params services.BotDispatchParams) (string, error) {
+func (p *mockTestBotProvider) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (string, error) {
 	return "ext-session-123", nil
 }
 
-func (p *mockTestBotProvider) GetStatus(ctx context.Context, externalSessionID string) (*services.BotProviderStatus, error) {
-	return &services.BotProviderStatus{
+func (p *mockTestBotProvider) GetStatus(ctx context.Context, externalSessionID string) (*dtos.BotProviderStatus, error) {
+	return &dtos.BotProviderStatus{
 		ExternalSessionID: externalSessionID,
 		Status:            constants.BotSessionStatusRecording,
 	}, nil

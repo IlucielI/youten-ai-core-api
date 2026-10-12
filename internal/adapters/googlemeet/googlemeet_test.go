@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 type mockPublisher struct {
@@ -84,7 +84,7 @@ func TestGoogleMeetAdapter(t *testing.T) {
 
 	t.Run("dispatch when disabled", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: false})
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://meet.google.com/abc-defg-hij",
 		})
 		if err == nil {
@@ -94,7 +94,7 @@ func TestGoogleMeetAdapter(t *testing.T) {
 
 	t.Run("dispatch invalid url", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://zoom.us/j/12345",
 		})
 		if err == nil {
@@ -107,7 +107,7 @@ func TestGoogleMeetAdapter(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true, Publisher: pub})
 		recID := uuid.New()
 
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			RecordingID: recID,
 			MeetingURL:  "https://meet.google.com/abc-defg-hij",
 		})
@@ -191,7 +191,7 @@ func TestGoogleMeetAdapter(t *testing.T) {
 
 	t.Run("concurrent status, update, and stop access", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			RecordingID: uuid.New(),
 			MeetingURL:  "https://meet.google.com/abc-defg-hij",
 		})

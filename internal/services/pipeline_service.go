@@ -976,37 +976,6 @@ func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 	return true
 }
 
-// SpeakerRosterItem holds an identified speaker in the recording session.
-type SpeakerRosterItem struct {
-	Label       string `json:"label"`
-	Name        string `json:"name"`
-	Role        string `json:"role"`
-	Speaker     string `json:"speaker,omitempty"`      // alias for label
-	SpeakerName string `json:"speaker_name,omitempty"` // alias for name
-}
-
-// Normalize standardizes field mappings for SpeakerRosterItem.
-func (s *SpeakerRosterItem) Normalize() {
-	if s.Label == "" && s.Speaker != "" {
-		s.Label = s.Speaker
-	}
-	if s.Name == "" && s.SpeakerName != "" {
-		s.Name = s.SpeakerName
-	}
-	if s.Label != "" {
-		parts := strings.Fields(s.Label)
-		if len(parts) >= 2 && strings.EqualFold(parts[0], "speaker") {
-			s.Label = "Speaker " + parts[1]
-		}
-	}
-	if s.Name == "" {
-		s.Name = s.Label
-	}
-	if s.Role == "" {
-		s.Role = "Speaker"
-	}
-}
-
 var speakerExtractRegex = regexp.MustCompile(`(?i)(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:`)
 
 // extractSpeakerLabelsFromText scans text for acoustic speaker patterns (e.g. "Speaker 0:", "Speaker 1:").
@@ -1034,12 +1003,12 @@ func extractSpeakerLabelsFromText(text string) []string {
 }
 
 // defaultRosterFromSegments constructs a fallback roster when LLM roster discovery is unavailable.
-func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string) []SpeakerRosterItem {
+func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string) []dtos.SpeakerRosterItem {
 	acousticSpeakers := extractSpeakerLabelsFromText(diarizedRef)
 	if len(acousticSpeakers) > 0 {
-		var list []SpeakerRosterItem
+		var list []dtos.SpeakerRosterItem
 		for _, spk := range acousticSpeakers {
-			list = append(list, SpeakerRosterItem{
+			list = append(list, dtos.SpeakerRosterItem{
 				Label: spk,
 				Name:  spk,
 				Role:  "Speaker",
@@ -1049,12 +1018,12 @@ func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string
 	}
 
 	seenLabels := make(map[string]bool)
-	var list []SpeakerRosterItem
+	var list []dtos.SpeakerRosterItem
 	for _, seg := range segments {
 		lbl := strings.TrimSpace(seg.SpeakerLabel)
 		if lbl != "" && !seenLabels[lbl] {
 			seenLabels[lbl] = true
-			list = append(list, SpeakerRosterItem{
+			list = append(list, dtos.SpeakerRosterItem{
 				Label: lbl,
 				Name:  lbl,
 				Role:  "Speaker",
@@ -1065,7 +1034,7 @@ func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string
 		return list
 	}
 
-	return []SpeakerRosterItem{
+	return []dtos.SpeakerRosterItem{
 		{Label: "Speaker 0", Name: "Speaker 0", Role: "Speaker"},
 		{Label: "Speaker 1", Name: "Speaker 1", Role: "Speaker"},
 	}
@@ -1073,7 +1042,7 @@ func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string
 
 // discoverSpeakerRoster analyzes audio foundations (acoustic reference or transcript turns)
 // to discover the global cast of participants (handles 2, 3, or 10+ speakers reliably).
-func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.SegmentResult, diarizedRef string) []SpeakerRosterItem {
+func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.SegmentResult, diarizedRef string) []dtos.SpeakerRosterItem {
 	if s.llm == nil {
 		return defaultRosterFromSegments(segments, diarizedRef)
 	}
@@ -1155,12 +1124,12 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 		cleanJSON = cleanJSON[:idx+1]
 	}
 
-	var items []SpeakerRosterItem
+	var items []dtos.SpeakerRosterItem
 	if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
 		return defaultRosterFromSegments(segments, diarizedRef)
 	}
 
-	rosterMap := make(map[string]SpeakerRosterItem)
+	rosterMap := make(map[string]dtos.SpeakerRosterItem)
 	for i := range items {
 		items[i].Normalize()
 		if items[i].Label != "" {
@@ -1172,7 +1141,7 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 	acousticSpeakers := extractSpeakerLabelsFromText(diarizedRef)
 	for _, spk := range acousticSpeakers {
 		if _, exists := rosterMap[spk]; !exists {
-			item := SpeakerRosterItem{
+			item := dtos.SpeakerRosterItem{
 				Label: spk,
 				Name:  spk,
 				Role:  "Participant",
@@ -1249,7 +1218,7 @@ func sliceAcousticReference(ref string, startTime, endTime, totalDuration float6
 
 // pruneGhostSpeakers filters false-positive outlier speaker spikes (e.g. noise/laughter < 1.2% total words,
 // <= 3 segments) and reassigns them to adjacent primary speakers while preserving legitimate multi-speaker turns (up to 10+ speakers).
-func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]SpeakerRosterItem) []dtos.SegmentResult {
+func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]dtos.SpeakerRosterItem) []dtos.SegmentResult {
 	if len(segments) == 0 {
 		return segments
 	}
@@ -1356,7 +1325,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 	// Pass 1: Global Speaker Roster Discovery
 	rosterList := s.discoverSpeakerRoster(ctx, segments, rawRef)
-	rosterMap := make(map[string]SpeakerRosterItem)
+	rosterMap := make(map[string]dtos.SpeakerRosterItem)
 	for _, r := range rosterList {
 		rosterMap[r.Label] = r
 	}

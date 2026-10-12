@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/apperror"
-	"code-base-golang/internal/services"
 )
 
 // Config holds Discord bot runtime configuration.
@@ -57,7 +57,7 @@ func (a *Adapter) IsEnabled() bool {
 }
 
 // Dispatch begins a voice bot session by joining a designated Discord voice channel.
-func (a *Adapter) Dispatch(ctx context.Context, params services.BotDispatchParams) (string, error) {
+func (a *Adapter) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (string, error) {
 	if !a.IsEnabled() {
 		return "", apperror.New(http.StatusNotImplemented, "FEATURE_DISABLED", "Discord voice bot is currently disabled or unconfigured")
 	}
@@ -84,13 +84,13 @@ func (a *Adapter) Dispatch(ctx context.Context, params services.BotDispatchParam
 }
 
 // GetStatus checks the live status of an active Discord bot connection.
-func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*services.BotProviderStatus, error) {
+func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*dtos.BotProviderStatus, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	sess, exists := a.sessions[externalSessionID]
 	if !exists {
-		return &services.BotProviderStatus{
+		return &dtos.BotProviderStatus{
 			ExternalSessionID: externalSessionID,
 			Status:            constants.BotSessionStatusCompleted,
 		}, nil
@@ -103,7 +103,7 @@ func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*ser
 		endedAt = &ended
 	}
 
-	return &services.BotProviderStatus{
+	return &dtos.BotProviderStatus{
 		ExternalSessionID: sess.SessionID,
 		Status:            sess.Status,
 		StartedAt:         &startedAt,

@@ -36,18 +36,18 @@ func (p *testBotProvider) IsEnabled() bool {
 	return p.enabled
 }
 
-func (p *testBotProvider) Dispatch(ctx context.Context, params services.BotDispatchParams) (string, error) {
+func (p *testBotProvider) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (string, error) {
 	if p.dispErr != nil {
 		return "", p.dispErr
 	}
 	return p.extID, nil
 }
 
-func (p *testBotProvider) GetStatus(ctx context.Context, externalSessionID string) (*services.BotProviderStatus, error) {
+func (p *testBotProvider) GetStatus(ctx context.Context, externalSessionID string) (*dtos.BotProviderStatus, error) {
 	if p.statusErr != nil {
 		return nil, p.statusErr
 	}
-	return &services.BotProviderStatus{
+	return &dtos.BotProviderStatus{
 		ExternalSessionID: externalSessionID,
 		Status:            p.status,
 	}, nil

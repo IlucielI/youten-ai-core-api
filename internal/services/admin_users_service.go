@@ -72,7 +72,7 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 }
 
 // AdminOverrideUserQuota sets or resets a user's daily quota override and records an administrative audit log.
-func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta AdminActionMeta, userID uuid.UUID, req dtos.AdminUserQuotaOverrideRequest) (*dtos.AdminUserQuotaResponse, error) {
+func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID, req dtos.AdminUserQuotaOverrideRequest) (*dtos.AdminUserQuotaResponse, error) {
 	if err := validations.ValidateAdminUserQuotaOverrideRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
@@ -130,7 +130,7 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta AdminActionMe
 }
 
 // AdminRevokeUserSessions revokes all active auth and session tokens for a target user and creates an audit trail.
-func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta AdminActionMeta, userID uuid.UUID) (*dtos.AdminRevokeUserSessionsResponse, error) {
+func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID) (*dtos.AdminRevokeUserSessionsResponse, error) {
 	user, err := s.repo.FindUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -177,7 +177,7 @@ func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta AdminActionM
 }
 
 // AdminAssignUserRole assigns a customer user role to a user.
-func (s *Service) AdminAssignUserRole(ctx context.Context, meta AdminActionMeta, userID uuid.UUID, req dtos.AdminAssignUserRoleRequest) (*dtos.UserResponse, error) {
+func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID, req dtos.AdminAssignUserRoleRequest) (*dtos.UserResponse, error) {
 	if err := validations.ValidateAdminAssignUserRoleRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}

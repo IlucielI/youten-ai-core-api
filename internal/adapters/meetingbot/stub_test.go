@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 func TestStubAdapter(t *testing.T) {
@@ -18,7 +18,7 @@ func TestStubAdapter(t *testing.T) {
 		t.Errorf("expected stub to be disabled")
 	}
 
-	_, err := stub.Dispatch(ctx, services.BotDispatchParams{})
+	_, err := stub.Dispatch(ctx, dtos.BotDispatchParams{})
 	if err == nil {
 		t.Errorf("expected error from stub Dispatch")
 	}

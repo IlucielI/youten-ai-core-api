@@ -24,14 +24,14 @@ import (
 type mockMailer struct {
 	pingErr error
 	sendErr error
-	sent    []services.EmailMessage
+	sent    []dtos.EmailMessage
 }
 
 func (m *mockMailer) Ping(ctx context.Context) error {
 	return m.pingErr
 }
 
-func (m *mockMailer) Send(ctx context.Context, msg services.EmailMessage) error {
+func (m *mockMailer) Send(ctx context.Context, msg dtos.EmailMessage) error {
 	if m.sendErr != nil {
 		return m.sendErr
 	}

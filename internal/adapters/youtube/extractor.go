@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/services"
 )
@@ -274,7 +275,7 @@ func sanitizeString(s string, maxLen int) string {
 }
 
 // FetchMetadata invokes yt-dlp in dump-json mode to inspect video information without downloading media streams.
-func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*services.MediaMetadata, error) {
+func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.MediaMetadata, error) {
 	normURL, err := NormalizeURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -324,7 +325,7 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*services
 	}
 	author = sanitizeString(author, 255)
 
-	return &services.MediaMetadata{
+	return &dtos.MediaMetadata{
 		ID:          raw.ID,
 		Title:       title,
 		Description: sanitizeString(raw.Description, 2000),
@@ -336,7 +337,7 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*services
 
 // ExtractAudio executes yt-dlp to extract native audio directly into an isolated per-request directory.
 // It retrieves both audio stream and JSON metadata in a single yt-dlp execution (--write-info-json).
-func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 	normURL, err := NormalizeURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -391,7 +392,7 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*services.
 	}
 
 	// Read metadata info file directly
-	meta := &services.MediaMetadata{
+	meta := &dtos.MediaMetadata{
 		ID:    videoID,
 		Title: fmt.Sprintf("YouTube Video (%s)", videoID),
 	}
@@ -469,7 +470,7 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*services.
 	cleanupNeeded = false
 	cleanReader := newAutoCleanReader(file, jobDir)
 
-	return &services.ExtractedAudio{
+	return &dtos.ExtractedAudio{
 		Stream:          cleanReader,
 		SizeBytes:       fileInfo.Size(),
 		DurationSeconds: meta.Duration,

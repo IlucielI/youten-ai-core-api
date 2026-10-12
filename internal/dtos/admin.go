@@ -7,6 +7,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// AdminActionMeta carries administrative actor and request provenance for audit logging across all admin service domains.
+type AdminActionMeta struct {
+	AdminID   uuid.UUID `json:"admin_id"`
+	IPAddress string    `json:"ip_address,omitempty"`
+	UserAgent string    `json:"user_agent,omitempty"`
+}
+
 // AdminUserListQuery defines query parameters for paginating and filtering registered users.
 type AdminUserListQuery struct {
 	Search string `form:"search" json:"search"`

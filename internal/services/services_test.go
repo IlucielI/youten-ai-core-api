@@ -121,14 +121,14 @@ func TestService_EventPublisher_Mock(t *testing.T) {
 type mockMailer struct {
 	pingErr error
 	sendErr error
-	sent    []EmailMessage
+	sent    []dtos.EmailMessage
 }
 
 func (m *mockMailer) Ping(ctx context.Context) error {
 	return m.pingErr
 }
 
-func (m *mockMailer) Send(ctx context.Context, msg EmailMessage) error {
+func (m *mockMailer) Send(ctx context.Context, msg dtos.EmailMessage) error {
 	if m.sendErr != nil {
 		return m.sendErr
 	}
@@ -145,7 +145,7 @@ func TestService_EmailSender_Mock(t *testing.T) {
 	}
 
 	// Test sending
-	err := svc.Mailer().Send(context.Background(), EmailMessage{
+	err := svc.Mailer().Send(context.Background(), dtos.EmailMessage{
 		To:      []string{"test@example.com"},
 		Subject: "Test Subject",
 	})

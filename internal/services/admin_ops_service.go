@@ -15,7 +15,7 @@ import (
 )
 
 // AdminGetDLQMessages retrieves failed and stuck pipeline items for DLQ monitoring.
-func (s *Service) AdminGetDLQMessages(ctx context.Context, meta AdminActionMeta, page, limit int) (*dtos.DLQMessagesResponse, error) {
+func (s *Service) AdminGetDLQMessages(ctx context.Context, meta dtos.AdminActionMeta, page, limit int) (*dtos.DLQMessagesResponse, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -72,7 +72,7 @@ func (s *Service) AdminGetDLQMessages(ctx context.Context, meta AdminActionMeta,
 }
 
 // AdminListJobs retrieves paginated generation and pipeline recordings across all users and statuses.
-func (s *Service) AdminListJobs(ctx context.Context, meta AdminActionMeta, query dtos.AdminJobListQuery) (*dtos.AdminJobListResponse, error) {
+func (s *Service) AdminListJobs(ctx context.Context, meta dtos.AdminActionMeta, query dtos.AdminJobListQuery) (*dtos.AdminJobListResponse, error) {
 	query.SetDefaults()
 	offset := (query.Page - 1) * query.Limit
 
@@ -142,7 +142,7 @@ func resolveDLQQueueAndTopic(status, sourceType string) (string, string) {
 }
 
 // AdminRetryDLQJob reprocesses a dead-lettered or stuck pipeline job, recovers state, and logs the administrative action.
-func (s *Service) AdminRetryDLQJob(ctx context.Context, meta AdminActionMeta, req dtos.DLQRetryRequest) (*dtos.DLQRetryResponse, error) {
+func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMeta, req dtos.DLQRetryRequest) (*dtos.DLQRetryResponse, error) {
 	if err := validations.ValidateDLQRetryRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
@@ -230,7 +230,7 @@ func (s *Service) IsMaintenanceMode(ctx context.Context) bool {
 }
 
 // AdminGetSystemConfig retrieves current system flags and maintenance status.
-func (s *Service) AdminGetSystemConfig(ctx context.Context, meta AdminActionMeta) (*dtos.SystemConfigResponse, error) {
+func (s *Service) AdminGetSystemConfig(ctx context.Context, meta dtos.AdminActionMeta) (*dtos.SystemConfigResponse, error) {
 	cfg, err := s.repo.GetSystemConfig(ctx)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
@@ -244,7 +244,7 @@ func (s *Service) AdminGetSystemConfig(ctx context.Context, meta AdminActionMeta
 }
 
 // AdminUpdateSystemConfig updates system flags and persists an audit log.
-func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta AdminActionMeta, req dtos.UpdateSystemConfigRequest) (*dtos.SystemConfigResponse, error) {
+func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta dtos.AdminActionMeta, req dtos.UpdateSystemConfigRequest) (*dtos.SystemConfigResponse, error) {
 	cfg, err := s.repo.UpdateSystemConfig(ctx, req.MaintenanceMode, req.AllowGuestUploads, req.BotWaitlistEnabled)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)

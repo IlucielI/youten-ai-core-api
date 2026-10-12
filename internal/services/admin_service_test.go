@@ -160,7 +160,7 @@ func TestService_AdminOverrideUserQuota(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminOverrideUserQuota(context.Background(), AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
+		resp, err := svc.AdminOverrideUserQuota(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
 			DailyQuotaOverride: &newQuota,
 		})
 
@@ -205,7 +205,7 @@ func TestService_AdminOverrideUserQuota(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminOverrideUserQuota(context.Background(), AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
+		resp, err := svc.AdminOverrideUserQuota(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
 			DailyQuotaOverride: nil,
 		})
 
@@ -233,7 +233,7 @@ func TestService_AdminOverrideUserQuota(t *testing.T) {
 			WithArgs(userID, 1).
 			WillReturnError(gorm.ErrRecordNotFound)
 
-		_, err := svc.AdminOverrideUserQuota(context.Background(), AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
+		_, err := svc.AdminOverrideUserQuota(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
 			DailyQuotaOverride: &newQuota,
 		})
 
@@ -250,7 +250,7 @@ func TestService_AdminOverrideUserQuota(t *testing.T) {
 		userID := uuid.New()
 		negQuota := -5
 
-		_, err := svc.AdminOverrideUserQuota(context.Background(), AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
+		_, err := svc.AdminOverrideUserQuota(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserQuotaOverrideRequest{
 			DailyQuotaOverride: &negQuota,
 		})
 
@@ -287,7 +287,7 @@ func TestService_AdminRevokeUserSessions(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminRevokeUserSessions(context.Background(), AdminActionMeta{
+		resp, err := svc.AdminRevokeUserSessions(context.Background(), dtos.AdminActionMeta{
 			AdminID:   adminID,
 			IPAddress: "127.0.0.1",
 			UserAgent: "test-agent",
@@ -318,7 +318,7 @@ func TestService_AdminRevokeUserSessions(t *testing.T) {
 			WithArgs(userID, 1).
 			WillReturnError(gorm.ErrRecordNotFound)
 
-		_, err := svc.AdminRevokeUserSessions(context.Background(), AdminActionMeta{AdminID: adminID}, userID)
+		_, err := svc.AdminRevokeUserSessions(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -431,7 +431,7 @@ func TestService_AdminCreateRole(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminCreateRole(context.Background(), AdminActionMeta{
+		resp, err := svc.AdminCreateRole(context.Background(), dtos.AdminActionMeta{
 			AdminID:   adminID,
 			IPAddress: "127.0.0.1",
 			UserAgent: "test-agent",
@@ -462,7 +462,7 @@ func TestService_AdminCreateRole(t *testing.T) {
 			WithArgs(req.Name, 1).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow(uuid.New(), req.Name))
 
-		_, err := svc.AdminCreateRole(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		_, err := svc.AdminCreateRole(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, req)
 		if err == nil {
 			t.Fatal("expected conflict error, got nil")
 		}
@@ -505,7 +505,7 @@ func TestService_AdminUpdateRole(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminUpdateRole(context.Background(), AdminActionMeta{
+		resp, err := svc.AdminUpdateRole(context.Background(), dtos.AdminActionMeta{
 			AdminID:   adminID,
 			IPAddress: "127.0.0.1",
 			UserAgent: "test-agent",
@@ -535,7 +535,7 @@ func TestService_AdminUpdateRole(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system"}).
 				AddRow(roleID, "Super Admin", "Root", []byte(`["*"]`), true))
 
-		_, err := svc.AdminUpdateRole(context.Background(), AdminActionMeta{AdminID: adminID}, roleID, req)
+		_, err := svc.AdminUpdateRole(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, roleID, req)
 		if err == nil {
 			t.Fatal("expected ErrForbidden for system role modification, got nil")
 		}
@@ -620,7 +620,7 @@ func TestService_AdminCreateTemplate(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminCreateTemplate(context.Background(), AdminActionMeta{
+		resp, err := svc.AdminCreateTemplate(context.Background(), dtos.AdminActionMeta{
 			AdminID:   adminID,
 			IPAddress: "127.0.0.1",
 			UserAgent: "test-agent",
@@ -658,7 +658,7 @@ func TestService_AdminCreateTemplate(t *testing.T) {
 			WithArgs(req.CategoryKey, 1).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key"}).AddRow(uuid.New(), req.CategoryKey))
 
-		_, err := svc.AdminCreateTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		_, err := svc.AdminCreateTemplate(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, req)
 		if err == nil {
 			t.Fatal("expected conflict error, got nil")
 		}
@@ -704,7 +704,7 @@ func TestService_AdminUpdateTemplate(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminUpdateTemplate(context.Background(), AdminActionMeta{
+		resp, err := svc.AdminUpdateTemplate(context.Background(), dtos.AdminActionMeta{
 			AdminID:   adminID,
 			IPAddress: "127.0.0.1",
 			UserAgent: "test-agent",
@@ -756,7 +756,7 @@ func TestService_AdminUpdateTemplate(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminUpdateTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, tmplID, req)
+		resp, err := svc.AdminUpdateTemplate(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, tmplID, req)
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -787,7 +787,7 @@ func TestService_AdminUpdateTemplate(t *testing.T) {
 			WithArgs(tmplID, 1).
 			WillReturnError(gorm.ErrRecordNotFound)
 
-		_, err := svc.AdminUpdateTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, tmplID, req)
+		_, err := svc.AdminUpdateTemplate(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, tmplID, req)
 		if err == nil {
 			t.Fatal("expected ErrNotFound, got nil")
 		}
@@ -844,7 +844,7 @@ func TestService_AdminTestTemplate(t *testing.T) {
 			},
 		}
 
-		resp, err := svc.AdminTestTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		resp, err := svc.AdminTestTemplate(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, req)
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -874,7 +874,7 @@ func TestService_AdminTestTemplate(t *testing.T) {
 			},
 		}
 
-		_, err := svc.AdminTestTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		_, err := svc.AdminTestTemplate(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, req)
 		if err == nil {
 			t.Fatal("expected error for nil LLM, got nil")
 		}
@@ -903,7 +903,7 @@ func TestService_AdminTestTemplate(t *testing.T) {
 			},
 		}
 
-		_, err := svc.AdminTestTemplate(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		_, err := svc.AdminTestTemplate(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, req)
 		if err == nil {
 			t.Fatal("expected LLM error, got nil")
 		}
@@ -947,7 +947,7 @@ func TestService_AdminGetDLQMessages(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name"}).
 				AddRow(userID, "user@example.com", "Jane Doe"))
 
-		resp, err := svc.AdminGetDLQMessages(context.Background(), AdminActionMeta{AdminID: adminID}, 1, 20)
+		resp, err := svc.AdminGetDLQMessages(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, 1, 20)
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -979,7 +979,7 @@ func TestService_AdminGetDLQMessages(t *testing.T) {
 		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = 'FAILED'`).
 			WillReturnError(errors.New("db disconnect"))
 
-		_, err := svc.AdminGetDLQMessages(context.Background(), AdminActionMeta{AdminID: adminID}, 1, 20)
+		_, err := svc.AdminGetDLQMessages(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, 1, 20)
 		if err == nil {
 			t.Fatal("expected database error, got nil")
 		}
@@ -991,7 +991,7 @@ func TestService_AdminRetryDLQJob(t *testing.T) {
 		svc, _, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
-		_, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: uuid.Nil})
+		_, err := svc.AdminRetryDLQJob(context.Background(), dtos.AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: uuid.Nil})
 		if err == nil {
 			t.Fatal("expected error for nil recording ID, got nil")
 		}
@@ -1006,7 +1006,7 @@ func TestService_AdminRetryDLQJob(t *testing.T) {
 			WithArgs(recID, 1).
 			WillReturnError(gorm.ErrRecordNotFound)
 
-		_, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: recID})
+		_, err := svc.AdminRetryDLQJob(context.Background(), dtos.AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: recID})
 		if err == nil {
 			t.Fatal("expected ErrNotFound, got nil")
 		}
@@ -1023,7 +1023,7 @@ func TestService_AdminRetryDLQJob(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "status", "created_at", "updated_at"}).
 				AddRow(recID, models.RecordingStatusCompleted, now, now))
 
-		_, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: recID})
+		_, err := svc.AdminRetryDLQJob(context.Background(), dtos.AdminActionMeta{}, dtos.DLQRetryRequest{RecordingID: recID})
 		if err == nil {
 			t.Fatal("expected ErrRecordingAlreadyCompleted, got nil")
 		}
@@ -1073,7 +1073,7 @@ func TestService_AdminRetryDLQJob(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminRetryDLQJob(context.Background(), AdminActionMeta{AdminID: adminID}, dtos.DLQRetryRequest{RecordingID: recID})
+		resp, err := svc.AdminRetryDLQJob(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, dtos.DLQRetryRequest{RecordingID: recID})
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -1091,7 +1091,7 @@ func TestService_AdminSystemConfig(t *testing.T) {
 		svc, _, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
-		resp, err := svc.AdminGetSystemConfig(context.Background(), AdminActionMeta{})
+		resp, err := svc.AdminGetSystemConfig(context.Background(), dtos.AdminActionMeta{})
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -1124,7 +1124,7 @@ func TestService_AdminSystemConfig(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminUpdateSystemConfig(context.Background(), AdminActionMeta{
+		resp, err := svc.AdminUpdateSystemConfig(context.Background(), dtos.AdminActionMeta{
 			AdminID:   adminID,
 			IPAddress: "127.0.0.1",
 			UserAgent: "admin-browser",
@@ -1248,7 +1248,7 @@ func TestService_AdminResolveReport(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminResolveReport(context.Background(), AdminActionMeta{AdminID: adminID}, repID, dtos.ResolveReportRequest{
+		resp, err := svc.AdminResolveReport(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, repID, dtos.ResolveReportRequest{
 			Action:         "DISMISS",
 			ResolutionNote: "False report",
 		})
@@ -1297,7 +1297,7 @@ func TestService_AdminResolveReport(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminResolveReport(context.Background(), AdminActionMeta{AdminID: adminID}, repID, dtos.ResolveReportRequest{
+		resp, err := svc.AdminResolveReport(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, repID, dtos.ResolveReportRequest{
 			Action:         "SUSPEND_RECORDING",
 			ResolutionNote: "Takedown approved",
 		})
@@ -1318,7 +1318,7 @@ func TestService_AdminResolveReport(t *testing.T) {
 			WithArgs(repID, 1).
 			WillReturnError(gorm.ErrRecordNotFound)
 
-		_, err := svc.AdminResolveReport(context.Background(), AdminActionMeta{}, repID, dtos.ResolveReportRequest{
+		_, err := svc.AdminResolveReport(context.Background(), dtos.AdminActionMeta{}, repID, dtos.ResolveReportRequest{
 			Action: "DISMISS",
 		})
 		if err == nil {
@@ -1529,7 +1529,7 @@ func TestService_AdminUserRoles(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminCreateUserRole(context.Background(), AdminActionMeta{AdminID: adminID}, req)
+		resp, err := svc.AdminCreateUserRole(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1560,7 +1560,7 @@ func TestService_AdminUserRoles(t *testing.T) {
 			WithArgs(req.Code, 1).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "code"}).AddRow(uuid.New(), "PRO"))
 
-		_, err := svc.AdminCreateUserRole(context.Background(), AdminActionMeta{}, req)
+		_, err := svc.AdminCreateUserRole(context.Background(), dtos.AdminActionMeta{}, req)
 		if err == nil {
 			t.Fatal("expected conflict error, got nil")
 		}
@@ -1601,7 +1601,7 @@ func TestService_AdminUserRoles(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminUpdateUserRole(context.Background(), AdminActionMeta{AdminID: adminID}, roleID, req)
+		resp, err := svc.AdminUpdateUserRole(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, roleID, req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1660,7 +1660,7 @@ func TestService_AdminUserRoles(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		resp, err := svc.AdminAssignUserRole(context.Background(), AdminActionMeta{AdminID: adminID}, userID, req)
+		resp, err := svc.AdminAssignUserRole(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1868,7 +1868,7 @@ func TestService_AdminResetPassword(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
 
-		meta := AdminActionMeta{AdminID: adminID, IPAddress: "127.0.0.1", UserAgent: "TestAgent"}
+		meta := dtos.AdminActionMeta{AdminID: adminID, IPAddress: "127.0.0.1", UserAgent: "TestAgent"}
 		err := svc.AdminResetPassword(context.Background(), dtos.AdminResetPasswordRequest{
 			Token:       "valid-token",
 			NewPassword: "NewPassword123!",

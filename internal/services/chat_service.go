@@ -19,12 +19,6 @@ import (
 	"code-base-golang/internal/pkg/jsonutil"
 )
 
-// RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
-type RecordingChatStreamResult struct {
-	StreamChannel     <-chan dtos.StreamChunk
-	RetrievedChunkIDs []string
-}
-
 // InitiateRecordingChatStream validates ownership, retrieves relevant context chunks via vector search,
 // persists the user turn, and initiates an LLM response stream.
 func (s *Service) InitiateRecordingChatStream(
@@ -32,7 +26,7 @@ func (s *Service) InitiateRecordingChatStream(
 	recordingID uuid.UUID,
 	ownershipToken string,
 	req dtos.RecordingChatRequest,
-) (*RecordingChatStreamResult, error) {
+) (*dtos.RecordingChatStreamResult, error) {
 	rec, err := s.repo.FindRecordingByID(ctx, recordingID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -111,7 +105,7 @@ func (s *Service) InitiateRecordingChatStream(
 		return nil, fmt.Errorf("failed to stream chat completion: %w", err)
 	}
 
-	return &RecordingChatStreamResult{
+	return &dtos.RecordingChatStreamResult{
 		StreamChannel:     streamCh,
 		RetrievedChunkIDs: retrievedChunkIDs,
 	}, nil

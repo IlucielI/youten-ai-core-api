@@ -70,7 +70,7 @@ func (s *Service) AdminListReports(ctx context.Context, q dtos.AdminReportListQu
 }
 
 // AdminResolveReport executes administrative resolution on a reported recording ticket.
-func (s *Service) AdminResolveReport(ctx context.Context, meta AdminActionMeta, reportID uuid.UUID, req dtos.ResolveReportRequest) (*dtos.ResolveReportResponse, error) {
+func (s *Service) AdminResolveReport(ctx context.Context, meta dtos.AdminActionMeta, reportID uuid.UUID, req dtos.ResolveReportRequest) (*dtos.ResolveReportResponse, error) {
 	if err := validations.ValidateResolveReportRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}

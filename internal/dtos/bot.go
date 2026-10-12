@@ -6,6 +6,26 @@ import (
 	"github.com/google/uuid"
 )
 
+// BotDispatchParams contains provider-level parameters for dispatching a bot.
+type BotDispatchParams struct {
+	SessionID   uuid.UUID  `json:"session_id"`
+	RecordingID uuid.UUID  `json:"recording_id"`
+	Provider    string     `json:"provider"`
+	MeetingURL  string     `json:"meeting_url,omitempty"`
+	GuildID     string     `json:"guild_id,omitempty"`
+	ChannelID   string     `json:"channel_id,omitempty"`
+	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
+}
+
+// BotProviderStatus contains real-time status reported by a bot provider.
+type BotProviderStatus struct {
+	ExternalSessionID string     `json:"external_session_id"`
+	Status            string     `json:"status"`
+	ErrorMessage      string     `json:"error_message,omitempty"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	EndedAt           *time.Time `json:"ended_at,omitempty"`
+}
+
 // DispatchBotRequest carries parameters to instruct a voice bot to join a channel or meeting.
 type DispatchBotRequest struct {
 	Provider    string     `json:"provider"`

@@ -123,14 +123,14 @@ func (c *Controllers) extractOwnershipToken(ctx *gin.Context, bodyTokens ...stri
 
 // getAdminActionMeta extracts authenticated administrator metadata from the request context.
 // If the caller is unauthenticated or the admin ID is nil, it responds with HTTP 401 Unauthorized and returns false.
-func (c *Controllers) getAdminActionMeta(ctx *gin.Context) (services.AdminActionMeta, bool) {
+func (c *Controllers) getAdminActionMeta(ctx *gin.Context) (dtos.AdminActionMeta, bool) {
 	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
 	if !ok || adminUser.AdminID == uuid.Nil {
 		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
-		return services.AdminActionMeta{}, false
+		return dtos.AdminActionMeta{}, false
 	}
 
-	return services.AdminActionMeta{
+	return dtos.AdminActionMeta{
 		AdminID:   adminUser.AdminID,
 		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
 		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
@@ -138,8 +138,8 @@ func (c *Controllers) getAdminActionMeta(ctx *gin.Context) (services.AdminAction
 }
 
 // getClientActionMeta extracts client IP and user agent metadata from the request context.
-func (c *Controllers) getClientActionMeta(ctx *gin.Context) services.AdminActionMeta {
-	return services.AdminActionMeta{
+func (c *Controllers) getClientActionMeta(ctx *gin.Context) dtos.AdminActionMeta {
+	return dtos.AdminActionMeta{
 		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
 		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}

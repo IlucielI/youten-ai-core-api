@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+
+	"code-base-golang/internal/dtos"
 )
 
 var (
@@ -60,7 +62,7 @@ func (c *CompositeMediaLinkExtractor) NormalizeURL(rawURL string) (string, error
 }
 
 // FetchMetadata retrieves metadata from rawURL using the matching delegate.
-func (c *CompositeMediaLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*MediaMetadata, error) {
+func (c *CompositeMediaLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.MediaMetadata, error) {
 	if ext := c.findExtractor(rawURL); ext != nil {
 		return ext.FetchMetadata(ctx, rawURL)
 	}
@@ -68,7 +70,7 @@ func (c *CompositeMediaLinkExtractor) FetchMetadata(ctx context.Context, rawURL 
 }
 
 // ExtractAudio extracts an audio stream from rawURL using the matching delegate.
-func (c *CompositeMediaLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*ExtractedAudio, error) {
+func (c *CompositeMediaLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 	if ext := c.findExtractor(rawURL); ext != nil {
 		return ext.ExtractAudio(ctx, rawURL)
 	}

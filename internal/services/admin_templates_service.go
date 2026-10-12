@@ -69,7 +69,7 @@ func (s *Service) AdminListTemplates(ctx context.Context, q dtos.AdminTemplateLi
 }
 
 // AdminCreateTemplate creates a new prompt template and writes an administrative audit log.
-func (s *Service) AdminCreateTemplate(ctx context.Context, meta AdminActionMeta, req dtos.AdminCreateTemplateRequest) (*dtos.AdminTemplateItem, error) {
+func (s *Service) AdminCreateTemplate(ctx context.Context, meta dtos.AdminActionMeta, req dtos.AdminCreateTemplateRequest) (*dtos.AdminTemplateItem, error) {
 	if err := validations.ValidateAdminCreateTemplateRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
@@ -141,7 +141,7 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta AdminActionMeta,
 }
 
 // AdminUpdateTemplate modifies an existing prompt template and increments version when prompt or schema changes.
-func (s *Service) AdminUpdateTemplate(ctx context.Context, meta AdminActionMeta, templateID uuid.UUID, req dtos.AdminUpdateTemplateRequest) (*dtos.AdminTemplateItem, error) {
+func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminActionMeta, templateID uuid.UUID, req dtos.AdminUpdateTemplateRequest) (*dtos.AdminTemplateItem, error) {
 	if err := validations.ValidateAdminUpdateTemplateRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}
@@ -218,7 +218,7 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta AdminActionMeta,
 }
 
 // AdminTestTemplate executes a sandbox dry run of a prompt and schema against a sample transcript.
-func (s *Service) AdminTestTemplate(ctx context.Context, meta AdminActionMeta, req dtos.AdminTestTemplateRequest) (*dtos.AdminTestTemplateResponse, error) {
+func (s *Service) AdminTestTemplate(ctx context.Context, meta dtos.AdminActionMeta, req dtos.AdminTestTemplateRequest) (*dtos.AdminTestTemplateResponse, error) {
 	if err := validations.ValidateAdminTestTemplateRequest(&req); err != nil {
 		return nil, constants.ErrBadRequest.WithMessage(err.Error())
 	}

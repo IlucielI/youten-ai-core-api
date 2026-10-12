@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
 )
 
@@ -68,7 +69,7 @@ func (s *SMTP) Ping(ctx context.Context) error {
 }
 
 // Send formats and transmits an email message via SMTP.
-func (s *SMTP) Send(ctx context.Context, msg services.EmailMessage) error {
+func (s *SMTP) Send(ctx context.Context, msg dtos.EmailMessage) error {
 	if s == nil || s.host == "" {
 		return errors.New("smtp client is nil or unconfigured")
 	}

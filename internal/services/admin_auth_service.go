@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -94,9 +93,7 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 // AdminForgotPassword initiates staff administrator password recovery by generating a one-time
 // reset token and dispatching an email. Always succeeds silently (returns nil) to prevent email enumeration.
 func (s *Service) AdminForgotPassword(ctx context.Context, req dtos.AdminForgotPasswordRequest) error {
-	email := strings.TrimSpace(strings.ToLower(req.Email))
-
-	admin, err := s.repo.FindAdminByEmail(ctx, email)
+	admin, err := s.repo.FindAdminByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
@@ -150,8 +147,7 @@ func (s *Service) AdminForgotPassword(ctx context.Context, req dtos.AdminForgotP
 
 // AdminResetPassword confirms an administrator password recovery request using a valid, unexpired token.
 func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPasswordRequest, meta *dtos.AdminActionMeta) error {
-	token := strings.TrimSpace(req.Token)
-	tokenHash := hasher.HashToken(token)
+	tokenHash := hasher.HashToken(req.Token)
 
 	authToken, err := s.repo.FindAdminAuthTokenByHashAndType(ctx, tokenHash, constants.AuthTokenTypeReset)
 	if err != nil {

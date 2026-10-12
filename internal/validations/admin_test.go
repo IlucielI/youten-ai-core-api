@@ -450,6 +450,16 @@ func TestValidateAdminForgotPasswordRequest(t *testing.T) {
 			t.Fatal("expected error for empty email, got nil")
 		}
 	})
+
+	t.Run("normalizes email with whitespace and uppercase", func(t *testing.T) {
+		req := dtos.AdminForgotPasswordRequest{Email: "  Admin@Youten.AI  "}
+		if err := ValidateAdminForgotPasswordRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if req.Email != "admin@youten.ai" {
+			t.Errorf("expected normalized email 'admin@youten.ai', got '%s'", req.Email)
+		}
+	})
 }
 
 func TestValidateAdminResetPasswordRequest(t *testing.T) {
@@ -466,6 +476,19 @@ func TestValidateAdminResetPasswordRequest(t *testing.T) {
 		}
 		if err := ValidateAdminResetPasswordRequest(&req); err != nil {
 			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("normalizes token by trimming whitespace", func(t *testing.T) {
+		req := dtos.AdminResetPasswordRequest{
+			Token:       "  valid-token-string  ",
+			NewPassword: "newpassword1",
+		}
+		if err := ValidateAdminResetPasswordRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if req.Token != "valid-token-string" {
+			t.Errorf("expected normalized token 'valid-token-string', got '%s'", req.Token)
 		}
 	})
 

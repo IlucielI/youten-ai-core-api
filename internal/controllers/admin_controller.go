@@ -12,6 +12,22 @@ import (
 	"code-base-golang/internal/services"
 )
 
+// getAdminActionMeta extracts authenticated administrator metadata from the request context.
+// If the caller is unauthenticated or the admin ID is nil, it responds with HTTP 401 Unauthorized and returns false.
+func (c *Controllers) getAdminActionMeta(ctx *gin.Context) (services.AdminActionMeta, bool) {
+	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
+	if !ok || adminUser.AdminID == uuid.Nil {
+		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+		return services.AdminActionMeta{}, false
+	}
+
+	return services.AdminActionMeta{
+		AdminID:   adminUser.AdminID,
+		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
+		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
+	}, true
+}
+
 // AdminListUsers handles GET /v1/admin/users.
 func (c *Controllers) AdminListUsers(ctx *gin.Context) {
 	var query dtos.AdminUserListQuery
@@ -51,16 +67,9 @@ func (c *Controllers) AdminOverrideUserQuota(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminOverrideUserQuota(ctx.Request.Context(), meta, userID, req)
@@ -81,16 +90,9 @@ func (c *Controllers) AdminRevokeUserSessions(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminRevokeUserSessions(ctx.Request.Context(), meta, userID)
@@ -126,16 +128,9 @@ func (c *Controllers) AdminCreateRole(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminCreateRole(ctx.Request.Context(), meta, req)
@@ -167,16 +162,9 @@ func (c *Controllers) AdminUpdateRole(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminUpdateRole(ctx.Request.Context(), meta, roleID, req)
@@ -212,16 +200,9 @@ func (c *Controllers) AdminCreateUserRole(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminCreateUserRole(ctx.Request.Context(), meta, req)
@@ -253,16 +234,9 @@ func (c *Controllers) AdminUpdateUserRole(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminUpdateUserRole(ctx.Request.Context(), meta, roleID, req)
@@ -294,16 +268,9 @@ func (c *Controllers) AdminAssignUserRole(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminAssignUserRole(ctx.Request.Context(), meta, userID, req)
@@ -339,16 +306,9 @@ func (c *Controllers) AdminCreateTemplate(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminCreateTemplate(ctx.Request.Context(), meta, req)
@@ -380,16 +340,9 @@ func (c *Controllers) AdminUpdateTemplate(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminUpdateTemplate(ctx.Request.Context(), meta, templateID, req)
@@ -414,16 +367,9 @@ func (c *Controllers) AdminTestTemplate(ctx *gin.Context) {
 		return
 	}
 
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminTestTemplate(ctx.Request.Context(), meta, req)
@@ -437,20 +383,13 @@ func (c *Controllers) AdminTestTemplate(ctx *gin.Context) {
 
 // AdminGetDLQPipeline retrieves dead-lettered and stuck pipeline jobs.
 func (c *Controllers) AdminGetDLQPipeline(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
 	}
 
 	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "20"))
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
-	}
 
 	resp, err := c.svc.AdminGetDLQMessages(ctx.Request.Context(), meta, page, limit)
 	if err != nil {
@@ -463,9 +402,8 @@ func (c *Controllers) AdminGetDLQPipeline(ctx *gin.Context) {
 
 // AdminRetryDLQJob handles POST /v1/admin/pipeline/dlq/retry.
 func (c *Controllers) AdminRetryDLQJob(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
 	}
 
@@ -480,12 +418,6 @@ func (c *Controllers) AdminRetryDLQJob(ctx *gin.Context) {
 		return
 	}
 
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
-	}
-
 	resp, err := c.svc.AdminRetryDLQJob(ctx.Request.Context(), meta, req)
 	if err != nil {
 		c.wrapError(ctx, err)
@@ -497,16 +429,9 @@ func (c *Controllers) AdminRetryDLQJob(ctx *gin.Context) {
 
 // AdminGetSystemConfig handles GET /v1/admin/config.
 func (c *Controllers) AdminGetSystemConfig(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminGetSystemConfig(ctx.Request.Context(), meta)
@@ -520,9 +445,8 @@ func (c *Controllers) AdminGetSystemConfig(ctx *gin.Context) {
 
 // AdminUpdateSystemConfig handles PATCH /v1/admin/config.
 func (c *Controllers) AdminUpdateSystemConfig(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
 	}
 
@@ -536,12 +460,6 @@ func (c *Controllers) AdminUpdateSystemConfig(ctx *gin.Context) {
 		return
 	}
 
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
-	}
-
 	resp, err := c.svc.AdminUpdateSystemConfig(ctx.Request.Context(), meta, req)
 	if err != nil {
 		c.wrapError(ctx, err)
@@ -553,9 +471,7 @@ func (c *Controllers) AdminUpdateSystemConfig(ctx *gin.Context) {
 
 // AdminListReports handles GET /v1/admin/reports.
 func (c *Controllers) AdminListReports(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	if _, ok := c.getAdminActionMeta(ctx); !ok {
 		return
 	}
 
@@ -577,9 +493,8 @@ func (c *Controllers) AdminListReports(ctx *gin.Context) {
 
 // AdminResolveReport handles POST /v1/admin/reports/:id/resolve.
 func (c *Controllers) AdminResolveReport(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
 	}
 
@@ -600,12 +515,6 @@ func (c *Controllers) AdminResolveReport(ctx *gin.Context) {
 		return
 	}
 
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
-	}
-
 	resp, err := c.svc.AdminResolveReport(ctx.Request.Context(), meta, reportID, req)
 	if err != nil {
 		c.wrapError(ctx, err)
@@ -617,9 +526,7 @@ func (c *Controllers) AdminResolveReport(ctx *gin.Context) {
 
 // AdminListAuditLogs handles GET /v1/admin/audit-logs.
 func (c *Controllers) AdminListAuditLogs(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	if _, ok := c.getAdminActionMeta(ctx); !ok {
 		return
 	}
 
@@ -641,9 +548,8 @@ func (c *Controllers) AdminListAuditLogs(ctx *gin.Context) {
 
 // AdminGetOverviewStats handles GET /v1/admin/stats/overview.
 func (c *Controllers) AdminGetOverviewStats(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	_, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
 	}
 
@@ -658,9 +564,8 @@ func (c *Controllers) AdminGetOverviewStats(ctx *gin.Context) {
 
 // AdminGetCostOversight handles GET /v1/admin/stats/costs.
 func (c *Controllers) AdminGetCostOversight(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	_, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
 	}
 
@@ -675,9 +580,8 @@ func (c *Controllers) AdminGetCostOversight(ctx *gin.Context) {
 
 // AdminListJobs handles GET /v1/admin/jobs to retrieve all platform generation jobs.
 func (c *Controllers) AdminListJobs(ctx *gin.Context) {
-	adminUser, ok := ctxmeta.GetAdminAuthUser(ctx.Request.Context())
-	if !ok || adminUser.AdminID == uuid.Nil {
-		c.wrapError(ctx, constants.ErrUnauthorized.WithMessage("admin authentication required"))
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
 		return
 	}
 
@@ -685,12 +589,6 @@ func (c *Controllers) AdminListJobs(ctx *gin.Context) {
 	if err := ctx.ShouldBindQuery(&query); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
 		return
-	}
-
-	meta := services.AdminActionMeta{
-		AdminID:   adminUser.AdminID,
-		IPAddress: ctxmeta.GetClientIP(ctx.Request.Context()),
-		UserAgent: ctxmeta.GetUserAgent(ctx.Request.Context()),
 	}
 
 	resp, err := c.svc.AdminListJobs(ctx.Request.Context(), meta, query)

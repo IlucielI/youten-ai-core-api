@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
 )
@@ -24,36 +25,34 @@ type ListRolesQuery struct {
 	Limit  int
 }
 
+func (q ListRolesQuery) scope(db *gorm.DB) *gorm.DB {
+	if q.Search != "" {
+		pattern := "%" + q.Search + "%"
+		return db.Where("name ILIKE ? OR description ILIKE ?", pattern, pattern)
+	}
+	return db
+}
+
 // ListRolesPaginated retrieves paginated administrative roles matching search criteria,
 // ordering default system roles first.
 func (r *Repositories) ListRolesPaginated(ctx context.Context, q ListRolesQuery) ([]models.AdminRole, int64, error) {
 	var roles []models.AdminRole
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&models.AdminRole{})
-	if q.Search != "" {
-		pattern := "%" + q.Search + "%"
-		query = query.Where("name ILIKE ? OR description ILIKE ?", pattern, pattern)
-	}
-
+	query := r.db.WithContext(ctx).Model(&models.AdminRole{}).Scopes(q.scope)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := query.Order("is_system DESC, name ASC").Limit(q.Limit).Offset(q.Offset).Find(&roles).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return roles, total, nil
+	err := query.Order("is_system DESC, name ASC").Limit(q.Limit).Offset(q.Offset).Find(&roles).Error
+	return roles, total, err
 }
 
 // ListRoles retrieves all administrative roles, ordering default system roles first.
 func (r *Repositories) ListRoles(ctx context.Context) ([]models.AdminRole, error) {
 	var roles []models.AdminRole
-	if err := r.db.WithContext(ctx).Order("is_system DESC, name ASC").Find(&roles).Error; err != nil {
-		return nil, err
-	}
-	return roles, nil
+	err := r.db.WithContext(ctx).Order("is_system DESC, name ASC").Find(&roles).Error
+	return roles, err
 }
 
 // FindRoleByName retrieves an administrative role by its unique name.

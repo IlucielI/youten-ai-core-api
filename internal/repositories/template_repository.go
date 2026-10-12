@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"code-base-golang/internal/models"
@@ -62,36 +63,34 @@ type ListTemplatesQuery struct {
 	Limit  int
 }
 
+func (q ListTemplatesQuery) scope(db *gorm.DB) *gorm.DB {
+	if q.Search != "" {
+		pattern := "%" + q.Search + "%"
+		return db.Where("name ILIKE ? OR category_key ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
+	}
+	return db
+}
+
 // ListTemplatesPaginated retrieves paginated prompt templates matching search criteria,
 // ordering by category_key ascending.
 func (r *Repositories) ListTemplatesPaginated(ctx context.Context, q ListTemplatesQuery) ([]models.Template, int64, error) {
 	var templates []models.Template
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&models.Template{})
-	if q.Search != "" {
-		pattern := "%" + q.Search + "%"
-		query = query.Where("name ILIKE ? OR category_key ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
-	}
-
+	query := r.db.WithContext(ctx).Model(&models.Template{}).Scopes(q.scope)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := query.Order("category_key ASC").Limit(q.Limit).Offset(q.Offset).Find(&templates).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return templates, total, nil
+	err := query.Order("category_key ASC").Limit(q.Limit).Offset(q.Offset).Find(&templates).Error
+	return templates, total, err
 }
 
 // ListAllTemplates lists all templates (both active and inactive) ordered by category key.
 func (r *Repositories) ListAllTemplates(ctx context.Context) ([]models.Template, error) {
 	var list []models.Template
-	if err := r.db.WithContext(ctx).Order("category_key ASC").Find(&list).Error; err != nil {
-		return nil, err
-	}
-	return list, nil
+	err := r.db.WithContext(ctx).Order("category_key ASC").Find(&list).Error
+	return list, err
 }
 
 // UpsertTemplate creates or updates a template by category_key.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/adapters/redis"
@@ -61,4 +62,28 @@ func (r *Repositories) PingRedis(ctx context.Context) error {
 		return errors.New("redis connection is nil")
 	}
 	return r.rdb.Ping(ctx)
+}
+
+// setIfNotNull assigns *val to m[key] only if val is not nil.
+func setIfNotNull[T any](m map[string]any, key string, val *T) {
+	if val != nil {
+		m[key] = *val
+	}
+}
+
+// ensureRowUpdatedOrExists verifies whether an UPDATE modified rows or whether the record actually exists.
+func (r *Repositories) ensureRowUpdatedOrExists(ctx context.Context, res *gorm.DB, model any, id uuid.UUID) error {
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		var count int64
+		if err := r.db.WithContext(ctx).Model(model).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
+	}
+	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
 )
@@ -60,36 +61,34 @@ type ListUserRolesQuery struct {
 	Limit  int
 }
 
+func (q ListUserRolesQuery) scope(db *gorm.DB) *gorm.DB {
+	if q.Search != "" {
+		pattern := "%" + q.Search + "%"
+		return db.Where("name ILIKE ? OR code ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
+	}
+	return db
+}
+
 // ListUserRolesPaginated retrieves paginated user roles matching search criteria,
 // ordering default user roles first.
 func (r *Repositories) ListUserRolesPaginated(ctx context.Context, q ListUserRolesQuery) ([]models.UserRole, int64, error) {
 	var roles []models.UserRole
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&models.UserRole{})
-	if q.Search != "" {
-		pattern := "%" + q.Search + "%"
-		query = query.Where("name ILIKE ? OR code ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
-	}
-
+	query := r.db.WithContext(ctx).Model(&models.UserRole{}).Scopes(q.scope)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := query.Order("is_default DESC, daily_quota ASC, created_at ASC").Limit(q.Limit).Offset(q.Offset).Find(&roles).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return roles, total, nil
+	err := query.Order("is_default DESC, daily_quota ASC, created_at ASC").Limit(q.Limit).Offset(q.Offset).Find(&roles).Error
+	return roles, total, err
 }
 
 // ListUserRoles retrieves all available user roles ordered by default flag and daily quota ascending.
 func (r *Repositories) ListUserRoles(ctx context.Context) ([]models.UserRole, error) {
 	var roles []models.UserRole
-	if err := r.db.WithContext(ctx).Order("is_default DESC, daily_quota ASC, created_at ASC").Find(&roles).Error; err != nil {
-		return nil, err
-	}
-	return roles, nil
+	err := r.db.WithContext(ctx).Order("is_default DESC, daily_quota ASC, created_at ASC").Find(&roles).Error
+	return roles, err
 }
 
 // CreateUserRole persists a new customer user role into the database.

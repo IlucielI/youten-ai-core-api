@@ -277,7 +277,7 @@ func TestService_CleanupExpiredRecordings(t *testing.T) {
 	audioKey := "recordings/test/audio.mp3"
 
 	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(expires_at IS NOT NULL AND expires_at <= \$1\) AND "recordings"\."deleted_at" IS NULL ORDER BY expires_at ASC LIMIT \$2`).
-		WithArgs(sqlmock.AnyArg(), 100).
+		WithArgs(sqlmock.AnyArg(), constants.DefaultExpiredRecordingsCleanupBatchSize).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "audio_url", "expires_at"}).
 			AddRow(recID, &audioKey, now))
 
@@ -287,7 +287,7 @@ func TestService_CleanupExpiredRecordings(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	count, err := svc.CleanupExpiredRecordings(context.Background(), 100)
+	count, err := svc.CleanupExpiredRecordings(context.Background(), constants.DefaultExpiredRecordingsCleanupBatchSize)
 	if err != nil {
 		t.Fatalf("unexpected cleanup error: %v", err)
 	}

@@ -109,3 +109,7 @@ const (
 	ExportFormatJSON     ExportFormat = "json"
 	ExportFormatPDF      ExportFormat = "pdf"
 )
+
+// DefaultExpiredRecordingsCleanupBatchSize defines the fallback batch size when purging expired guest recordings.
+const DefaultExpiredRecordingsCleanupBatchSize = 100
+

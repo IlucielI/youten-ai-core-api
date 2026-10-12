@@ -61,7 +61,11 @@ func (w *WorkerServer) StartCleanupTicker(ctx context.Context, interval time.Dur
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				count, err := w.svc.CleanupExpiredRecordings(ctx, 100)
+				batchSize := w.cfg.CleanupBatchSize
+				if batchSize <= 0 {
+					batchSize = constants.DefaultExpiredRecordingsCleanupBatchSize
+				}
+				count, err := w.svc.CleanupExpiredRecordings(ctx, batchSize)
 				if err != nil {
 					log.Printf("[CLEANUP ERROR] failed to clean expired recordings: %v", err)
 				} else if count > 0 {

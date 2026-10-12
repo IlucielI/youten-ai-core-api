@@ -159,7 +159,11 @@ func (s *Service) UploadRecording(
 // deletes their media objects from storage, and hard-deletes the database rows (with cascade).
 func (s *Service) CleanupExpiredRecordings(ctx context.Context, batchSize int) (int, error) {
 	if batchSize <= 0 {
-		batchSize = 100
+		if s != nil && s.cfg.CleanupBatchSize > 0 {
+			batchSize = s.cfg.CleanupBatchSize
+		} else {
+			batchSize = constants.DefaultExpiredRecordingsCleanupBatchSize
+		}
 	}
 	expiredList, err := s.repo.FindExpiredRecordings(ctx, batchSize)
 	if err != nil {

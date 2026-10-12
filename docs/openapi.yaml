@@ -1188,6 +1188,34 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /v1/admin/refresh:
+    post:
+      tags: [Admin Auth]
+      summary: Admin Token Refresh
+      description: Rotates staff administrator session tokens by validating the active refresh token, revoking it, and issuing a new token pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+                  example: eyJhbGciOi...
+      responses:
+        '200':
+          description: Admin token rotation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /v1/admin/forgot-password:
     post:
       tags: [Admin Auth]
@@ -3116,6 +3144,14 @@ components:
               properties:
                 token:
                   type: string
+                refresh_token:
+                  type: string
+                token_type:
+                  type: string
+                expires_in:
+                  type: integer
+                refresh_expires_in:
+                  type: integer
                 expires_at:
                   type: string
                   format: date-time

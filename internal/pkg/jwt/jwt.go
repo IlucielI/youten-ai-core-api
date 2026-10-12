@@ -149,8 +149,18 @@ func ValidateToken(cfg config.Config, tokenStr string) (*CustomClaims, error) {
 type AdminClaims struct {
 	AdminID   uuid.UUID               `json:"sub"`
 	Username  string                  `json:"username"`
-	TokenType constants.JWTTokenType `json:"type"` // "admin_access"
+	TokenType constants.JWTTokenType `json:"type"` // "admin_access" or "admin_refresh"
 	jwt.RegisteredClaims
+}
+
+// AdminTokenPair encapsulates access and refresh tokens for staff administrators.
+type AdminTokenPair struct {
+	AccessToken      string
+	RefreshToken     string
+	TokenType        string
+	ExpiresIn        int64
+	RefreshExpiresIn int64
+	ExpiresAt        time.Time
 }
 
 // GenerateAdminToken signs and returns a new Admin Access Token for identity verification.
@@ -173,6 +183,58 @@ func GenerateAdminToken(cfg config.Config, adminID uuid.UUID, username string) (
 	return tokenObj.SignedString([]byte(cfg.JWTSecret))
 }
 
+// GenerateAdminTokenPair signs and returns a new Admin Access Token and Refresh Token pair.
+func GenerateAdminTokenPair(cfg config.Config, adminID uuid.UUID, username string) (*AdminTokenPair, error) {
+	now := time.Now()
+	accessExp := now.Add(cfg.JWTAccessExpiration)
+	refreshExp := now.Add(cfg.JWTRefreshExpiration)
+
+	// 1. Access Token
+	accessClaims := AdminClaims{
+		AdminID:   adminID,
+		Username:  username,
+		TokenType: constants.JWTTokenTypeAdminAccess,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   adminID.String(),
+			Issuer:    cfg.AppName,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(accessExp),
+		},
+	}
+	accessObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	accessToken, err := accessObj.SignedString([]byte(cfg.JWTSecret))
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign admin access token: %w", err)
+	}
+
+	// 2. Refresh Token
+	refreshClaims := AdminClaims{
+		AdminID:   adminID,
+		Username:  username,
+		TokenType: constants.JWTTokenTypeAdminRefresh,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   adminID.String(),
+			Issuer:    cfg.AppName,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(refreshExp),
+		},
+	}
+	refreshObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	refreshToken, err := refreshObj.SignedString([]byte(cfg.JWTSecret))
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign admin refresh token: %w", err)
+	}
+
+	return &AdminTokenPair{
+		AccessToken:      accessToken,
+		RefreshToken:     refreshToken,
+		TokenType:        "Bearer",
+		ExpiresIn:        int64(cfg.JWTAccessExpiration.Seconds()),
+		RefreshExpiresIn: int64(cfg.JWTRefreshExpiration.Seconds()),
+		ExpiresAt:        accessExp,
+	}, nil
+}
+
 // ValidateAdminToken parses and verifies the signature and expiration of an Admin JWT token string.
 func ValidateAdminToken(cfg config.Config, tokenStr string) (*AdminClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(t *jwt.Token) (interface{}, error) {
@@ -191,6 +253,30 @@ func ValidateAdminToken(cfg config.Config, tokenStr string) (*AdminClaims, error
 	}
 
 	if claims.TokenType != constants.JWTTokenTypeAdminAccess {
+		return nil, constants.ErrInvalidToken
+	}
+
+	return claims, nil
+}
+
+// ValidateAdminRefreshToken parses and verifies the signature and expiration of an Admin Refresh JWT token.
+func ValidateAdminRefreshToken(cfg config.Config, tokenStr string) (*AdminClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(cfg.JWTSecret), nil
+	})
+	if err != nil {
+		return nil, constants.ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*AdminClaims)
+	if !ok || !token.Valid {
+		return nil, constants.ErrInvalidToken
+	}
+
+	if claims.TokenType != constants.JWTTokenTypeAdminRefresh {
 		return nil, constants.ErrInvalidToken
 	}
 

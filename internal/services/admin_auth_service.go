@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -18,7 +19,7 @@ import (
 	"code-base-golang/internal/templates"
 )
 
-// AdminLogin authenticates staff administrator credentials and issues an admin access token.
+// AdminLogin authenticates staff administrator credentials and issues an admin access token and refresh token.
 func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, meta *dtos.AdminActionMeta) (*dtos.AdminLoginResponse, error) {
 	admin, err := s.repo.FindAdminByUsername(ctx, req.Username)
 	if err != nil {
@@ -41,8 +42,21 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 		return nil, s.wrapError(ctx, err)
 	}
 
-	tokenStr, err := jwt.GenerateAdminToken(s.cfg, admin.ID, admin.Username)
+	tokenPair, err := jwt.GenerateAdminTokenPair(s.cfg, admin.ID, admin.Username)
 	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// Persist admin refresh token hash in admin_auth_tokens table
+	refreshTokenHash := hasher.HashToken(tokenPair.RefreshToken)
+	adminAuthToken := &models.AdminAuthToken{
+		AdminID:   admin.ID,
+		Type:      constants.AuthTokenTypeAdminRefresh,
+		TokenHash: refreshTokenHash,
+		ExpiresAt: time.Now().Add(s.cfg.JWTRefreshExpiration),
+	}
+
+	if err := s.repo.CreateAdminAuthToken(ctx, adminAuthToken); err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
 
@@ -65,8 +79,106 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 	}
 
 	return &dtos.AdminLoginResponse{
-		Token:     tokenStr,
-		ExpiresAt: now.Add(s.cfg.JWTAccessExpiration),
+		Token:            tokenPair.AccessToken,
+		RefreshToken:     tokenPair.RefreshToken,
+		TokenType:        tokenPair.TokenType,
+		ExpiresIn:        tokenPair.ExpiresIn,
+		RefreshExpiresIn: tokenPair.RefreshExpiresIn,
+		ExpiresAt:        tokenPair.ExpiresAt,
+		Admin: dtos.AdminUserDTO{
+			ID:          admin.ID,
+			Username:    admin.Username,
+			Email:       admin.Email,
+			FullName:    admin.FullName,
+			RoleID:      admin.RoleID,
+			RoleName:    roleName,
+			Permissions: perms,
+		},
+	}, nil
+}
+
+// AdminRefreshToken rotates staff administrator session tokens by validating the active refresh token, revoking it, and issuing a new token pair.
+func (s *Service) AdminRefreshToken(ctx context.Context, req dtos.AdminRefreshTokenRequest, meta *dtos.AdminActionMeta) (*dtos.AdminLoginResponse, error) {
+	rawToken := strings.TrimSpace(req.RefreshToken)
+
+	// 1. Validate JWT structure and signature
+	claims, err := jwt.ValidateAdminRefreshToken(s.cfg, rawToken)
+	if err != nil || claims == nil || claims.TokenType != constants.JWTTokenTypeAdminRefresh {
+		return nil, constants.ErrInvalidToken
+	}
+
+	// 2. Lookup unrevoked, unexpired token in database by SHA-256 hash
+	tokenHash := hasher.HashToken(rawToken)
+	authToken, err := s.repo.FindAdminAuthTokenByHashAndType(ctx, tokenHash, constants.AuthTokenTypeAdminRefresh)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrInvalidToken
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+	if authToken == nil {
+		return nil, constants.ErrInvalidToken
+	}
+
+	// 3. Retrieve associated admin and verify active status
+	admin, err := s.repo.FindAdminByID(ctx, authToken.AdminID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrInvalidToken
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+	if admin == nil || admin.Status != constants.UserStatusActive {
+		if revokeErr := s.repo.RevokeAdminAuthToken(ctx, authToken.ID); revokeErr != nil {
+			return nil, s.wrapError(ctx, revokeErr)
+		}
+		return nil, constants.ErrInvalidToken
+	}
+
+	// 4. Generate fresh admin token pair
+	tokenPair, err := jwt.GenerateAdminTokenPair(s.cfg, admin.ID, admin.Username)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// 5. Atomically rotate token: revoke old refresh token and insert new refresh token in transaction
+	newTokenHash := hasher.HashToken(tokenPair.RefreshToken)
+	newAuthToken := &models.AdminAuthToken{
+		AdminID:   admin.ID,
+		Type:      constants.AuthTokenTypeAdminRefresh,
+		TokenHash: newTokenHash,
+		ExpiresAt: time.Now().Add(s.cfg.JWTRefreshExpiration),
+	}
+
+	if err := s.repo.RotateAdminAuthToken(ctx, authToken.ID, newAuthToken); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// 6. Record audit log asynchronously
+	entityIDStr := admin.ID.String()
+	s.emitAdminAuditLog(ctx, queue.AdminAuditPayload{
+		AdminID:   &admin.ID,
+		Action:    constants.AuditActionAdminRefreshToken,
+		Entity:    constants.AuditEntityAdmin,
+		EntityID:  &entityIDStr,
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
+	})
+
+	roleName := ""
+	var perms []string
+	if admin.Role != nil {
+		roleName = admin.Role.Name
+		perms = admin.Role.PermissionsList()
+	}
+
+	return &dtos.AdminLoginResponse{
+		Token:            tokenPair.AccessToken,
+		RefreshToken:     tokenPair.RefreshToken,
+		TokenType:        tokenPair.TokenType,
+		ExpiresIn:        tokenPair.ExpiresIn,
+		RefreshExpiresIn: tokenPair.RefreshExpiresIn,
+		ExpiresAt:        tokenPair.ExpiresAt,
 		Admin: dtos.AdminUserDTO{
 			ID:          admin.ID,
 			Username:    admin.Username,

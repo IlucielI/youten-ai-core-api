@@ -16,6 +16,7 @@ type AuthTokenType string
 
 const (
 	AuthTokenTypeRefresh           AuthTokenType = "refresh"
+	AuthTokenTypeAdminRefresh      AuthTokenType = "admin_refresh"
 	AuthTokenTypeReset             AuthTokenType = "reset_password"
 	AuthTokenTypeEmailVerification AuthTokenType = "email_verification"
 	AuthTokenTypeEmailVerificationCode AuthTokenType = "email_verification_code"
@@ -25,8 +26,9 @@ const (
 type JWTTokenType string
 
 const (
-	JWTTokenTypeAccess      JWTTokenType = "access"
-	JWTTokenTypeRefresh     JWTTokenType = "refresh"
-	JWTTokenTypeAdminAccess JWTTokenType = "admin_access"
-	JWTTokenTypeAnonAccess  JWTTokenType = "anon_access"
+	JWTTokenTypeAccess       JWTTokenType = "access"
+	JWTTokenTypeRefresh      JWTTokenType = "refresh"
+	JWTTokenTypeAdminAccess  JWTTokenType = "admin_access"
+	JWTTokenTypeAdminRefresh JWTTokenType = "admin_refresh"
+	JWTTokenTypeAnonAccess   JWTTokenType = "anon_access"
 )

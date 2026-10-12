@@ -298,6 +298,26 @@ func TestValidateAdminLoginRequest(t *testing.T) {
 	})
 }
 
+func TestValidateAdminRefreshTokenRequest(t *testing.T) {
+	t.Run("valid refresh token", func(t *testing.T) {
+		req := dtos.AdminRefreshTokenRequest{
+			RefreshToken: "valid-admin-refresh-token",
+		}
+		if err := ValidateAdminRefreshTokenRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("empty refresh token returns error", func(t *testing.T) {
+		req := dtos.AdminRefreshTokenRequest{
+			RefreshToken: "",
+		}
+		if err := ValidateAdminRefreshTokenRequest(&req); err == nil {
+			t.Fatal("expected error for empty refresh token, got nil")
+		}
+	})
+}
+
 func TestValidateAdminJobListQuery(t *testing.T) {
 	t.Run("valid query", func(t *testing.T) {
 		q := dtos.AdminJobListQuery{PaginationQuery: dtos.PaginationQuery{Page: 1, Limit: 20}}

@@ -90,6 +90,21 @@ func (r *Repositories) RevokeAdminAuthToken(ctx context.Context, id uuid.UUID) e
 	return nil
 }
 
+// RotateAdminAuthToken atomically revokes the old token and inserts the new token within a database transaction.
+func (r *Repositories) RotateAdminAuthToken(ctx context.Context, revokeTokenID uuid.UUID, newToken *models.AdminAuthToken) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		res := tx.Model(&models.AdminAuthToken{}).Where("id = ? AND revoked_at IS NULL", revokeTokenID).Update("revoked_at", now)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Create(newToken).Error
+	})
+}
+
 // FindAdminByID retrieves a staff user by their UUID with preloaded role.
 func (r *Repositories) FindAdminByID(ctx context.Context, id uuid.UUID) (*models.AdminUser, error) {
 	var admin models.AdminUser

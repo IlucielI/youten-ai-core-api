@@ -25,9 +25,18 @@ type AdminUserDTO struct {
 
 // AdminLoginResponse defines the response envelope payload for successful admin login.
 type AdminLoginResponse struct {
-	Token     string       `json:"token"`
-	ExpiresAt time.Time    `json:"expires_at"`
-	Admin     AdminUserDTO `json:"admin"`
+	Token            string       `json:"token"`
+	RefreshToken     string       `json:"refresh_token,omitempty"`
+	TokenType        string       `json:"token_type,omitempty"`
+	ExpiresIn        int64        `json:"expires_in,omitempty"`
+	RefreshExpiresIn int64        `json:"refresh_expires_in,omitempty"`
+	ExpiresAt        time.Time    `json:"expires_at"`
+	Admin            AdminUserDTO `json:"admin"`
+}
+
+// AdminRefreshTokenRequest defines the input payload for rotating staff administrator session tokens.
+type AdminRefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
 }
 
 // AdminForgotPasswordRequest defines the input payload for requesting an admin password reset email.

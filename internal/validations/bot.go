@@ -10,10 +10,6 @@ import (
 
 // ValidateDispatchBotRequest validates parameters for initiating a bot session.
 func ValidateDispatchBotRequest(r *dtos.DispatchBotRequest) error {
-	if r == nil {
-		return validation.NewError("validation_required", "request is required")
-	}
-
 	err := validation.ValidateStruct(r,
 		validation.Field(&r.Provider, validation.Required, validation.In(
 			constants.BotProviderDiscord,
@@ -48,10 +44,6 @@ func ValidateDispatchBotRequest(r *dtos.DispatchBotRequest) error {
 
 // ValidateGoogleMeetWebhookRequest validates Google Meet bot worker callback payloads.
 func ValidateGoogleMeetWebhookRequest(r *dtos.GoogleMeetWebhookRequest) error {
-	if r == nil {
-		return validation.NewError("validation_required", "request is required")
-	}
-
 	return validation.ValidateStruct(r,
 		validation.Field(&r.ExternalSessionID, validation.Required),
 		validation.Field(&r.Event, validation.Required, validation.In(
@@ -66,10 +58,6 @@ func ValidateGoogleMeetWebhookRequest(r *dtos.GoogleMeetWebhookRequest) error {
 
 // ValidateMSTeamsWebhookRequest validates Microsoft Teams bot worker callback payloads.
 func ValidateMSTeamsWebhookRequest(r *dtos.MSTeamsWebhookRequest) error {
-	if r == nil {
-		return validation.NewError("validation_required", "request is required")
-	}
-
 	return validation.ValidateStruct(r,
 		validation.Field(&r.ExternalSessionID, validation.Required),
 		validation.Field(&r.Event, validation.Required, validation.In(
@@ -86,10 +74,6 @@ func ValidateMSTeamsWebhookRequest(r *dtos.MSTeamsWebhookRequest) error {
 
 // ValidateZoomWebhookRequest validates Zoom bot worker callback payloads.
 func ValidateZoomWebhookRequest(r *dtos.ZoomWebhookRequest) error {
-	if r == nil {
-		return validation.NewError("validation_required", "request is required")
-	}
-
 	return validation.ValidateStruct(r,
 		validation.Field(&r.ExternalSessionID, validation.Required),
 		validation.Field(&r.Event, validation.Required, validation.In(
@@ -102,5 +86,3 @@ func ValidateZoomWebhookRequest(r *dtos.ZoomWebhookRequest) error {
 		)),
 	)
 }
-
-

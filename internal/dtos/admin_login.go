@@ -16,6 +16,7 @@ type AdminLoginRequest struct {
 type AdminUserDTO struct {
 	ID          uuid.UUID `json:"id"`
 	Username    string    `json:"username"`
+	Email       string    `json:"email,omitempty"`
 	FullName    string    `json:"full_name"`
 	RoleID      uuid.UUID `json:"role_id"`
 	RoleName    string    `json:"role_name"`
@@ -27,4 +28,16 @@ type AdminLoginResponse struct {
 	Token     string       `json:"token"`
 	ExpiresAt time.Time    `json:"expires_at"`
 	Admin     AdminUserDTO `json:"admin"`
+}
+
+// AdminForgotPasswordRequest defines the input payload for requesting an admin password reset email.
+type AdminForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// AdminResetPasswordRequest defines the payload required to reset an admin password using a token.
+type AdminResetPasswordRequest struct {
+	Token           string `json:"token"`
+	NewPassword     string `json:"new_password"`
+	ConfirmPassword string `json:"confirm_password"`
 }

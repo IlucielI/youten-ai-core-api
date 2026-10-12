@@ -389,3 +389,103 @@ func TestValidateAdminUserRoleListQuery(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateAdminForgotPasswordRequest(t *testing.T) {
+	t.Run("nil request returns error", func(t *testing.T) {
+		if err := ValidateAdminForgotPasswordRequest(nil); err == nil {
+			t.Fatal("expected error for nil request, got nil")
+		}
+	})
+
+	t.Run("valid email", func(t *testing.T) {
+		req := dtos.AdminForgotPasswordRequest{Email: "admin@youten.ai"}
+		if err := ValidateAdminForgotPasswordRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("invalid email format returns error", func(t *testing.T) {
+		req := dtos.AdminForgotPasswordRequest{Email: "not-an-email"}
+		if err := ValidateAdminForgotPasswordRequest(&req); err == nil {
+			t.Fatal("expected error for invalid email format, got nil")
+		}
+	})
+
+	t.Run("empty email returns error", func(t *testing.T) {
+		req := dtos.AdminForgotPasswordRequest{Email: ""}
+		if err := ValidateAdminForgotPasswordRequest(&req); err == nil {
+			t.Fatal("expected error for empty email, got nil")
+		}
+	})
+}
+
+func TestValidateAdminResetPasswordRequest(t *testing.T) {
+	t.Run("nil request returns error", func(t *testing.T) {
+		if err := ValidateAdminResetPasswordRequest(nil); err == nil {
+			t.Fatal("expected error for nil request, got nil")
+		}
+	})
+
+	t.Run("valid payload without confirm_password", func(t *testing.T) {
+		req := dtos.AdminResetPasswordRequest{
+			Token:       "valid-token-string",
+			NewPassword: "newpassword1",
+		}
+		if err := ValidateAdminResetPasswordRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("valid payload with matching confirm_password", func(t *testing.T) {
+		req := dtos.AdminResetPasswordRequest{
+			Token:           "valid-token-string",
+			NewPassword:     "newpassword1",
+			ConfirmPassword: "newpassword1",
+		}
+		if err := ValidateAdminResetPasswordRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("mismatched confirm_password returns error", func(t *testing.T) {
+		req := dtos.AdminResetPasswordRequest{
+			Token:           "valid-token-string",
+			NewPassword:     "newpassword1",
+			ConfirmPassword: "differentpassword2",
+		}
+		if err := ValidateAdminResetPasswordRequest(&req); err == nil {
+			t.Fatal("expected error for mismatched confirm_password, got nil")
+		}
+	})
+
+	t.Run("short password returns error", func(t *testing.T) {
+		req := dtos.AdminResetPasswordRequest{
+			Token:       "valid-token-string",
+			NewPassword: "short1",
+		}
+		if err := ValidateAdminResetPasswordRequest(&req); err == nil {
+			t.Fatal("expected error for short password, got nil")
+		}
+	})
+
+	t.Run("password without digit returns error", func(t *testing.T) {
+		req := dtos.AdminResetPasswordRequest{
+			Token:       "valid-token-string",
+			NewPassword: "passwordwithoutdigit",
+		}
+		if err := ValidateAdminResetPasswordRequest(&req); err == nil {
+			t.Fatal("expected error for password without digit, got nil")
+		}
+	})
+
+	t.Run("empty token returns error", func(t *testing.T) {
+		req := dtos.AdminResetPasswordRequest{
+			Token:       "",
+			NewPassword: "newpassword1",
+		}
+		if err := ValidateAdminResetPasswordRequest(&req); err == nil {
+			t.Fatal("expected error for empty token, got nil")
+		}
+	})
+}
+

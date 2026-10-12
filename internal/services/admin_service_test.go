@@ -1666,6 +1666,216 @@ func TestService_AdminUserRoles(t *testing.T) {
 	})
 }
 
+func TestService_AdminForgotPassword(t *testing.T) {
+	t.Run("non-existent email returns nil silently", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+			WithArgs("nonexistent@youten.ai", 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		err := svc.AdminForgotPassword(context.Background(), dtos.AdminForgotPasswordRequest{
+			Email: "nonexistent@youten.ai",
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("inactive admin returns nil silently", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+			WithArgs("inactive@youten.ai", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "email", "full_name", "role_id", "status"}).
+				AddRow(adminID, "inactive", "inactive@youten.ai", "Inactive Admin", roleID, "suspended"))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WithArgs(roleID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "permissions"}).
+				AddRow(roleID, "Admin", []byte(`["*"]`)))
+
+		err := svc.AdminForgotPassword(context.Background(), dtos.AdminForgotPasswordRequest{
+			Email: "inactive@youten.ai",
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("active admin revokes old tokens and creates new reset token", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		roleID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+			WithArgs("admin@youten.ai", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "email", "full_name", "role_id", "status"}).
+				AddRow(adminID, "admin", "admin@youten.ai", "Active Admin", roleID, "active"))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WithArgs(roleID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "permissions"}).
+				AddRow(roleID, "Admin", []byte(`["*"]`)))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "admin_auth_tokens"`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_auth_tokens"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+				AddRow(uuid.New(), time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		err := svc.AdminForgotPassword(context.Background(), dtos.AdminForgotPasswordRequest{
+			Email: "admin@youten.ai",
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+}
+
+func TestService_AdminResetPassword(t *testing.T) {
+	t.Run("invalid or expired token returns ErrInvalidToken", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_auth_tokens"`).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		err := svc.AdminResetPassword(context.Background(), dtos.AdminResetPasswordRequest{
+			Token:       "invalid-token",
+			NewPassword: "NewPassword123!",
+		}, nil)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("admin not found returns ErrNotFound", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		tokenID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_auth_tokens"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "admin_id", "type", "expires_at", "revoked_at"}).
+				AddRow(tokenID, adminID, "reset_password", time.Now().Add(10*time.Minute), nil))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+			WithArgs(adminID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		err := svc.AdminResetPassword(context.Background(), dtos.AdminResetPasswordRequest{
+			Token:       "valid-token",
+			NewPassword: "NewPassword123!",
+		}, nil)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("inactive admin returns ErrUserInactive", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		tokenID := uuid.New()
+		roleID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_auth_tokens"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "admin_id", "type", "expires_at", "revoked_at"}).
+				AddRow(tokenID, adminID, "reset_password", time.Now().Add(10*time.Minute), nil))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+			WithArgs(adminID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "email", "full_name", "role_id", "status"}).
+				AddRow(adminID, "admin", "admin@youten.ai", "Suspended Admin", roleID, "suspended"))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WithArgs(roleID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "permissions"}).
+				AddRow(roleID, "Admin", []byte(`["*"]`)))
+
+		err := svc.AdminResetPassword(context.Background(), dtos.AdminResetPasswordRequest{
+			Token:       "valid-token",
+			NewPassword: "NewPassword123!",
+		}, nil)
+		if !errors.Is(err, constants.ErrUserInactive) {
+			t.Fatalf("expected ErrUserInactive, got %v", err)
+		}
+	})
+
+	t.Run("successful reset updates password, revokes token, and logs audit", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		tokenID := uuid.New()
+		roleID := uuid.New()
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_auth_tokens"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "admin_id", "type", "expires_at", "revoked_at"}).
+				AddRow(tokenID, adminID, "reset_password", time.Now().Add(10*time.Minute), nil))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_users"`).
+			WithArgs(adminID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "email", "full_name", "role_id", "status"}).
+				AddRow(adminID, "admin", "admin@youten.ai", "Platform Admin", roleID, "active"))
+
+		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+			WithArgs(roleID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "permissions"}).
+				AddRow(roleID, "Super Admin", []byte(`["*"]`)))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "admin_users"`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "admin_auth_tokens"`).
+			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		meta := AdminActionMeta{AdminID: adminID, IPAddress: "127.0.0.1", UserAgent: "TestAgent"}
+		err := svc.AdminResetPassword(context.Background(), dtos.AdminResetPasswordRequest{
+			Token:       "valid-token",
+			NewPassword: "NewPassword123!",
+		}, &meta)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+}
+
+
 
 
 

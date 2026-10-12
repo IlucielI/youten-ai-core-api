@@ -300,6 +300,16 @@ routes:
     path: /v1/admin/login
     handler: AdminLogin
 
+  # Request staff administrator password reset email (CMS).
+  - method: POST
+    path: /v1/admin/forgot-password
+    handler: AdminForgotPassword
+
+  # Reset staff administrator password using recovery token (CMS).
+  - method: POST
+    path: /v1/admin/reset-password
+    handler: AdminResetPassword
+
   # Admin list registered users (CMS).
   - method: GET
     path: /v1/admin/users

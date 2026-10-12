@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/go-ozzo/ozzo-validation/v4/is"
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/dtos"
@@ -360,3 +361,39 @@ func ValidateAdminUserRoleListQuery(q *dtos.AdminUserRoleListQuery) error {
 		validation.Field(&q.Search, validation.Length(0, 100)),
 	)
 }
+
+// ValidateAdminForgotPasswordRequest validates a password reset request payload for admin.
+func ValidateAdminForgotPasswordRequest(r *dtos.AdminForgotPasswordRequest) error {
+	if r == nil {
+		return errors.New("request is required")
+	}
+	r.Email = strings.TrimSpace(strings.ToLower(r.Email))
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Email,
+			validation.Required.Error("email is required"),
+			is.EmailFormat.Error("invalid email format"),
+		),
+	)
+}
+
+// ValidateAdminResetPasswordRequest validates an admin password reset confirmation payload.
+func ValidateAdminResetPasswordRequest(r *dtos.AdminResetPasswordRequest) error {
+	if r == nil {
+		return errors.New("request is required")
+	}
+	r.Token = strings.TrimSpace(r.Token)
+	if r.ConfirmPassword != "" && r.NewPassword != r.ConfirmPassword {
+		return errors.New("confirm_password does not match new_password")
+	}
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Token,
+			validation.Required.Error("token is required"),
+		),
+		validation.Field(&r.NewPassword,
+			validation.Required.Error("new_password is required"),
+			validation.Length(8, 72).Error("new_password must be between 8 and 72 characters"),
+			validation.Match(digitRegex).Error("new_password must contain at least one digit"),
+		),
+	)
+}
+

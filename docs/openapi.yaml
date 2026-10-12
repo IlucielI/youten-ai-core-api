@@ -1175,6 +1175,67 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /v1/admin/forgot-password:
+    post:
+      tags: [Admin Auth]
+      summary: Admin Forgot Password
+      description: Dispatches a one-time password reset token to the registered administrator email address.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@youten.ai
+      responses:
+        '200':
+          description: Reset instructions sent if account exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /v1/admin/reset-password:
+    post:
+      tags: [Admin Auth]
+      summary: Admin Reset Password
+      description: Updates staff administrator password using a valid one-time reset token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                  example: 5f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b
+                new_password:
+                  type: string
+                  format: password
+                  example: NewAdminPass123!
+                confirm_password:
+                  type: string
+                  format: password
+                  example: NewAdminPass123!
+      responses:
+        '200':
+          description: Admin password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /v1/admin/users:
     get:
       tags: [Admin Users]

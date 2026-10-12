@@ -2,8 +2,12 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"math"
 	"reflect"
 	"strings"
@@ -1500,12 +1504,135 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 		Admin: dtos.AdminUserDTO{
 			ID:          admin.ID,
 			Username:    admin.Username,
+			Email:       admin.Email,
 			FullName:    admin.FullName,
 			RoleID:      admin.RoleID,
 			RoleName:    roleName,
 			Permissions: perms,
 		},
 	}, nil
+}
+
+// AdminForgotPassword initiates staff administrator password recovery by generating a one-time
+// reset token and dispatching an email. Always succeeds silently (returns nil) to prevent email enumeration.
+func (s *Service) AdminForgotPassword(ctx context.Context, req dtos.AdminForgotPasswordRequest) error {
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+
+	admin, err := s.repo.FindAdminByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return s.wrapError(ctx, err)
+	}
+	if admin == nil || admin.Status != constants.UserStatusActive {
+		return nil
+	}
+
+	randomBytes := make([]byte, 32)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return s.wrapError(ctx, err)
+	}
+	rawToken := hex.EncodeToString(randomBytes)
+	tokenHash := hasher.HashToken(rawToken)
+
+	if err := s.repo.RevokeAllAdminAuthTokens(ctx, admin.ID, constants.AuthTokenTypeReset); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	token := &models.AdminAuthToken{
+		AdminID:   admin.ID,
+		Type:      constants.AuthTokenTypeReset,
+		TokenHash: tokenHash,
+		ExpiresAt: time.Now().Add(15 * time.Minute),
+	}
+	if err := s.repo.CreateAdminAuthToken(ctx, token); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	if s.mailer != nil && admin.Email != "" {
+		msg := EmailMessage{
+			To:      []string{admin.Email},
+			Subject: "Reset Your Admin Password - Youten AI",
+			TextBody: fmt.Sprintf(
+				"Hello %s,\n\nYou requested an administrator password reset. Use the token below within 15 minutes to reset your password:\n\n%s\n\nIf you did not request this, please disregard this email.\n",
+				admin.FullName, rawToken,
+			),
+			HTMLBody: fmt.Sprintf(
+				"<p>Hello <strong>%s</strong>,</p><p>You requested an administrator password reset. Use the token below within 15 minutes to reset your password:</p><p><strong style=\"font-size: 18px;\">%s</strong></p><p>If you did not request this, please disregard this email.</p>",
+				html.EscapeString(admin.FullName), rawToken,
+			),
+		}
+		if err := s.mailer.Send(ctx, msg); err != nil {
+			return s.wrapError(ctx, err)
+		}
+	}
+
+	return nil
+}
+
+// AdminResetPassword confirms an administrator password recovery request using a valid, unexpired token.
+func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPasswordRequest, meta *AdminActionMeta) error {
+	token := strings.TrimSpace(req.Token)
+	tokenHash := hasher.HashToken(token)
+
+	authToken, err := s.repo.FindAdminAuthTokenByHashAndType(ctx, tokenHash, constants.AuthTokenTypeReset)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrInvalidToken.WithMessage("invalid or expired reset token")
+		}
+		return s.wrapError(ctx, err)
+	}
+	if authToken == nil {
+		return constants.ErrInvalidToken.WithMessage("invalid or expired reset token")
+	}
+
+	admin, err := s.repo.FindAdminByID(ctx, authToken.AdminID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound.WithMessage("admin not found")
+		}
+		return s.wrapError(ctx, err)
+	}
+	if admin == nil || admin.Status != constants.UserStatusActive {
+		return constants.ErrUserInactive
+	}
+
+	passwordHash, err := hasher.HashPassword(req.NewPassword)
+	if err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	if err := s.repo.UpdateAdminPassword(ctx, admin.ID, passwordHash); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	if err := s.repo.RevokeAdminAuthToken(ctx, authToken.ID); err != nil {
+		return s.wrapError(ctx, err)
+	}
+
+	var ipPtr, uaPtr *string
+	if meta != nil {
+		if meta.IPAddress != "" {
+			ip := meta.IPAddress
+			ipPtr = &ip
+		}
+		if meta.UserAgent != "" {
+			ua := meta.UserAgent
+			uaPtr = &ua
+		}
+	}
+	entityIDStr := admin.ID.String()
+	_ = s.repo.CreateAdminAuditLog(ctx, &models.AdminAuditLog{
+		AdminID:   &admin.ID,
+		Action:    "ADMIN_PASSWORD_RESET",
+		Entity:    "ADMIN_USER",
+		EntityID:  &entityIDStr,
+		IPAddress: ipPtr,
+		UserAgent: uaPtr,
+	})
+
+	return nil
 }
 
 

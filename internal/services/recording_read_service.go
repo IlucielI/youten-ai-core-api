@@ -35,21 +35,7 @@ func (s *Service) GetRecordingDetail(ctx context.Context, id uuid.UUID, ownershi
 	}
 
 	// Generate pre-signed audio playback URL if stored in object storage
-	var playbackURL *string
-	if rec.AudioURL != nil && *rec.AudioURL != "" {
-		if strings.HasPrefix(*rec.AudioURL, "http://") || strings.HasPrefix(*rec.AudioURL, "https://") {
-			playbackURL = rec.AudioURL
-		} else if s.storage != nil {
-			presigned, err := s.storage.PresignGetObject(ctx, s.cfg.S3BucketName, *rec.AudioURL, 1*time.Hour)
-			if err == nil {
-				playbackURL = &presigned
-			} else {
-				playbackURL = rec.AudioURL
-			}
-		} else {
-			playbackURL = rec.AudioURL
-		}
-	}
+	playbackURL := s.resolvePlaybackURL(ctx, rec.AudioURL)
 
 	// Fetch related child entities
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, id)
@@ -179,19 +165,7 @@ func (s *Service) GetSharedRecording(ctx context.Context, shareToken string) (*d
 	}
 
 	// Generate pre-signed audio playback URL if stored in object storage
-	var playbackURL *string
-	if rec.AudioURL != nil && *rec.AudioURL != "" {
-		if strings.HasPrefix(*rec.AudioURL, "http://") || strings.HasPrefix(*rec.AudioURL, "https://") {
-			playbackURL = rec.AudioURL
-		} else {
-			presigned, err := s.storage.PresignGetObject(ctx, s.cfg.S3BucketName, *rec.AudioURL, 1*time.Hour)
-			if err == nil {
-				playbackURL = &presigned
-			} else {
-				playbackURL = rec.AudioURL
-			}
-		}
-	}
+	playbackURL := s.resolvePlaybackURL(ctx, rec.AudioURL)
 
 	// Fetch related child entities
 	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, rec.ID)
@@ -288,4 +262,18 @@ func (s *Service) PollRecordingProgress(ctx context.Context, id uuid.UUID) (*sse
 		ErrorMessage: rec.ErrorMessage,
 		UpdatedAt:    rec.UpdatedAt,
 	}, nil
+}
+
+// resolvePlaybackURL resolves a direct playback URL or generates a presigned S3 URL when applicable.
+func (s *Service) resolvePlaybackURL(ctx context.Context, audioURL *string) *string {
+	if audioURL == nil || *audioURL == "" || strings.HasPrefix(*audioURL, "http://") || strings.HasPrefix(*audioURL, "https://") || s.storage == nil {
+		return audioURL
+	}
+
+	presigned, err := s.storage.PresignGetObject(ctx, s.cfg.S3BucketName, *audioURL, 1*time.Hour)
+	if err != nil {
+		return audioURL
+	}
+
+	return &presigned
 }

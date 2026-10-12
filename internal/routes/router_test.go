@@ -642,6 +642,29 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	if wWaitlist.Code != http.StatusUnauthorized {
 		t.Fatalf("expected POST /v1/waitlist/bot to return 401 Unauthorized without header, got %d", wWaitlist.Code)
 	}
+
+	// Verify POST /v1/admin/refresh is registered and protected by auth: true
+	foundAdminRefreshRoute := false
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodPost && route.Path == "/v1/admin/refresh" {
+			foundAdminRefreshRoute = true
+			break
+		}
+	}
+	if !foundAdminRefreshRoute {
+		t.Fatalf("expected POST /v1/admin/refresh route to be registered")
+	}
+
+	wAdminRefresh := httptest.NewRecorder()
+	reqAdminRefresh, err := http.NewRequest(http.MethodPost, "/v1/admin/refresh", strings.NewReader(`{"refresh_token":"abc"}`))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	reqAdminRefresh.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wAdminRefresh, reqAdminRefresh)
+	if wAdminRefresh.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/admin/refresh to return 401 Unauthorized without auth header, got %d", wAdminRefresh.Code)
+	}
 }
 
 func TestRouter_OpenAPISpecCompleteness(t *testing.T) {

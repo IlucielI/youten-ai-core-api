@@ -316,6 +316,12 @@ routes:
     handler: AdminLogin
     auth: true
 
+  # Rotate staff administrator access token using valid refresh token (CMS).
+  - method: POST
+    path: /v1/admin/refresh
+    handler: AdminRefreshToken
+    auth: true
+
   # Request staff administrator password reset email (CMS).
   - method: POST
     path: /v1/admin/forgot-password

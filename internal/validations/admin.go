@@ -178,6 +178,17 @@ func ValidateAdminLoginRequest(r *dtos.AdminLoginRequest) error {
 	)
 }
 
+// ValidateAdminRefreshTokenRequest validates administrator token rotation request.
+func ValidateAdminRefreshTokenRequest(r *dtos.AdminRefreshTokenRequest) error {
+	if r == nil {
+		return validation.ValidateStruct(r)
+	}
+	r.RefreshToken = strings.TrimSpace(r.RefreshToken)
+	return validation.ValidateStruct(r,
+		validation.Field(&r.RefreshToken, validation.Required),
+	)
+}
+
 // ValidateAdminJobListQuery validates administrative job listing pagination queries.
 func ValidateAdminJobListQuery(q *dtos.AdminJobListQuery) error {
 	return validation.ValidateStruct(q,

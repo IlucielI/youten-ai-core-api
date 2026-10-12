@@ -157,6 +157,59 @@ func TestAdminToken(t *testing.T) {
 	}
 }
 
+func TestJWT_GenerateAndValidateAdminTokenPair(t *testing.T) {
+	cfg := config.Config{
+		AppName:              "TestApp",
+		JWTSecret:            "super-secret-admin-jwt-key-32bytes!",
+		JWTAccessExpiration:  15 * time.Minute,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+
+	adminID := uuid.New()
+	username := "admintest"
+
+	pair, err := GenerateAdminTokenPair(cfg, adminID, username)
+	if err != nil {
+		t.Fatalf("unexpected error generating admin token pair: %v", err)
+	}
+	if pair.AccessToken == "" || pair.RefreshToken == "" {
+		t.Fatal("expected non-empty admin access and refresh tokens")
+	}
+
+	// Validate access token
+	claims, err := ValidateAdminToken(cfg, pair.AccessToken)
+	if err != nil {
+		t.Fatalf("unexpected error validating admin access token: %v", err)
+	}
+	if claims.AdminID != adminID {
+		t.Errorf("expected admin ID %s, got %s", adminID, claims.AdminID)
+	}
+
+	// Validate refresh token
+	refreshClaims, err := ValidateAdminRefreshToken(cfg, pair.RefreshToken)
+	if err != nil {
+		t.Fatalf("unexpected error validating admin refresh token: %v", err)
+	}
+	if refreshClaims.AdminID != adminID {
+		t.Errorf("expected admin ID %s, got %s", adminID, refreshClaims.AdminID)
+	}
+	if refreshClaims.TokenType != constants.JWTTokenTypeAdminRefresh {
+		t.Errorf("expected token type %s, got %s", constants.JWTTokenTypeAdminRefresh, refreshClaims.TokenType)
+	}
+
+	// ValidateAdminToken should reject refresh token
+	_, err = ValidateAdminToken(cfg, pair.RefreshToken)
+	if err == nil {
+		t.Fatal("expected error validating refresh token as access token, got nil")
+	}
+
+	// ValidateAdminRefreshToken should reject access token
+	_, err = ValidateAdminRefreshToken(cfg, pair.AccessToken)
+	if err == nil {
+		t.Fatal("expected error validating access token as refresh token, got nil")
+	}
+}
+
 func TestGenerateAndValidateAnonToken(t *testing.T) {
 	cfg := config.Config{
 		AppName:   "youten-test",

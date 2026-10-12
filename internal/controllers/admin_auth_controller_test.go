@@ -109,6 +109,12 @@ func TestControllers_AdminLogin(t *testing.T) {
 		mock.ExpectCommit()
 
 		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_auth_tokens"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "revoked_at", "created_at", "updated_at"}).
+				AddRow(uuid.New(), nil, time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
 		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 		mock.ExpectCommit()
@@ -140,6 +146,9 @@ func TestControllers_AdminLogin(t *testing.T) {
 
 		if resp.Data.Token == "" {
 			t.Errorf("expected non-empty token")
+		}
+		if resp.Data.RefreshToken == "" {
+			t.Errorf("expected non-empty refresh token")
 		}
 		if resp.Data.Admin.Username != "admin" {
 			t.Errorf("expected username admin, got %s", resp.Data.Admin.Username)
@@ -358,6 +367,61 @@ func TestControllers_AdminResetPassword(t *testing.T) {
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+}
+
+func TestControllers_AdminRefreshToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("invalid json returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/refresh", ctrls.AdminRefreshToken)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/refresh", strings.NewReader("bad-json"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("empty refresh token returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/refresh", ctrls.AdminRefreshToken)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/refresh", strings.NewReader(`{"refresh_token": ""}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("invalid token returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.POST("/v1/admin/refresh", ctrls.AdminRefreshToken)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/refresh", strings.NewReader(`{"refresh_token": "invalid.jwt.token"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", w.Code)
 		}
 	})
 }

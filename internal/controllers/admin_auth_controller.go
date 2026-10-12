@@ -77,3 +77,27 @@ func (c *Controllers) AdminResetPassword(ctx *gin.Context) {
 	c.respondEmpty(ctx, "Admin password reset successfully")
 }
 
+// AdminRefreshToken handles POST /v1/admin/refresh to rotate administrator session tokens.
+func (c *Controllers) AdminRefreshToken(ctx *gin.Context) {
+	var req dtos.AdminRefreshTokenRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateAdminRefreshTokenRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	meta := c.getClientActionMeta(ctx)
+
+	resp, err := c.svc.AdminRefreshToken(ctx.Request.Context(), req, &meta)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "Admin session rotated successfully", resp)
+}
+

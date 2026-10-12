@@ -15,6 +15,7 @@ const (
 // Administrative Audit Actions (consistent lowercase dot notation matching role.create)
 const (
 	AuditActionAdminLogin         = "admin.login"
+	AuditActionAdminRefreshToken  = "admin.token.refresh"
 	AuditActionAdminPasswordReset = "admin.password.reset"
 	AuditActionUserQuotaOverride  = "user.quota.override"
 	AuditActionUserRevokeSessions = "user.sessions.revoke"

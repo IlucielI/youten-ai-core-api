@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 )
 
@@ -187,21 +188,14 @@ func TestControllers_AdminStatsAndCosts(t *testing.T) {
 		ctrls, mock, cleanup := setupAdminTestControllers(t)
 		defer cleanup()
 
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE status = \$1 AND "users"\."deleted_at" IS NULL`).
-			WithArgs("active").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(8))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(20))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("COMPLETED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(18))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("FAILED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
-		mock.ExpectQuery(`SELECT COALESCE\(SUM\(file_size_bytes\), 0\) as total_storage, COALESCE\(SUM\(duration_seconds\), 0\) as total_duration FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"total_storage", "total_duration"}).AddRow(2000000, 7200.0))
+		mock.ExpectQuery(`SELECT COUNT\(\*\), COUNT\(CASE WHEN status = \$1 THEN 1 END\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
+			WithArgs(models.UserStatusActive).
+			WillReturnRows(sqlmock.NewRows([]string{"count1", "count2"}).AddRow(10, 8))
+
+		mock.ExpectQuery(`(?s)SELECT.*COUNT\(\*\).*FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WithArgs(models.RecordingStatusCompleted, models.RecordingStatusFailed).
+			WillReturnRows(sqlmock.NewRows([]string{"c1", "c2", "c3", "s1", "s2"}).
+				AddRow(20, 18, 2, 2000000, 7200.0))
 
 		r := gin.New()
 		r.Use(func(c *gin.Context) {
@@ -227,21 +221,14 @@ func TestControllers_AdminStatsAndCosts(t *testing.T) {
 		ctrls, mock, cleanup := setupAdminTestControllers(t)
 		defer cleanup()
 
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE status = \$1 AND "users"\."deleted_at" IS NULL`).
-			WithArgs("active").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(8))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(20))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("COMPLETED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(18))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("FAILED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
-		mock.ExpectQuery(`SELECT COALESCE\(SUM\(file_size_bytes\), 0\) as total_storage, COALESCE\(SUM\(duration_seconds\), 0\) as total_duration FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"total_storage", "total_duration"}).AddRow(2000000, 7200.0))
+		mock.ExpectQuery(`SELECT COUNT\(\*\), COUNT\(CASE WHEN status = \$1 THEN 1 END\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
+			WithArgs(models.UserStatusActive).
+			WillReturnRows(sqlmock.NewRows([]string{"count1", "count2"}).AddRow(10, 8))
+
+		mock.ExpectQuery(`(?s)SELECT.*COUNT\(\*\).*FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WithArgs(models.RecordingStatusCompleted, models.RecordingStatusFailed).
+			WillReturnRows(sqlmock.NewRows([]string{"c1", "c2", "c3", "s1", "s2"}).
+				AddRow(20, 18, 2, 2000000, 7200.0))
 
 		r := gin.New()
 		r.Use(func(c *gin.Context) {

@@ -1380,27 +1380,14 @@ func TestService_AdminStatsAndCosts(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
-		// 1. Total users
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(100))
-		// 2. Active users
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE status = \$1 AND "users"\."deleted_at" IS NULL`).
-			WithArgs("active").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(90))
-		// 3. Total recordings
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(50))
-		// 4. Completed recordings
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("COMPLETED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(45))
-		// 5. Failed recordings
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("FAILED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
-		// 6. Sum storage and duration
-		mock.ExpectQuery(`SELECT COALESCE\(SUM\(file_size_bytes\), 0\) as total_storage, COALESCE\(SUM\(duration_seconds\), 0\) as total_duration FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"total_storage", "total_duration"}).AddRow(1048576, 3600.0))
+		mock.ExpectQuery(`SELECT COUNT\(\*\), COUNT\(CASE WHEN status = \$1 THEN 1 END\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
+			WithArgs(models.UserStatusActive).
+			WillReturnRows(sqlmock.NewRows([]string{"count1", "count2"}).AddRow(100, 90))
+
+		mock.ExpectQuery(`(?s)SELECT.*COUNT\(\*\).*FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WithArgs(models.RecordingStatusCompleted, models.RecordingStatusFailed).
+			WillReturnRows(sqlmock.NewRows([]string{"c1", "c2", "c3", "s1", "s2"}).
+				AddRow(50, 45, 5, 1048576, 3600.0))
 
 		resp, err := svc.AdminGetOverviewStats(context.Background())
 		if err != nil {
@@ -1418,22 +1405,14 @@ func TestService_AdminStatsAndCosts(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE status = \$1 AND "users"\."deleted_at" IS NULL`).
-			WithArgs("active").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("COMPLETED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
-		mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE status = \$1 AND "recordings"\."deleted_at" IS NULL`).
-			WithArgs("FAILED").
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-		// 3600s = 60m
-		mock.ExpectQuery(`SELECT COALESCE\(SUM\(file_size_bytes\), 0\) as total_storage, COALESCE\(SUM\(duration_seconds\), 0\) as total_duration FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
-			WillReturnRows(sqlmock.NewRows([]string{"total_storage", "total_duration"}).AddRow(500000, 3600.0))
+		mock.ExpectQuery(`SELECT COUNT\(\*\), COUNT\(CASE WHEN status = \$1 THEN 1 END\) FROM "users" WHERE "users"\."deleted_at" IS NULL`).
+			WithArgs(models.UserStatusActive).
+			WillReturnRows(sqlmock.NewRows([]string{"count1", "count2"}).AddRow(10, 10))
+
+		mock.ExpectQuery(`(?s)SELECT.*COUNT\(\*\).*FROM "recordings" WHERE "recordings"\."deleted_at" IS NULL`).
+			WithArgs(models.RecordingStatusCompleted, models.RecordingStatusFailed).
+			WillReturnRows(sqlmock.NewRows([]string{"c1", "c2", "c3", "s1", "s2"}).
+				AddRow(5, 5, 0, 500000, 3600.0))
 
 		resp, err := svc.AdminGetCostOversight(context.Background())
 		if err != nil {

@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,12 +9,14 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"code-base-golang/docs"
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/routes"
 	"code-base-golang/internal/services"
 	"gopkg.in/yaml.v3"
@@ -338,26 +341,26 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected 401 Unauthorized for PUT /v1/auth/change-password without token, got %d", wChangePwd.Code)
 	}
 
-	// Verify /v1/recordings/upload is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify /v1/recordings/upload is configured with scope: recordings:create (returns 401 Unauthorized without header)
 	wUpload := httptest.NewRecorder()
 	reqUpload, err := http.NewRequest(http.MethodPost, "/v1/recordings/upload", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wUpload, reqUpload)
-	if wUpload.Code == http.StatusUnauthorized {
-		t.Fatalf("expected /v1/recordings/upload not to return 401 Unauthorized without header (optional_auth), got %d", wUpload.Code)
+	if wUpload.Code != http.StatusUnauthorized {
+		t.Fatalf("expected /v1/recordings/upload to return 401 Unauthorized without header (scope: recordings:create), got %d", wUpload.Code)
 	}
 
-	// Verify /v1/recordings/import-url is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify /v1/recordings/import-url is configured with scope: recordings:create (returns 401 Unauthorized without header)
 	wImport := httptest.NewRecorder()
 	reqImport, err := http.NewRequest(http.MethodPost, "/v1/recordings/import-url", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wImport, reqImport)
-	if wImport.Code == http.StatusUnauthorized {
-		t.Fatalf("expected /v1/recordings/import-url not to return 401 Unauthorized without header (optional_auth), got %d", wImport.Code)
+	if wImport.Code != http.StatusUnauthorized {
+		t.Fatalf("expected /v1/recordings/import-url to return 401 Unauthorized without header (scope: recordings:create), got %d", wImport.Code)
 	}
 
 	// Verify /v1/recordings/:id is configured with optional_auth (does NOT return 401 Unauthorized without header)
@@ -747,4 +750,112 @@ func TestRouter_OpenAPISpecCompleteness(t *testing.T) {
 		}
 	}
 }
+
+type mockScopedValidator struct {
+	user *ctxmeta.AuthUser
+	err  error
+}
+
+func (m *mockScopedValidator) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
+	return m.user, m.err
+}
+
+func (m *mockScopedValidator) AuthenticateAdmin(ctx context.Context, tokenStr string) (*ctxmeta.AdminAuthUser, error) {
+	return nil, nil
+}
+
+func TestRouter_ScopedRoutes(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+
+	t.Run("upload missing token returns 401", func(t *testing.T) {
+		validator := &mockScopedValidator{}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, "/v1/recordings/upload", nil)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 without token, got %d", w.Code)
+		}
+	})
+
+	t.Run("upload with token lacking scope returns 403", func(t *testing.T) {
+		validator := &mockScopedValidator{
+			user: &ctxmeta.AuthUser{
+				UserID:      uuid.New(),
+				SessionID:   uuid.New().String(),
+				RoleCode:    "ANON",
+				Permissions: []string{"waitlist:join"},
+				IsGuest:     true,
+			},
+		}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, "/v1/recordings/upload", nil)
+		req.Header.Set("Authorization", "Bearer token-without-scope")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 when token lacks recordings:create scope, got %d", w.Code)
+		}
+	})
+
+	t.Run("upload with guest token having recordings:create scope passes to controller", func(t *testing.T) {
+		validator := &mockScopedValidator{
+			user: &ctxmeta.AuthUser{
+				UserID:      uuid.New(),
+				SessionID:   uuid.New().String(),
+				RoleCode:    "ANON",
+				Permissions: []string{"recordings:create", "recordings:read"},
+				IsGuest:     true,
+			},
+		}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, "/v1/recordings/upload", strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer valid-scoped-token")
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		// Passes auth and scope middleware, reaches controller handler which fails on empty payload with 400
+		if w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden {
+			t.Fatalf("expected request to pass scope middleware, but got %d", w.Code)
+		}
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 from controller validation, got %d", w.Code)
+		}
+	})
+
+	t.Run("upload with user token having recordings:create scope passes to controller", func(t *testing.T) {
+		validator := &mockScopedValidator{
+			user: &ctxmeta.AuthUser{
+				UserID:      uuid.New(),
+				Email:       "user@example.com",
+				RoleCode:    "FREE",
+				Permissions: []string{"recordings:create", "recordings:read"},
+				IsGuest:     false,
+			},
+		}
+		r := routes.NewRouter(cfg, ctrls, validator)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, "/v1/recordings/upload", strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer valid-user-token")
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		// Passes auth and scope middleware, reaches controller handler which fails on empty payload with 400
+		if w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden {
+			t.Fatalf("expected request to pass scope middleware, but got %d", w.Code)
+		}
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 from controller validation, got %d", w.Code)
+		}
+	})
+}
+
 

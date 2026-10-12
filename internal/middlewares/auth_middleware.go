@@ -161,3 +161,33 @@ func RequireUserPermission(requiredPerm string) gin.HandlerFunc {
 	}
 }
 
+// RequireScope returns a Gin middleware ensuring the authenticated user or guest has the specified scope.
+// Returns 403 Forbidden if the scope is not granted, or 401 if unauthenticated.
+func RequireScope(requiredScope string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authUser, ok := ctxmeta.GetAuthUser(c.Request.Context())
+		if !ok || authUser.UserID == uuid.Nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "unauthorized: authentication required",
+				Timestamp: time.Now(),
+			})
+			return
+		}
+
+		if !ctxmeta.HasScope(authUser, requiredScope) {
+			c.AbortWithStatusJSON(http.StatusForbidden, dtos.BaseResponse{
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeForbidden,
+				Message:   "forbidden: insufficient scope",
+				Timestamp: time.Now(),
+			})
+			return
+		}
+
+		c.Next()
+	}
+}
+
+

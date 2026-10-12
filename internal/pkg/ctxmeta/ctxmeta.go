@@ -228,4 +228,34 @@ func HasUserPermission(user AuthUser, requiredPerm string) bool {
 	return false
 }
 
+// HasScope checks if the authenticated user or guest possesses the required scope.
+// Unlike HasUserPermission, HasScope evaluates permissions/scopes for both guest sessions and registered users.
+// Grants access if:
+// 1. User has wildcard "*" (Full Access).
+// 2. User has exact matching scope (e.g., "recordings:create").
+// 3. User has category wildcard matching prefix (e.g., "recordings:*" matches "recordings:create").
+func HasScope(user AuthUser, requiredScope string) bool {
+	requiredScope = strings.TrimSpace(requiredScope)
+	if requiredScope == "" {
+		return true
+	}
+	parts := strings.Split(requiredScope, ":")
+	domainPrefix := ""
+	if len(parts) > 1 {
+		domainPrefix = parts[0] + ":*"
+	}
 
+	for _, p := range user.Permissions {
+		p = strings.TrimSpace(p)
+		if p == "*" {
+			return true
+		}
+		if p == requiredScope {
+			return true
+		}
+		if domainPrefix != "" && p == domainPrefix {
+			return true
+		}
+	}
+	return false
+}

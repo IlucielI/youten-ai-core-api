@@ -367,7 +367,9 @@ paths:
     post:
       tags: [Recordings]
       summary: Generate Presigned Upload URL
-      description: Generates a direct-to-S3 presigned PUT URL for media uploads.
+      description: Generates a direct-to-S3 presigned PUT URL for media uploads. Requires 'recordings:create' scope.
+      security:
+        - BearerAuth: [recordings:create]
       requestBody:
         required: true
         content:
@@ -386,7 +388,9 @@ paths:
     post:
       tags: [Recordings]
       summary: Generate Presigned Upload URL (Alias)
-      description: Alias endpoint for generating a direct-to-S3 presigned PUT URL for media uploads.
+      description: Alias endpoint for generating a direct-to-S3 presigned PUT URL for media uploads. Requires 'recordings:create' scope.
+      security:
+        - BearerAuth: [recordings:create]
       requestBody:
         required: true
         content:
@@ -405,7 +409,9 @@ paths:
     post:
       tags: [Recordings]
       summary: Ingest Recording Metadata
-      description: Confirms S3 upload and kicks off the asynchronous processing pipeline.
+      description: Confirms S3 upload and kicks off the asynchronous processing pipeline. Requires 'recordings:create' scope.
+      security:
+        - BearerAuth: [recordings:create]
       requestBody:
         required: true
         content:
@@ -424,7 +430,9 @@ paths:
     post:
       tags: [Recordings]
       summary: Confirm Recording Upload (Alias)
-      description: Alias endpoint confirming S3 upload and initiating asynchronous processing pipeline.
+      description: Alias endpoint confirming S3 upload and initiating asynchronous processing pipeline. Requires 'recordings:create' scope.
+      security:
+        - BearerAuth: [recordings:create]
       requestBody:
         required: true
         content:
@@ -443,7 +451,9 @@ paths:
     post:
       tags: [Recordings]
       summary: Import Recording from URL
-      description: Downloads external media (YouTube or direct audio/video) with SSRF defense.
+      description: Downloads external media (YouTube or direct audio/video) with SSRF defense. Requires 'recordings:create' scope.
+      security:
+        - BearerAuth: [recordings:create]
       requestBody:
         required: true
         content:

@@ -95,31 +95,31 @@ routes:
   - method: POST
     path: /v1/recordings/presign-upload
     handler: PresignUpload
-    optional_auth: true
+    scope: "recordings:create"
 
   # Alias for presigned upload URL generation.
   - method: POST
     path: /v1/recordings/presign
     handler: PresignUpload
-    optional_auth: true
+    scope: "recordings:create"
 
   # Confirm an upload and ingest recording metadata.
   - method: POST
     path: /v1/recordings/upload
     handler: UploadRecording
-    optional_auth: true
+    scope: "recordings:create"
 
   # Alias for upload confirmation and metadata ingestion.
   - method: POST
     path: /v1/recordings/confirm-upload
     handler: UploadRecording
-    optional_auth: true
+    scope: "recordings:create"
 
   # Import a recording from a URL with anti-SSRF defense.
   - method: POST
     path: /v1/recordings/import-url
     handler: ImportURL
-    optional_auth: true
+    scope: "recordings:create"
 
   # Cross-recording semantic vector search (registered users).
   - method: GET

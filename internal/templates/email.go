@@ -2,15 +2,11 @@ package templates
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	"html/template"
 	"strings"
 	texttemplate "text/template"
 )
-
-//go:embed emails/*
-var emailFS embed.FS
 
 var (
 	parsedHTMLEmails = template.Must(template.ParseFS(emailFS, "emails/*.html"))

@@ -60,6 +60,9 @@ func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePa
 
 	targetURL := strings.TrimSpace(p.URL)
 	if targetURL == "" {
+		targetURL = resolveSourceURL(recording)
+	}
+	if targetURL == "" {
 		errMsg := "no remote media URL provided for import"
 		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, errMsg)
 		return errors.New(errMsg)
@@ -872,6 +875,26 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 
 	// 1. If audio not yet extracted
 	if recording.AudioURL == nil || *recording.AudioURL == "" {
+		if recording.SourceType == constants.RecordingSourceTypeLink {
+			sourceURL := resolveSourceURL(recording)
+			if sourceURL == "" {
+				errMsg := "remote media URL unavailable for retry, please re-import the media link"
+				s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, errMsg)
+				return nil, errors.New(errMsg)
+			}
+			p.URL = sourceURL
+			p.Stage = models.RecordingStatusExtracting
+			p.Status = models.RecordingStatusQueued
+			if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil); err != nil {
+				return nil, fmt.Errorf("failed to update recording status to queued: %w", err)
+			}
+			s.publishProgress(recording.ID, models.RecordingStatusQueued, nil, nil)
+			if err := s.publishEvent(ctx, constants.TopicRecordingImport, p); err != nil {
+				log.Printf("[PIPELINE ERROR] recording %s: %v", recording.ID.String(), err)
+			}
+			return &p, nil
+		}
+
 		p.Stage = models.RecordingStatusExtracting
 		p.Status = models.RecordingStatusQueued
 		if err := s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusQueued, nil, nil); err != nil {
@@ -1566,4 +1589,29 @@ func mergeWordsJSON(w1, w2 json.RawMessage) json.RawMessage {
 	}
 	return json.RawMessage(res)
 }
-
+// resolveSourceURL attempts to extract the original source URL for a LINK recording
+// from its AnalyticsData or heuristically recovers it from the media ID encoded in OriginalFilename.
+func resolveSourceURL(rec *models.Recording) string {
+	if rec == nil {
+		return ""
+	}
+	if rec.AnalyticsData != nil {
+		if rawURL, ok := rec.AnalyticsData["source_url"].(string); ok && strings.TrimSpace(rawURL) != "" {
+			return strings.TrimSpace(rawURL)
+		}
+	}
+	// Fallback heuristic: reconstruct from original_filename if it contains import_<mediaID>.m4a
+	filename := rec.OriginalFilename
+	if strings.HasPrefix(filename, "import_") && strings.HasSuffix(filename, ".m4a") {
+		mediaID := strings.TrimSuffix(strings.TrimPrefix(filename, "import_"), ".m4a")
+		if mediaID != "" {
+			if len(mediaID) == 11 {
+				return fmt.Sprintf("https://www.youtube.com/watch?v=%s", mediaID)
+			}
+			if len(mediaID) >= 25 {
+				return fmt.Sprintf("https://drive.google.com/file/d/%s/view", mediaID)
+			}
+		}
+	}
+	return ""
+}

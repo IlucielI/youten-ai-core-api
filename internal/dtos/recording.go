@@ -194,14 +194,6 @@ type RecordingDetailResponse struct {
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
-// PaginationMeta represents pagination details in list responses.
-type PaginationMeta struct {
-	CurrentPage int   `json:"current_page"`
-	PageSize    int   `json:"page_size"`
-	TotalItems  int64 `json:"total_items"`
-	TotalPages  int   `json:"total_pages"`
-}
-
 // RecordingListItem represents a concise summary of a recording in the library list.
 type RecordingListItem struct {
 	ID               string    `json:"id"`

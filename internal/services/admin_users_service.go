@@ -11,6 +11,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/payload"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -106,21 +107,19 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminAct
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "user.quota_override",
 		Entity:   "user",
 		EntityID: &entityIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"previous_override": prevOverride,
 			"new_override":      req.DailyQuotaOverride,
 		},
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.AdminUserQuotaResponse{
 		UserID:             userID,
@@ -154,20 +153,18 @@ func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta dtos.AdminAc
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "user.revoke_sessions",
 		Entity:   "user",
 		EntityID: &entityIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"target_email": user.Email,
 		},
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.AdminRevokeUserSessionsResponse{
 		UserID:  userID,
@@ -218,12 +215,12 @@ func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminAction
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "user.assign_role",
 		Entity:   "user",
 		EntityID: &userIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"previous_role_id": user.RoleID,
 			"new_role_id":      req.RoleID,
 			"new_role_code":    role.Code,
@@ -232,9 +229,7 @@ func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminAction
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	resp := newUserResponse(updatedUser)
 	return &resp, nil

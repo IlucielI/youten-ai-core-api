@@ -545,6 +545,71 @@ func TestCostOversightResponse(t *testing.T) {
 	}
 }
 
+func TestAdminActionMeta_Pointers(t *testing.T) {
+	t.Run("nil receiver returns all nil", func(t *testing.T) {
+		var meta *AdminActionMeta
+		if meta.IPPtr() != nil {
+			t.Errorf("expected nil IPPtr, got %v", meta.IPPtr())
+		}
+		if meta.UAPtr() != nil {
+			t.Errorf("expected nil UAPtr, got %v", meta.UAPtr())
+		}
+		if meta.AdminIDPtr() != nil {
+			t.Errorf("expected nil AdminIDPtr, got %v", meta.AdminIDPtr())
+		}
+	})
+
+	t.Run("empty fields return nil", func(t *testing.T) {
+		meta := &AdminActionMeta{}
+		if meta.IPPtr() != nil {
+			t.Errorf("expected nil IPPtr, got %v", meta.IPPtr())
+		}
+		if meta.UAPtr() != nil {
+			t.Errorf("expected nil UAPtr, got %v", meta.UAPtr())
+		}
+		if meta.AdminIDPtr() != nil {
+			t.Errorf("expected nil AdminIDPtr, got %v", meta.AdminIDPtr())
+		}
+	})
+
+	t.Run("populated fields return pointers", func(t *testing.T) {
+		adminID := uuid.New()
+		meta := &AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "127.0.0.1",
+			UserAgent: "Mozilla/5.0",
+		}
+		if meta.IPPtr() == nil || *meta.IPPtr() != "127.0.0.1" {
+			t.Errorf("expected '127.0.0.1', got %v", meta.IPPtr())
+		}
+		if meta.UAPtr() == nil || *meta.UAPtr() != "Mozilla/5.0" {
+			t.Errorf("expected 'Mozilla/5.0', got %v", meta.UAPtr())
+		}
+		if meta.AdminIDPtr() == nil || *meta.AdminIDPtr() != adminID {
+			t.Errorf("expected %s, got %v", adminID, meta.AdminIDPtr())
+		}
+	})
+
+	t.Run("value receiver automatically addresses", func(t *testing.T) {
+		adminID := uuid.New()
+		meta := AdminActionMeta{
+			AdminID:   adminID,
+			IPAddress: "10.0.0.1",
+			UserAgent: "TestAgent",
+		}
+		if meta.IPPtr() == nil || *meta.IPPtr() != "10.0.0.1" {
+			t.Errorf("expected '10.0.0.1', got %v", meta.IPPtr())
+		}
+		if meta.UAPtr() == nil || *meta.UAPtr() != "TestAgent" {
+			t.Errorf("expected 'TestAgent', got %v", meta.UAPtr())
+		}
+		if meta.AdminIDPtr() == nil || *meta.AdminIDPtr() != adminID {
+			t.Errorf("expected %s, got %v", adminID, meta.AdminIDPtr())
+		}
+	})
+}
+
+
 
 
 

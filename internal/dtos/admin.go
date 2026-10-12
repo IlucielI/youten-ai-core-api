@@ -14,6 +14,30 @@ type AdminActionMeta struct {
 	UserAgent string    `json:"user_agent,omitempty"`
 }
 
+// IPPtr returns a pointer to IPAddress if non-empty and receiver is non-nil.
+func (m *AdminActionMeta) IPPtr() *string {
+	if m != nil && m.IPAddress != "" {
+		return &m.IPAddress
+	}
+	return nil
+}
+
+// UAPtr returns a pointer to UserAgent if non-empty and receiver is non-nil.
+func (m *AdminActionMeta) UAPtr() *string {
+	if m != nil && m.UserAgent != "" {
+		return &m.UserAgent
+	}
+	return nil
+}
+
+// AdminIDPtr returns a pointer to AdminID if non-zero and receiver is non-nil.
+func (m *AdminActionMeta) AdminIDPtr() *uuid.UUID {
+	if m != nil && m.AdminID != uuid.Nil {
+		return &m.AdminID
+	}
+	return nil
+}
+
 // AdminUserListQuery defines query parameters for paginating and filtering registered users.
 type AdminUserListQuery struct {
 	Search string `form:"search" json:"search"`

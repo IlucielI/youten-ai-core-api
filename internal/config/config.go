@@ -88,6 +88,9 @@ type Config struct {
 	// Request Body Limit Configuration
 	MaxRequestBodySize int64
 
+	// Retention & Cleanup Configuration
+	CleanupBatchSize int
+
 	// SMTP Configuration
 	SMTPHost      string
 	SMTPPort      string
@@ -210,6 +213,9 @@ func Load() Config {
 
 		// Request Body Limit settings (default 2MB)
 		MaxRequestBodySize: int64(getEnvInt("MAX_REQUEST_BODY_SIZE", 2*1024*1024)),
+
+		// Retention & Cleanup settings
+		CleanupBatchSize: getEnvInt("CLEANUP_BATCH_SIZE", 100),
 
 		// SMTP settings
 		SMTPHost:      getEnv("SMTP_HOST", "localhost"),

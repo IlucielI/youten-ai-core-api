@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // CreateRecording inserts a new recording session into the database.
@@ -69,15 +69,10 @@ func (r *Repositories) UpdateRecording(ctx context.Context, recording *models.Re
 
 // UpdateRecordingStatus updates processing state, status, error code, and message.
 func (r *Repositories) UpdateRecordingStatus(ctx context.Context, id uuid.UUID, status string, errCode, errMsg *string) error {
-	updates := map[string]interface{}{
-		"status": status,
-	}
-	if errCode != nil {
-		updates["error_code"] = *errCode
-	}
-	if errMsg != nil {
-		updates["error_message"] = *errMsg
-	}
+	updates := map[string]any{"status": status}
+	setIfNotNull(updates, "error_code", errCode)
+	setIfNotNull(updates, "error_message", errMsg)
+
 	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", id).Updates(updates)
 	if res.Error != nil {
 		return res.Error
@@ -162,60 +157,49 @@ type RecordingFilter struct {
 	Offset    int
 }
 
+func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
+	if pattern := strutil.LikePattern(strings.ToLower(f.Search)); pattern != "" {
+		db = db.Where("LOWER(title) LIKE ? OR LOWER(original_filename) LIKE ?", pattern, pattern)
+	}
+	if f.Status != "" {
+		db = db.Where("status = ?", f.Status)
+	}
+	if f.Template != "" {
+		db = db.Where("selected_template = ?", f.Template)
+	}
+	return db
+}
+
+func (f RecordingFilter) orderClause() string {
+	orderCol := "created_at"
+	switch f.SortBy {
+	case "title", "duration_seconds", "file_size_bytes", "created_at":
+		orderCol = f.SortBy
+	}
+
+	orderDir := "DESC"
+	if strings.ToUpper(f.SortOrder) == "ASC" {
+		orderDir = "ASC"
+	}
+
+	return orderCol + " " + orderDir
+}
+
 // ListRecordingsWithFilter retrieves paginated recordings owned by a user matching criteria.
 func (r *Repositories) ListRecordingsWithFilter(ctx context.Context, userID uuid.UUID, filter RecordingFilter) ([]models.Recording, int64, error) {
 	var list []models.Recording
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&models.Recording{}).Where("user_id = ?", userID)
-
-	if filter.Search != "" {
-		searchPattern := "%" + strings.ToLower(filter.Search) + "%"
-		query = query.Where("LOWER(title) LIKE ? OR LOWER(original_filename) LIKE ?", searchPattern, searchPattern)
-	}
-
-	if filter.Status != "" {
-		query = query.Where("status = ?", filter.Status)
-	}
-
-	if filter.Template != "" {
-		query = query.Where("selected_template = ?", filter.Template)
-	}
+	query := r.db.WithContext(ctx).Model(&models.Recording{}).
+		Where("user_id = ?", userID).
+		Scopes(filter.scope)
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	orderCol := "created_at"
-	switch filter.SortBy {
-	case "title", "duration_seconds", "file_size_bytes", "created_at":
-		orderCol = filter.SortBy
-	}
-
-	orderDir := "DESC"
-	if strings.ToUpper(filter.SortOrder) == "ASC" {
-		orderDir = "ASC"
-	}
-
-	orderClause := fmt.Sprintf("%s %s", orderCol, orderDir)
-
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = 10
-	} else if limit > 100 {
-		limit = 100
-	}
-
-	offset := filter.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	if err := query.Order(orderClause).Limit(limit).Offset(offset).Find(&list).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return list, total, nil
+	err := query.Order(filter.orderClause()).Limit(filter.Limit).Offset(filter.Offset).Find(&list).Error
+	return list, total, err
 }
 
 // ListRecordingsByUserID retrieves paginated recordings owned by a user with default ordering.

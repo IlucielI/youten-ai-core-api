@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,13 +16,8 @@ import (
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/jsonutil"
+	"code-base-golang/internal/pkg/strutil"
 )
-
-// RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
-type RecordingChatStreamResult struct {
-	StreamChannel     <-chan dtos.StreamChunk
-	RetrievedChunkIDs []string
-}
 
 // InitiateRecordingChatStream validates ownership, retrieves relevant context chunks via vector search,
 // persists the user turn, and initiates an LLM response stream.
@@ -32,7 +26,7 @@ func (s *Service) InitiateRecordingChatStream(
 	recordingID uuid.UUID,
 	ownershipToken string,
 	req dtos.RecordingChatRequest,
-) (*RecordingChatStreamResult, error) {
+) (*dtos.RecordingChatStreamResult, error) {
 	rec, err := s.repo.FindRecordingByID(ctx, recordingID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -48,7 +42,7 @@ func (s *Service) InitiateRecordingChatStream(
 
 	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
 		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+	} else if ownershipToken != "" && strutil.ConstantTimeEqual(ownershipToken, rec.OwnershipToken) {
 		hasAccess = true
 	}
 
@@ -111,7 +105,7 @@ func (s *Service) InitiateRecordingChatStream(
 		return nil, fmt.Errorf("failed to stream chat completion: %w", err)
 	}
 
-	return &RecordingChatStreamResult{
+	return &dtos.RecordingChatStreamResult{
 		StreamChannel:     streamCh,
 		RetrievedChunkIDs: retrievedChunkIDs,
 	}, nil

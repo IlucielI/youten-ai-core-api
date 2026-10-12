@@ -48,7 +48,7 @@ func (s *Service) JoinBotWaitlist(ctx context.Context, req dtos.WaitlistRequest)
 			return nil, s.wrapError(ctx, fmt.Errorf("render waitlist email template: %w", err))
 		}
 
-		msg := EmailMessage{
+		msg := dtos.EmailMessage{
 			To:       []string{saved.Email},
 			Subject:  "Welcome to Youten Voice Bot Beta Waitlist!",
 			TextBody: textBody,

@@ -17,7 +17,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/apperror"
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/templates"
@@ -35,7 +35,7 @@ func (s *Service) UpdateTranscriptSpeakers(ctx context.Context, id uuid.UUID, ow
 	}
 
 	// Ownership verification (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -66,7 +66,7 @@ func (s *Service) UpdateTranscriptSegment(ctx context.Context, id uuid.UUID, seg
 	}
 
 	// Ownership verification (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -80,7 +80,7 @@ func (s *Service) UpdateTranscriptSegment(ctx context.Context, id uuid.UUID, seg
 	}
 
 	// Trigger async re-indexing so RAG chunk embeddings stay in sync
-	_ = s.publishEvent(ctx, constants.TopicRecordingIndex, payload.RecordingPipelinePayload{
+	_ = s.publishEvent(ctx, constants.TopicRecordingIndex, queue.RecordingPipelinePayload{
 		RecordingID: rec.ID,
 	})
 
@@ -107,7 +107,7 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 	}
 
 	// Verify ownership (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -286,7 +286,7 @@ func (s *Service) ListSummaryVersions(ctx context.Context, id uuid.UUID, ownersh
 	}
 
 	// Verify ownership (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -314,7 +314,7 @@ func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, vers
 	}
 
 	// Verify ownership (owner or ownership token).
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 

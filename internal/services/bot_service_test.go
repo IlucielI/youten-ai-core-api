@@ -36,18 +36,18 @@ func (p *testBotProvider) IsEnabled() bool {
 	return p.enabled
 }
 
-func (p *testBotProvider) Dispatch(ctx context.Context, params services.BotDispatchParams) (string, error) {
+func (p *testBotProvider) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (string, error) {
 	if p.dispErr != nil {
 		return "", p.dispErr
 	}
 	return p.extID, nil
 }
 
-func (p *testBotProvider) GetStatus(ctx context.Context, externalSessionID string) (*services.BotProviderStatus, error) {
+func (p *testBotProvider) GetStatus(ctx context.Context, externalSessionID string) (*dtos.BotProviderStatus, error) {
 	if p.statusErr != nil {
 		return nil, p.statusErr
 	}
-	return &services.BotProviderStatus{
+	return &dtos.BotProviderStatus{
 		ExternalSessionID: externalSessionID,
 		Status:            p.status,
 	}, nil
@@ -236,16 +236,16 @@ func TestService_GetCapabilities(t *testing.T) {
 	svc.RegisterBotProvider(meetProvider)
 
 	caps := svc.GetCapabilities(context.Background())
-	if caps.MeetingBot[constants.BotProviderDiscord] != "available" {
+	if caps.MeetingBot[constants.BotProviderDiscord] != constants.CapabilityStatusAvailable {
 		t.Errorf("expected discord to be available, got %s", caps.MeetingBot[constants.BotProviderDiscord])
 	}
-	if caps.MeetingBot[constants.BotProviderGoogleMeet] != "coming_soon" {
+	if caps.MeetingBot[constants.BotProviderGoogleMeet] != constants.CapabilityStatusComingSoon {
 		t.Errorf("expected google_meet to be coming_soon, got %s", caps.MeetingBot[constants.BotProviderGoogleMeet])
 	}
-	if caps.MeetingBot[constants.BotProviderMSTeams] != "coming_soon" {
+	if caps.MeetingBot[constants.BotProviderMSTeams] != constants.CapabilityStatusComingSoon {
 		t.Errorf("expected ms_teams to be coming_soon, got %s", caps.MeetingBot[constants.BotProviderMSTeams])
 	}
-	if caps.MeetingBot[constants.BotProviderZoom] != "coming_soon" {
+	if caps.MeetingBot[constants.BotProviderZoom] != constants.CapabilityStatusComingSoon {
 		t.Errorf("expected zoom to be coming_soon, got %s", caps.MeetingBot[constants.BotProviderZoom])
 	}
 
@@ -691,7 +691,7 @@ func TestService_HandleZoomWebhook(t *testing.T) {
 
 		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
 			ExternalSessionID: "zoom-123",
-			Event:             "waiting_admit",
+			Event:             constants.BotWebhookEventWaitingAdmit,
 		}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -718,7 +718,7 @@ func TestService_HandleZoomWebhook(t *testing.T) {
 
 		err := svc.HandleZoomWebhook(ctx, dtos.ZoomWebhookRequest{
 			ExternalSessionID: "zoom-123",
-			Event:             "joined",
+			Event:             constants.BotWebhookEventJoined,
 		}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

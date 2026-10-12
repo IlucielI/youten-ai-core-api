@@ -727,7 +727,7 @@ func TestRepositories_UserRole(t *testing.T) {
 			AddRow(roleID, "Free Member", "FREE", 5, true).
 			AddRow(uuid.New(), "Pro Member", "PRO", 25, false)
 
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" ORDER BY daily_quota ASC, created_at ASC`)).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" ORDER BY is_default DESC, daily_quota ASC, created_at ASC`)).
 			WillReturnRows(rows)
 
 		roles, err := repo.ListUserRoles(context.Background())
@@ -736,6 +736,29 @@ func TestRepositories_UserRole(t *testing.T) {
 		}
 		if len(roles) != 2 {
 			t.Fatalf("expected 2 roles, got %d", len(roles))
+		}
+	})
+
+	t.Run("ListUserRolesPaginated success", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "user_roles" WHERE name ILIKE $1 OR code ILIKE $2 OR description ILIKE $3`)).
+			WithArgs("%pro%", "%pro%", "%pro%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user_roles" WHERE name ILIKE $1 OR code ILIKE $2 OR description ILIKE $3 ORDER BY is_default DESC, daily_quota ASC, created_at ASC LIMIT $4`)).
+			WithArgs("%pro%", "%pro%", "%pro%", 10).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
+				AddRow(uuid.New(), "Pro Member", "PRO", 25, false))
+
+		roles, total, err := repo.ListUserRolesPaginated(context.Background(), ListUserRolesQuery{
+			Search: "pro",
+			Offset: 0,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 1 || len(roles) != 1 {
+			t.Fatalf("expected 1 role and total 1, got len=%d total=%d", len(roles), total)
 		}
 	})
 
@@ -796,6 +819,142 @@ func TestRepositories_UserRole(t *testing.T) {
 
 		if err := repo.ClearDefaultUserRoles(context.Background(), roleID); err != nil {
 			t.Fatalf("unexpected error clearing default user roles: %v", err)
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestRepositories_AdminRole_ListRolesPaginated(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	roleID := uuid.New()
+	now := time.Now()
+
+	t.Run("ListRolesPaginated success with search and ordering", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2`)).
+			WithArgs("%admin%", "%admin%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2 ORDER BY is_system DESC, name ASC LIMIT $3`)).
+			WithArgs("%admin%", "%admin%", 10).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Super Admin", "Root administrator", []byte(`["*"]`), true, now, now))
+
+		roles, total, err := repo.ListRolesPaginated(context.Background(), ListRolesQuery{
+			Search: "admin",
+			Offset: 0,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 1 {
+			t.Fatalf("expected total 1, got %d", total)
+		}
+		if len(roles) != 1 {
+			t.Fatalf("expected 1 role, got %d", len(roles))
+		}
+		if roles[0].Name != "Super Admin" {
+			t.Errorf("expected role name Super Admin, got %s", roles[0].Name)
+		}
+	})
+
+	t.Run("ListRoles success ordering system roles first", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" ORDER BY is_system DESC, name ASC`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Super Admin", "Root administrator", []byte(`["*"]`), true, now, now))
+
+		roles, err := repo.ListRoles(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(roles) != 1 {
+			t.Fatalf("expected 1 role, got %d", len(roles))
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestRepositories_TemplatesPaginated(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+
+	t.Run("ListTemplatesPaginated with search", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "templates" WHERE name ILIKE $1 OR category_key ILIKE $2 OR description ILIKE $3`)).
+			WithArgs("%meeting%", "%meeting%", "%meeting%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "templates" WHERE name ILIKE $1 OR category_key ILIKE $2 OR description ILIKE $3 ORDER BY category_key ASC LIMIT $4`)).
+			WithArgs("%meeting%", "%meeting%", "%meeting%", 10).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "name", "description", "prompt", "version", "is_active"}).
+				AddRow(uuid.New(), "MEETING", "Meeting Summary", "Notes template", "Prompt here", 1, true))
+
+		templates, total, err := repo.ListTemplatesPaginated(context.Background(), ListTemplatesQuery{
+			Search: "meeting",
+			Offset: 0,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 1 || len(templates) != 1 {
+			t.Fatalf("expected 1 template and total 1, got len=%d total=%d", len(templates), total)
+		}
+		if templates[0].CategoryKey != "MEETING" {
+			t.Errorf("unexpected category key: %s", templates[0].CategoryKey)
+		}
+	})
+
+	t.Run("ListTemplatesPaginated without search", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "templates"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "templates" ORDER BY category_key ASC LIMIT $1 OFFSET $2`)).
+			WithArgs(5, 5).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "name"}).
+				AddRow(uuid.New(), "MEETING", "Meeting").
+				AddRow(uuid.New(), "PODCAST", "Podcast"))
+
+		templates, total, err := repo.ListTemplatesPaginated(context.Background(), ListTemplatesQuery{
+			Search: "",
+			Offset: 5,
+			Limit:  5,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 2 || len(templates) != 2 {
+			t.Fatalf("expected 2 templates and total 2, got len=%d total=%d", len(templates), total)
 		}
 	})
 

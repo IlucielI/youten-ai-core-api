@@ -78,12 +78,14 @@ routes:
     path: /v1/auth/me
     handler: UpdateProfile
     auth: true
+    permission: "profile:manage"
 
   # Change the authenticated user's password.
   - method: PUT
     path: /v1/auth/change-password
     handler: ChangePassword
     auth: true
+    permission: "profile:manage"
 
   # Retrieve available active summary prompt templates.
   - method: GET
@@ -95,43 +97,45 @@ routes:
   - method: POST
     path: /v1/recordings/presign-upload
     handler: PresignUpload
-    optional_auth: true
+    scope: "recordings:create"
 
   # Alias for presigned upload URL generation.
   - method: POST
     path: /v1/recordings/presign
     handler: PresignUpload
-    optional_auth: true
+    scope: "recordings:create"
 
   # Confirm an upload and ingest recording metadata.
   - method: POST
     path: /v1/recordings/upload
     handler: UploadRecording
-    optional_auth: true
+    scope: "recordings:create"
 
   # Alias for upload confirmation and metadata ingestion.
   - method: POST
     path: /v1/recordings/confirm-upload
     handler: UploadRecording
-    optional_auth: true
+    scope: "recordings:create"
 
   # Import a recording from a URL with anti-SSRF defense.
   - method: POST
     path: /v1/recordings/import-url
     handler: ImportURL
-    optional_auth: true
+    scope: "recordings:create"
 
   # Cross-recording semantic vector search (registered users).
   - method: GET
     path: /v1/recordings/search
     handler: SearchRecordings
     auth: true
+    permission: "workspace:search"
 
   # Cross-recording workspace memory AI chat (registered users).
   - method: POST
     path: /v1/recordings/ask
     handler: AskWorkspaceMemory
     auth: true
+    permission: "workspace:memory"
 
   # Workspace speakers directory (registered users).
   - method: GET
@@ -174,6 +178,7 @@ routes:
     path: /v1/recordings/:id/share
     handler: ToggleRecordingShare
     auth: true
+    permission: "recordings:share"
 
   # Public read-only shared recording viewer.
   - method: GET
@@ -299,6 +304,16 @@ routes:
   - method: POST
     path: /v1/admin/login
     handler: AdminLogin
+
+  # Request staff administrator password reset email (CMS).
+  - method: POST
+    path: /v1/admin/forgot-password
+    handler: AdminForgotPassword
+
+  # Reset staff administrator password using recovery token (CMS).
+  - method: POST
+    path: /v1/admin/reset-password
+    handler: AdminResetPassword
 
   # Admin list registered users (CMS).
   - method: GET

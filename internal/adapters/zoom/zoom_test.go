@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 type mockPublisher struct {
@@ -123,7 +123,7 @@ func TestZoomAdapter(t *testing.T) {
 
 	t.Run("dispatch when disabled returns error", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: false})
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://zoom.us/j/1234567890",
 		})
 		if err == nil {
@@ -133,7 +133,7 @@ func TestZoomAdapter(t *testing.T) {
 
 	t.Run("dispatch with invalid url returns error", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://invalid-meeting.com",
 		})
 		if err == nil {
@@ -148,7 +148,7 @@ func TestZoomAdapter(t *testing.T) {
 			Publisher: errPub,
 		})
 
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://zoom.us/j/1234567890",
 		})
 		if err == nil {
@@ -167,7 +167,7 @@ func TestZoomAdapter(t *testing.T) {
 
 		sessionID := uuid.New()
 		recID := uuid.New()
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			SessionID:   sessionID,
 			RecordingID: recID,
 			MeetingURL:  "https://zoom.us/j/9876543210?pwd=abc",
@@ -254,7 +254,7 @@ func TestZoomAdapter(t *testing.T) {
 
 	t.Run("update session state to failed sets ended_at", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://zoom.us/j/1234567890",
 		})
 		if err != nil {
@@ -273,7 +273,7 @@ func TestZoomAdapter(t *testing.T) {
 
 	t.Run("stop existing session sets ended_at and completed status", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true})
-		extID, _ := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, _ := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			MeetingURL: "https://zoom.us/j/1234567890",
 		})
 

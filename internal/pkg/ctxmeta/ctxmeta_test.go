@@ -315,4 +315,77 @@ func TestHasUserPermission(t *testing.T) {
 	}
 }
 
+func TestHasScope(t *testing.T) {
+	tests := []struct {
+		name          string
+		user          AuthUser
+		requiredScope string
+		expected      bool
+	}{
+		{
+			name:          "empty required scope always passes",
+			user:          AuthUser{IsGuest: true, Permissions: []string{}},
+			requiredScope: "",
+			expected:      true,
+		},
+		{
+			name:          "guest user with exact scope passes",
+			user:          AuthUser{IsGuest: true, Permissions: []string{"recordings:create", "recordings:read"}},
+			requiredScope: "recordings:create",
+			expected:      true,
+		},
+		{
+			name:          "guest user missing scope fails",
+			user:          AuthUser{IsGuest: true, Permissions: []string{"recordings:read"}},
+			requiredScope: "recordings:create",
+			expected:      false,
+		},
+		{
+			name:          "guest user with wildcard star passes",
+			user:          AuthUser{IsGuest: true, Permissions: []string{"*"}},
+			requiredScope: "recordings:create",
+			expected:      true,
+		},
+		{
+			name:          "guest user with category wildcard passes",
+			user:          AuthUser{IsGuest: true, Permissions: []string{"recordings:*"}},
+			requiredScope: "recordings:create",
+			expected:      true,
+		},
+		{
+			name:          "registered user with exact scope passes",
+			user:          AuthUser{IsGuest: false, Permissions: []string{"recordings:create"}},
+			requiredScope: "recordings:create",
+			expected:      true,
+		},
+		{
+			name:          "registered user with category wildcard passes",
+			user:          AuthUser{IsGuest: false, Permissions: []string{"recordings:*"}},
+			requiredScope: "recordings:create",
+			expected:      true,
+		},
+		{
+			name:          "registered user missing scope fails",
+			user:          AuthUser{IsGuest: false, Permissions: []string{"export:pdf"}},
+			requiredScope: "recordings:create",
+			expected:      false,
+		},
+		{
+			name:          "whitespace trimmed properly",
+			user:          AuthUser{IsGuest: true, Permissions: []string{" recordings:create "}},
+			requiredScope: " recordings:create ",
+			expected:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := HasScope(tc.user, tc.requiredScope)
+			if result != tc.expected {
+				t.Errorf("HasScope(%v, %q) = %v; expected %v", tc.user.Permissions, tc.requiredScope, result, tc.expected)
+			}
+		})
+	}
+}
+
 

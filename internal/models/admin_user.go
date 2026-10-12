@@ -10,6 +10,7 @@ import (
 type AdminUser struct {
 	BaseModel
 	Username     string     `gorm:"type:varchar(100);not null;unique" json:"username"`
+	Email        string     `gorm:"type:varchar(255);uniqueIndex:idx_admin_users_email,where:deleted_at IS NULL" json:"email"`
 	PasswordHash string     `gorm:"type:varchar(255);not null" json:"-"`
 	FullName     string     `gorm:"type:varchar(255);not null" json:"full_name"`
 	RoleID       uuid.UUID  `gorm:"type:uuid;not null;index:idx_admin_users_role_id" json:"role_id"`

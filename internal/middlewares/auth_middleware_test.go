@@ -440,3 +440,143 @@ func TestRequireUserPermission(t *testing.T) {
 	}
 }
 
+func TestRequireScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	sessionID := uuid.New()
+	userID := uuid.New()
+
+	// 1. Unauthenticated / No user in context -> 401
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(RequireScope("recordings:create"))
+		r.POST("/recordings", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodPost, "/recordings", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 on unauthenticated, got %d", w.Code)
+		}
+	}
+
+	// 2. Guest user with required scope -> 200
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      sessionID,
+				SessionID:   sessionID.String(),
+				RoleCode:    "ANON",
+				Permissions: []string{"recordings:create", "recordings:read"},
+				IsGuest:     true,
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireScope("recordings:create"))
+		r.POST("/recordings", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodPost, "/recordings", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for guest with scope, got %d", w.Code)
+		}
+	}
+
+	// 3. Guest user missing required scope -> 403
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      sessionID,
+				SessionID:   sessionID.String(),
+				RoleCode:    "ANON",
+				Permissions: []string{"waitlist:join"},
+				IsGuest:     true,
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireScope("recordings:create"))
+		r.POST("/recordings", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodPost, "/recordings", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for guest missing scope, got %d", w.Code)
+		}
+	}
+
+	// 4. Registered user with exact scope -> 200
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      userID,
+				Email:       "user@example.com",
+				RoleCode:    "FREE",
+				Permissions: []string{"recordings:create", "recordings:read"},
+				IsGuest:     false,
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireScope("recordings:create"))
+		r.POST("/recordings", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodPost, "/recordings", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for user with exact scope, got %d", w.Code)
+		}
+	}
+
+	// 5. Registered user with wildcard category scope -> 200
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      userID,
+				Email:       "pro@example.com",
+				RoleCode:    "PRO",
+				Permissions: []string{"recordings:*"},
+				IsGuest:     false,
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireScope("recordings:create"))
+		r.POST("/recordings", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodPost, "/recordings", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for user with category wildcard scope, got %d", w.Code)
+		}
+	}
+
+	// 6. Registered user missing required scope -> 403
+	{
+		w := httptest.NewRecorder()
+		_, r := gin.CreateTestContext(w)
+		r.Use(func(c *gin.Context) {
+			user := ctxmeta.AuthUser{
+				UserID:      userID,
+				Email:       "limited@example.com",
+				RoleCode:    "CUSTOM",
+				Permissions: []string{"profile:manage"},
+				IsGuest:     false,
+			}
+			c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), user))
+			c.Next()
+		})
+		r.Use(RequireScope("recordings:create"))
+		r.POST("/recordings", func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(http.MethodPost, "/recordings", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for user missing scope, got %d", w.Code)
+		}
+	}
+}
+

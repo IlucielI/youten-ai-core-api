@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 )
@@ -50,7 +51,7 @@ func TestAuthorizeRecordingAccess(t *testing.T) {
 	}
 
 	t.Run("nil recording returns false", func(t *testing.T) {
-		if svc.authorizeRecordingAccess(context.Background(), nil, "", recordingAccessPolicy{}) {
+		if svc.authorizeRecordingAccess(context.Background(), nil, "", dtos.RecordingAccessPolicy{}) {
 			t.Fatal("expected false for nil recording")
 		}
 	})
@@ -59,7 +60,7 @@ func TestAuthorizeRecordingAccess(t *testing.T) {
 		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
 			UserID: ownerID,
 		})
-		if !svc.authorizeRecordingAccess(ctx, rec, "", recordingAccessPolicy{}) {
+		if !svc.authorizeRecordingAccess(ctx, rec, "", dtos.RecordingAccessPolicy{}) {
 			t.Fatal("expected true for authenticated owner")
 		}
 	})
@@ -68,13 +69,13 @@ func TestAuthorizeRecordingAccess(t *testing.T) {
 		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
 			UserID: otherUserID,
 		})
-		if svc.authorizeRecordingAccess(ctx, rec, "", recordingAccessPolicy{}) {
+		if svc.authorizeRecordingAccess(ctx, rec, "", dtos.RecordingAccessPolicy{}) {
 			t.Fatal("expected false for authenticated non-owner")
 		}
 	})
 
 	t.Run("direct ownershipToken match grants access", func(t *testing.T) {
-		if !svc.authorizeRecordingAccess(context.Background(), guestRec, anonSessionID, recordingAccessPolicy{}) {
+		if !svc.authorizeRecordingAccess(context.Background(), guestRec, anonSessionID, dtos.RecordingAccessPolicy{}) {
 			t.Fatal("expected true for direct ownership token match")
 		}
 	})
@@ -84,7 +85,7 @@ func TestAuthorizeRecordingAccess(t *testing.T) {
 			SessionID: anonSessionID,
 			IsGuest:   true,
 		})
-		if !svc.authorizeRecordingAccess(ctx, guestRec, "", recordingAccessPolicy{}) {
+		if !svc.authorizeRecordingAccess(ctx, guestRec, "", dtos.RecordingAccessPolicy{}) {
 			t.Fatal("expected true for guest with matching anon session anchor")
 		}
 	})
@@ -94,22 +95,22 @@ func TestAuthorizeRecordingAccess(t *testing.T) {
 			SessionID: "different-session-uuid",
 			IsGuest:   true,
 		})
-		if svc.authorizeRecordingAccess(ctx, guestRec, "", recordingAccessPolicy{}) {
+		if svc.authorizeRecordingAccess(ctx, guestRec, "", dtos.RecordingAccessPolicy{}) {
 			t.Fatal("expected false for guest with mismatched anon session")
 		}
 	})
 
 	t.Run("share token matches when policy allows", func(t *testing.T) {
-		if !svc.authorizeRecordingAccess(context.Background(), sharedRec, shareToken, recordingAccessPolicy{allowShareToken: true}) {
+		if !svc.authorizeRecordingAccess(context.Background(), sharedRec, shareToken, dtos.RecordingAccessPolicy{AllowShareToken: true}) {
 			t.Fatal("expected true when allowShareToken and token matches")
 		}
-		if svc.authorizeRecordingAccess(context.Background(), sharedRec, shareToken, recordingAccessPolicy{allowShareToken: false}) {
+		if svc.authorizeRecordingAccess(context.Background(), sharedRec, shareToken, dtos.RecordingAccessPolicy{AllowShareToken: false}) {
 			t.Fatal("expected false when allowShareToken is false")
 		}
 	})
 
 	t.Run("open share grants access when enabled", func(t *testing.T) {
-		if !svc.authorizeRecordingAccess(context.Background(), sharedRec, "", recordingAccessPolicy{allowShareOpen: true}) {
+		if !svc.authorizeRecordingAccess(context.Background(), sharedRec, "", dtos.RecordingAccessPolicy{AllowShareOpen: true}) {
 			t.Fatal("expected true when allowShareOpen and sharing enabled")
 		}
 	})

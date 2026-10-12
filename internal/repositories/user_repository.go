@@ -2,12 +2,12 @@ package repositories
 
 import (
 	"context"
-	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // CreateUser persists a new user into the database.
@@ -115,45 +115,33 @@ type ListUsersQuery struct {
 	Limit  int
 }
 
+func (q ListUsersQuery) scope(db *gorm.DB) *gorm.DB {
+	if q.Status != "" {
+		db = db.Where("status = ?", q.Status)
+	}
+
+	if pattern := strutil.LikePattern(q.Search); pattern != "" {
+		db = db.Where("email ILIKE ? OR full_name ILIKE ?", pattern, pattern)
+	}
+
+	return db
+}
+
 // ListUsers retrieves paginated registered users matching search query and status filter.
 func (r *Repositories) ListUsers(ctx context.Context, q ListUsersQuery) ([]models.User, int64, error) {
 	var users []models.User
 	var total int64
 
-	// Guardrails: validate and cap pagination bounds to prevent denial-of-service
-	if q.Limit <= 0 {
-		q.Limit = 20
-	} else if q.Limit > 100 {
-		q.Limit = 100
-	}
-	if q.Offset < 0 {
-		q.Offset = 0
-	}
-
-	db := r.db.WithContext(ctx).Model(&models.User{}).Where("deleted_at IS NULL")
-
-	if q.Status != "" {
-		db = db.Where("status = ?", q.Status)
-	}
-
-	cleanSearch := strings.TrimSpace(q.Search)
-	if cleanSearch != "" {
-		if len(cleanSearch) > 100 {
-			cleanSearch = cleanSearch[:100]
-		}
-		searchPattern := "%" + cleanSearch + "%"
-		db = db.Where("email ILIKE ? OR full_name ILIKE ?", searchPattern, searchPattern)
-	}
+	db := r.db.WithContext(ctx).Model(&models.User{}).
+		Where("deleted_at IS NULL").
+		Scopes(q.scope)
 
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := db.Order("created_at DESC").Limit(q.Limit).Offset(q.Offset).Find(&users).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return users, total, nil
+	err := db.Order("created_at DESC").Limit(q.Limit).Offset(q.Offset).Find(&users).Error
+	return users, total, err
 }
 
 // MarkEmailVerified updates user email_verified to true and sets status to active.

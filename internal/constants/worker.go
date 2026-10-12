@@ -13,6 +13,15 @@ const (
 	TopicRecordingCompleted  = "recording.completed"
 	TopicRecordingFailed     = "recording.failed"
 
+	// Administrative domain events
+	TopicAdminAuditLog = "admin.audit.created"
+
 	// Domain event alias
 	DomainEventRecordingCreated = TopicRecordingUploaded
+
+	// Dead-letter and fallback pipeline queue/topic identifiers
+	QueueRecordingDLQ    = "recording.dlq"
+	TopicPipelineUnknown = "pipeline.unknown"
+	QueuePipelineUnknown = "pipeline.unknown"
 )
+

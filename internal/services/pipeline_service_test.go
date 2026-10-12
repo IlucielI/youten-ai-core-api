@@ -22,7 +22,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/services"
 )
@@ -123,7 +123,7 @@ func TestPipelineService_ProcessExtraction_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		SourcePath:  audioPath,
 	}
@@ -176,7 +176,7 @@ func TestPipelineService_ProcessTranscription_NoSpeech(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		AudioPath:   audioPath,
 	}
@@ -301,8 +301,8 @@ type mockPipelineLinkExtractor struct {
 	supportsFunc      func(rawURL string) bool
 	extractIDFunc     func(rawURL string) (string, error)
 	normalizeURLFunc  func(rawURL string) (string, error)
-	fetchMetadataFunc func(ctx context.Context, rawURL string) (*services.MediaMetadata, error)
-	extractAudioFunc  func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error)
+	fetchMetadataFunc func(ctx context.Context, rawURL string) (*dtos.MediaMetadata, error)
+	extractAudioFunc  func(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error)
 }
 
 func (m *mockPipelineLinkExtractor) Supports(rawURL string) bool {
@@ -326,18 +326,18 @@ func (m *mockPipelineLinkExtractor) NormalizeURL(rawURL string) (string, error) 
 	return rawURL, nil
 }
 
-func (m *mockPipelineLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*services.MediaMetadata, error) {
+func (m *mockPipelineLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.MediaMetadata, error) {
 	if m.fetchMetadataFunc != nil {
 		return m.fetchMetadataFunc(ctx, rawURL)
 	}
-	return &services.MediaMetadata{ID: "dQw4w9WgXcQ", Title: "Extracted Video Title"}, nil
+	return &dtos.MediaMetadata{ID: "dQw4w9WgXcQ", Title: "Extracted Video Title"}, nil
 }
 
-func (m *mockPipelineLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+func (m *mockPipelineLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 	if m.extractAudioFunc != nil {
 		return m.extractAudioFunc(ctx, rawURL)
 	}
-	return &services.ExtractedAudio{
+	return &dtos.ExtractedAudio{
 		Title:           "Extracted Video Title",
 		DurationSeconds: 180.0,
 		SizeBytes:       512,
@@ -382,7 +382,7 @@ func TestPipelineService_ProcessImport_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 		Template:    "GENERAL",
@@ -404,7 +404,7 @@ func TestPipelineService_ProcessImport_ExtractorFailure(t *testing.T) {
 	defer cleanup()
 
 	mockExt := &mockPipelineLinkExtractor{
-		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 			return nil, errors.New("yt-dlp binary crash")
 		},
 	}
@@ -433,7 +433,7 @@ func TestPipelineService_ProcessImport_ExtractorFailure(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 	}
@@ -459,8 +459,8 @@ func TestPipelineService_ProcessImport_GoogleDrive_Success(t *testing.T) {
 	defer cleanup()
 
 	mockExt := &mockPipelineLinkExtractor{
-		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
-			return &services.ExtractedAudio{
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
+			return &dtos.ExtractedAudio{
 				Stream:          io.NopCloser(bytes.NewReader([]byte("gdrive-audio-data"))),
 				SizeBytes:       17,
 				DurationSeconds: 120.0,
@@ -501,7 +501,7 @@ func TestPipelineService_ProcessImport_GoogleDrive_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 		Template:    "GENERAL",
@@ -523,7 +523,7 @@ func TestPipelineService_ProcessImport_GoogleDrive_PermissionDenied(t *testing.T
 	defer cleanup()
 
 	mockExt := &mockPipelineLinkExtractor{
-		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 			return nil, errors.New("access denied: file is private or restricted")
 		},
 	}
@@ -552,7 +552,7 @@ func TestPipelineService_ProcessImport_GoogleDrive_PermissionDenied(t *testing.T
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 	}
@@ -578,7 +578,7 @@ func TestPipelineService_ProcessImport_UnsupportedMediaType(t *testing.T) {
 	defer cleanup()
 
 	mockExt := &mockPipelineLinkExtractor{
-		extractAudioFunc: func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+		extractAudioFunc: func(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 			return nil, errors.New("unsupported media format")
 		},
 	}
@@ -607,7 +607,7 @@ func TestPipelineService_ProcessImport_UnsupportedMediaType(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 	}

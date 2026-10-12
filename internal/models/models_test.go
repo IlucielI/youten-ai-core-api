@@ -13,6 +13,7 @@ func TestTableNames(t *testing.T) {
 		{model: AuthToken{}, expected: "auth_tokens"},
 		{model: AdminRole{}, expected: "admin_roles"},
 		{model: AdminUser{}, expected: "admin_users"},
+		{model: AdminAuthToken{}, expected: "admin_auth_tokens"},
 		{model: AdminAuditLog{}, expected: "admin_audit_logs"},
 		{model: AuditLog{}, expected: "audit_logs"},
 		{model: Template{}, expected: "templates"},

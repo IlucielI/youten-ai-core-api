@@ -396,7 +396,7 @@ func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRe
 			return s.wrapError(ctx, fmt.Errorf("render reset password email template: %w", err))
 		}
 
-		msg := EmailMessage{
+		msg := dtos.EmailMessage{
 			To:       []string{user.Email},
 			Subject:  "Reset Your Password - Youten AI",
 			TextBody: textBody,
@@ -738,7 +738,7 @@ func (s *Service) sendVerificationEmail(ctx context.Context, email, fullName, co
 		return s.wrapError(ctx, fmt.Errorf("render verification email template: %w", err))
 	}
 
-	msg := EmailMessage{
+	msg := dtos.EmailMessage{
 		To:       []string{email},
 		Subject:  "Verify Your Email - Youten AI",
 		TextBody: textBody,

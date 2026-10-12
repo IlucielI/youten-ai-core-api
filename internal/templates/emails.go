@@ -9,7 +9,7 @@ import (
 	textTemplate "text/template"
 )
 
-//go:embed emails/*.html.tmpl emails/*.txt.tmpl
+//go:embed emails/*
 var emailFS embed.FS
 
 var (

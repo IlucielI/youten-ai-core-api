@@ -14,6 +14,7 @@ const (
 	// Registered User & Pro Permissions
 	ScopeRecordingsShare  Scope = "recordings:share"
 	ScopeRecordingsSearch Scope = "recordings:search"
+	ScopeWorkspaceSearch  Scope = "workspace:search"
 	ScopeWorkspaceMemory  Scope = "workspace:memory"
 	ScopeSpeakersManage   Scope = "speakers:manage"
 	ScopeExportPDF        Scope = "export:pdf"

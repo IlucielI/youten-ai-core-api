@@ -238,5 +238,19 @@ func TestTemplates_DefaultSchemaForTemplate(t *testing.T) {
 	}
 }
 
+func TestTemplates_RenderAdminResetPasswordEmail(t *testing.T) {
+	htmlBody, textBody, err := templates.RenderAdminResetPasswordEmail("John Doe", "token-123456")
+	if err != nil {
+		t.Fatalf("unexpected error rendering admin reset password email: %v", err)
+	}
+
+	if !strings.Contains(htmlBody, "John Doe") || !strings.Contains(htmlBody, "token-123456") {
+		t.Errorf("expected HTML body to contain name and token, got: %s", htmlBody)
+	}
+	if !strings.Contains(textBody, "John Doe") || !strings.Contains(textBody, "token-123456") {
+		t.Errorf("expected text body to contain name and token, got: %s", textBody)
+	}
+}
+
 
 

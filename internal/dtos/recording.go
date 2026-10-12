@@ -194,14 +194,6 @@ type RecordingDetailResponse struct {
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
-// PaginationMeta represents pagination details in list responses.
-type PaginationMeta struct {
-	CurrentPage int   `json:"current_page"`
-	PageSize    int   `json:"page_size"`
-	TotalItems  int64 `json:"total_items"`
-	TotalPages  int   `json:"total_pages"`
-}
-
 // RecordingListItem represents a concise summary of a recording in the library list.
 type RecordingListItem struct {
 	ID               string    `json:"id"`
@@ -380,3 +372,51 @@ type CommentResponse struct {
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at,omitempty"`
 }
+
+// RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
+type RecordingChatStreamResult struct {
+	StreamChannel     <-chan StreamChunk `json:"-"`
+	RetrievedChunkIDs []string           `json:"retrieved_chunk_ids,omitempty"`
+}
+
+// SpeakerRosterItem holds an identified speaker in the recording session.
+type SpeakerRosterItem struct {
+	Label       string `json:"label"`
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+	Speaker     string `json:"speaker,omitempty"`      // alias for label
+	SpeakerName string `json:"speaker_name,omitempty"` // alias for name
+}
+
+// Normalize standardizes field mappings for SpeakerRosterItem.
+func (s *SpeakerRosterItem) Normalize() {
+	if s.Label == "" && s.Speaker != "" {
+		s.Label = s.Speaker
+	}
+	if s.Name == "" && s.SpeakerName != "" {
+		s.Name = s.SpeakerName
+	}
+	if s.Label != "" {
+		parts := strings.Fields(s.Label)
+		if len(parts) >= 2 && strings.EqualFold(parts[0], "speaker") {
+			s.Label = "Speaker " + parts[1]
+		}
+	}
+	if s.Name == "" {
+		s.Name = s.Label
+	}
+	if s.Role == "" {
+		s.Role = "Speaker"
+	}
+}
+
+// RecordingAccessPolicy configures which non-owner principals may access a recording.
+type RecordingAccessPolicy struct {
+	// AllowShareToken grants access when the supplied token matches the recording's active
+	// share token. Used by read/progress/retry flows that honor share links.
+	AllowShareToken bool
+	// AllowShareOpen grants access to anyone while sharing is enabled, regardless of token.
+	// Used by collaborative comment flows on publicly shared recordings.
+	AllowShareOpen bool
+}
+

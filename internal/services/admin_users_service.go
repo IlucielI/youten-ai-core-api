@@ -1,0 +1,192 @@
+package services
+
+import (
+	"context"
+	"errors"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"code-base-golang/internal/constants"
+	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
+	"code-base-golang/internal/queue"
+	"code-base-golang/internal/repositories"
+	"code-base-golang/internal/validations"
+)
+
+// AdminListUsers retrieves a paginated and filtered list of users with dynamic daily quota metrics.
+func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery) (*dtos.AdminUserListResponse, error) {
+	q.SetDefaults()
+
+	offset := (q.Page - 1) * q.Limit
+	repoQuery := repositories.ListUsersQuery{
+		Search: q.Search,
+		Status: models.UserStatus(q.Status),
+		Offset: offset,
+		Limit:  q.Limit,
+	}
+
+	users, total, err := s.repo.ListUsers(ctx, repoQuery)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	items := make([]dtos.AdminUserListItem, 0, len(users))
+	for _, u := range users {
+		dailyQuota := resolveDailyQuota(&u)
+
+		countToday, err := s.repo.CountUserRecordingsToday(ctx, u.ID)
+		if err != nil {
+			countToday = 0
+		}
+
+		items = append(items, dtos.AdminUserListItem{
+			ID:             u.ID,
+			Email:          u.Email,
+			FullName:       u.FullName,
+			Status:         string(u.Status),
+			DailyQuota:     dailyQuota,
+			QuotaUsedToday: int(countToday),
+			EmailVerified:  u.EmailVerified,
+			CreatedAt:      u.CreatedAt,
+		})
+	}
+
+	return &dtos.AdminUserListResponse{
+		Items:      items,
+		Pagination: dtos.NewPaginationMeta(q.Page, q.Limit, total),
+	}, nil
+}
+
+// AdminOverrideUserQuota sets or resets a user's daily quota override and records an administrative audit log.
+func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID, req dtos.AdminUserQuotaOverrideRequest) (*dtos.AdminUserQuotaResponse, error) {
+	if err := validations.ValidateAdminUserQuotaOverrideRequest(&req); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	prevOverride := user.DailyQuotaOverride
+
+	if err := s.repo.UpdateUserDailyQuotaOverride(ctx, userID, req.DailyQuotaOverride); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	user.DailyQuotaOverride = req.DailyQuotaOverride
+	effectiveQuota := resolveDailyQuota(user)
+
+	entityIDStr := userID.String()
+	auditLog := queue.AdminAuditPayload{
+		AdminID:  meta.AdminIDPtr(),
+		Action:   constants.AuditActionUserQuotaOverride,
+		Entity:   constants.AuditEntityUser,
+		EntityID: &entityIDStr,
+		Payload: map[string]any{
+			"previous_override": prevOverride,
+			"new_override":      req.DailyQuotaOverride,
+		},
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
+	}
+	s.emitAdminAuditLog(ctx, auditLog)
+
+	return &dtos.AdminUserQuotaResponse{
+		UserID:             userID,
+		DailyQuotaOverride: req.DailyQuotaOverride,
+		EffectiveQuota:     effectiveQuota,
+	}, nil
+}
+
+// AdminRevokeUserSessions revokes all active auth and session tokens for a target user and creates an audit trail.
+func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID) (*dtos.AdminRevokeUserSessionsResponse, error) {
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if err := s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, ""); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	entityIDStr := userID.String()
+	auditLog := queue.AdminAuditPayload{
+		AdminID:  meta.AdminIDPtr(),
+		Action:   constants.AuditActionUserRevokeSessions,
+		Entity:   constants.AuditEntityUser,
+		EntityID: &entityIDStr,
+		Payload: map[string]any{
+			"target_email": user.Email,
+		},
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
+	}
+	s.emitAdminAuditLog(ctx, auditLog)
+
+	return &dtos.AdminRevokeUserSessionsResponse{
+		UserID:  userID,
+		Revoked: true,
+		Message: "all active sessions have been successfully revoked",
+	}, nil
+}
+
+// AdminAssignUserRole assigns a customer user role to a user.
+func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID, req dtos.AdminAssignUserRoleRequest) (*dtos.UserResponse, error) {
+	if err := validations.ValidateAdminAssignUserRoleRequest(&req); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	role, err := s.repo.FindUserRoleByID(ctx, req.RoleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user role not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	if err := s.repo.UpdateUserRoleID(ctx, userID, req.RoleID); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	updatedUser, err := s.repo.FindUserByIDWithRole(ctx, userID)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	userIDStr := user.ID.String()
+	auditLog := queue.AdminAuditPayload{
+		AdminID:  meta.AdminIDPtr(),
+		Action:   constants.AuditActionUserAssignRole,
+		Entity:   constants.AuditEntityUser,
+		EntityID: &userIDStr,
+		Payload: map[string]any{
+			"previous_role_id": user.RoleID,
+			"new_role_id":      req.RoleID,
+			"new_role_code":    role.Code,
+			"new_role_name":    role.Name,
+		},
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
+	}
+	s.emitAdminAuditLog(ctx, auditLog)
+
+	resp := newUserResponse(updatedUser)
+	return &resp, nil
+}

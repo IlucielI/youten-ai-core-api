@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,22 +26,12 @@ func (c *Controllers) UpdateTranscriptSpeakers(ctx *gin.Context) {
 
 	var req dtos.UpdateSpeakersRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateUpdateSpeakersRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -75,22 +64,12 @@ func (c *Controllers) UpdateTranscriptSegment(ctx *gin.Context) {
 
 	var req dtos.UpdateTranscriptSegmentRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateUpdateTranscriptSegmentRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -118,23 +97,13 @@ func (c *Controllers) RegenerateSummary(ctx *gin.Context) {
 	var req dtos.RegenerateSummaryRequest
 	if ctx.Request.ContentLength > 0 {
 		if err := ctx.ShouldBindJSON(&req); err != nil {
-			ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-				Status:    constants.ResponseStatusFail,
-				Code:      constants.ResponseCodeBadRequest,
-				Message:   err.Error(),
-				Timestamp: time.Now(),
-			})
+			c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 			return
 		}
 	}
 
 	if err := validations.ValidateRegenerateSummaryRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -200,7 +169,7 @@ func (c *Controllers) ActivateSummaryVersion(ctx *gin.Context) {
 // ExportRecording handles downloading meeting MOM and transcript in multiple formats (markdown, txt, json, pdf).
 func (c *Controllers) ExportRecording(ctx *gin.Context) {
 	if c == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": constants.ErrInternalServerError.Error()})
+		c.wrapError(ctx, constants.ErrInternalServerError)
 		return
 	}
 

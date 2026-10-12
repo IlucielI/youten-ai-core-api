@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/services"
 )
@@ -62,8 +63,8 @@ type mockMediaLinkExtractor struct {
 	supportsFunc      func(rawURL string) bool
 	extractIDFunc     func(rawURL string) (string, error)
 	normalizeURLFunc  func(rawURL string) (string, error)
-	fetchMetadataFunc func(ctx context.Context, rawURL string) (*services.MediaMetadata, error)
-	extractAudioFunc  func(ctx context.Context, rawURL string) (*services.ExtractedAudio, error)
+	fetchMetadataFunc func(ctx context.Context, rawURL string) (*dtos.MediaMetadata, error)
+	extractAudioFunc  func(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error)
 }
 
 func (m *mockMediaLinkExtractor) Supports(rawURL string) bool {
@@ -87,14 +88,14 @@ func (m *mockMediaLinkExtractor) NormalizeURL(rawURL string) (string, error) {
 	return rawURL, nil
 }
 
-func (m *mockMediaLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*services.MediaMetadata, error) {
+func (m *mockMediaLinkExtractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.MediaMetadata, error) {
 	if m.fetchMetadataFunc != nil {
 		return m.fetchMetadataFunc(ctx, rawURL)
 	}
-	return &services.MediaMetadata{ID: "test-id", Title: "Test Title"}, nil
+	return &dtos.MediaMetadata{ID: "test-id", Title: "Test Title"}, nil
 }
 
-func (m *mockMediaLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*services.ExtractedAudio, error) {
+func (m *mockMediaLinkExtractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.ExtractedAudio, error) {
 	if m.extractAudioFunc != nil {
 		return m.extractAudioFunc(ctx, rawURL)
 	}

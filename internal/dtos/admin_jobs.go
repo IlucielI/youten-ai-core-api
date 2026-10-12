@@ -3,34 +3,19 @@ package dtos
 import (
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
 )
 
 // AdminJobListQuery defines query parameters for filtering and paginating generation jobs.
 type AdminJobListQuery struct {
-	Page   int    `form:"page"`
-	Limit  int    `form:"limit"`
+	PaginationQuery
 	Status string `form:"status"`
 	Search string `form:"search"`
 }
 
 // SetDefaults assigns safe default values for pagination fields.
 func (q *AdminJobListQuery) SetDefaults() {
-	if q.Page < 1 {
-		q.Page = 1
-	}
-	if q.Limit < 1 || q.Limit > 100 {
-		q.Limit = 20
-	}
-}
-
-// Validate validates query parameters.
-func (q AdminJobListQuery) Validate() error {
-	return validation.ValidateStruct(&q,
-		validation.Field(&q.Page, validation.Min(1)),
-		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
-	)
+	q.PaginationQuery.SetDefaults(20)
 }
 
 // AdminJobItem represents a single generation job or recording row in admin listings.

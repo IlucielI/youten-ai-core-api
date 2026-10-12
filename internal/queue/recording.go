@@ -1,4 +1,4 @@
-package payload
+package queue
 
 import "github.com/google/uuid"
 

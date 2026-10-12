@@ -7,7 +7,7 @@ import (
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/services"
 )
 
@@ -43,6 +43,7 @@ func (w *WorkerServer) RegisterWorker() {
 	w.sub.MustSubscribe(constants.TopicRecordingIndex, w.HandleRecordingIndex)
 	w.sub.MustSubscribe(constants.TopicRecordingAnalytics, w.HandleRecordingAnalytics)
 	w.sub.MustSubscribe(constants.TopicRecordingChapterize, w.HandleRecordingChapterize)
+	w.sub.MustSubscribe(constants.TopicAdminAuditLog, w.HandleAdminAuditLog)
 
 	log.Println("Done RegisterWorker")
 }
@@ -60,7 +61,11 @@ func (w *WorkerServer) StartCleanupTicker(ctx context.Context, interval time.Dur
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				count, err := w.svc.CleanupExpiredRecordings(ctx, 100)
+				batchSize := w.cfg.CleanupBatchSize
+				if batchSize <= 0 {
+					batchSize = constants.DefaultExpiredRecordingsCleanupBatchSize
+				}
+				count, err := w.svc.CleanupExpiredRecordings(ctx, batchSize)
 				if err != nil {
 					log.Printf("[CLEANUP ERROR] failed to clean expired recordings: %v", err)
 				} else if count > 0 {
@@ -76,8 +81,8 @@ func (w *WorkerServer) HandleRecordingImport(ctx context.Context, msg []byte) bo
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse import payload: %v", err)
 		return false
 	}
@@ -96,8 +101,8 @@ func (w *WorkerServer) HandleRecordingExtract(ctx context.Context, msg []byte) b
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse extract payload: %v", err)
 		return false
 	}
@@ -116,8 +121,8 @@ func (w *WorkerServer) HandleRecordingTranscribe(ctx context.Context, msg []byte
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse transcribe payload: %v", err)
 		return false
 	}
@@ -136,8 +141,8 @@ func (w *WorkerServer) HandleRecordingSummarize(ctx context.Context, msg []byte)
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse summarize payload: %v", err)
 		return false
 	}
@@ -156,8 +161,8 @@ func (w *WorkerServer) HandleRecordingIndex(ctx context.Context, msg []byte) boo
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse index payload: %v", err)
 		return false
 	}
@@ -176,8 +181,8 @@ func (w *WorkerServer) HandleRecordingAnalytics(ctx context.Context, msg []byte)
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse analytics payload: %v", err)
 		return false
 	}
@@ -195,8 +200,8 @@ func (w *WorkerServer) HandleRecordingChapterize(ctx context.Context, msg []byte
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse chapterize payload: %v", err)
 		return false
 	}
@@ -206,5 +211,23 @@ func (w *WorkerServer) HandleRecordingChapterize(ctx context.Context, msg []byte
 		log.Printf("[WORKER ERROR] Chapterization failed for recording %s: %v", p.RecordingID.String(), err)
 	}
 	log.Printf("[WORKER] Finished Chapterization for recording %s", p.RecordingID.String())
+	return true
+}
+
+// HandleAdminAuditLog persists an administrative audit log received from the message broker.
+func (w *WorkerServer) HandleAdminAuditLog(ctx context.Context, msg []byte) bool {
+	if w.svc == nil {
+		return false
+	}
+	var p queue.AdminAuditPayload
+	if err := queue.Parse(msg, &p); err != nil {
+		log.Printf("[WORKER ERROR] failed to parse admin audit payload: %v", err)
+		return false
+	}
+
+	if err := w.svc.RecordAdminAuditLog(ctx, p); err != nil {
+		log.Printf("[WORKER ERROR] failed to persist admin audit log: %v", err)
+		return false
+	}
 	return true
 }

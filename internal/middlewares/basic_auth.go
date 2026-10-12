@@ -1,7 +1,6 @@
 package middlewares
 
 import (
-	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // BasicAuth returns a Gin middleware that validates HTTP Basic Authentication credentials.
@@ -62,8 +62,8 @@ func BasicAuth(expectedUser, expectedPass string) gin.HandlerFunc {
 			return
 		}
 
-		userMatch := subtle.ConstantTimeCompare([]byte(pair[0]), []byte(expectedUser)) == 1
-		passMatch := subtle.ConstantTimeCompare([]byte(pair[1]), []byte(expectedPass)) == 1
+		userMatch := strutil.ConstantTimeEqual(pair[0], expectedUser)
+		passMatch := strutil.ConstantTimeEqual(pair[1], expectedPass)
 
 		if !userMatch || !passMatch {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{

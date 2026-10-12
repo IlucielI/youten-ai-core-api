@@ -29,7 +29,7 @@ func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownersh
 	// Verify access: owner, ownership token, or publicly shared recording.
 	isAuth := ctxmeta.IsAuthenticated(ctx)
 	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareOpen: true}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{AllowShareOpen: true}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -96,7 +96,7 @@ func (s *Service) ListInlineComments(ctx context.Context, id uuid.UUID, ownershi
 	}
 
 	// Verify access: owner, ownership token, or publicly shared recording.
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareOpen: true}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{AllowShareOpen: true}) {
 		return nil, constants.ErrForbidden
 	}
 
@@ -139,7 +139,7 @@ func (s *Service) DeleteInlineComment(ctx context.Context, recordingID uuid.UUID
 	isAuth := ctxmeta.IsAuthenticated(ctx)
 	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
 
-	canDelete := s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{})
+	canDelete := s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{})
 	if !canDelete && isAuth && hasUserID && comment.UserID != nil && *comment.UserID == userID {
 		canDelete = true
 	}

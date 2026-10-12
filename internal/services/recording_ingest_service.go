@@ -17,7 +17,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
@@ -125,7 +125,7 @@ func (s *Service) UploadRecording(
 
 	// Publish background extraction event
 	if s.publisher != nil {
-		eventPayload := payload.RecordingPipelinePayload{
+		eventPayload := queue.RecordingPipelinePayload{
 			RecordingID: rec.ID,
 			SourcePath:  objectKey,
 			Template:    rec.SelectedTemplate,
@@ -159,7 +159,11 @@ func (s *Service) UploadRecording(
 // deletes their media objects from storage, and hard-deletes the database rows (with cascade).
 func (s *Service) CleanupExpiredRecordings(ctx context.Context, batchSize int) (int, error) {
 	if batchSize <= 0 {
-		batchSize = 100
+		if s != nil && s.cfg.CleanupBatchSize > 0 {
+			batchSize = s.cfg.CleanupBatchSize
+		} else {
+			batchSize = constants.DefaultExpiredRecordingsCleanupBatchSize
+		}
 	}
 	expiredList, err := s.repo.FindExpiredRecordings(ctx, batchSize)
 	if err != nil {
@@ -290,7 +294,7 @@ func (s *Service) ImportRecordingFromURL(
 		}
 
 		if s.publisher != nil {
-			importPayload := payload.RecordingPipelinePayload{
+			importPayload := queue.RecordingPipelinePayload{
 				RecordingID: rec.ID,
 				URL:         canonicalURL,
 				Template:    rec.SelectedTemplate,
@@ -422,7 +426,7 @@ func (s *Service) ImportRecordingFromURL(
 
 	// 7. Publish background extraction event
 	if s.publisher != nil {
-		eventPayload := payload.RecordingPipelinePayload{
+		eventPayload := queue.RecordingPipelinePayload{
 			RecordingID: rec.ID,
 			SourcePath:  objectKey,
 			Template:    rec.SelectedTemplate,
@@ -465,7 +469,7 @@ func (s *Service) RetryRecordingPipeline(ctx context.Context, id uuid.UUID, owne
 	}
 
 	// 1. Ownership verification: owner, ownership token, or active share token.
-	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, recordingAccessPolicy{allowShareToken: true}) {
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{AllowShareToken: true}) {
 		return nil, constants.ErrForbidden
 	}
 

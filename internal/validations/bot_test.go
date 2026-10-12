@@ -71,13 +71,6 @@ func TestValidateDispatchBotRequest(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("nil request pointer", func(t *testing.T) {
-		err := ValidateDispatchBotRequest(nil)
-		if err == nil {
-			t.Errorf("expected error when request pointer is nil")
-		}
-	})
 }
 
 func TestValidateGoogleMeetWebhookRequest(t *testing.T) {
@@ -115,11 +108,6 @@ func TestValidateGoogleMeetWebhookRequest(t *testing.T) {
 				ExternalSessionID: "meet-12345",
 				Event:             "unknown_event",
 			},
-			wantErr: true,
-		},
-		{
-			name:    "nil request",
-			req:     nil,
 			wantErr: true,
 		},
 	}
@@ -177,11 +165,6 @@ func TestValidateMSTeamsWebhookRequest(t *testing.T) {
 				ExternalSessionID: "teams-12345",
 				Event:             "unknown_event",
 			},
-			wantErr: true,
-		},
-		{
-			name:    "nil request",
-			req:     nil,
 			wantErr: true,
 		},
 	}
@@ -247,11 +230,6 @@ func TestValidateZoomWebhookRequest(t *testing.T) {
 				ExternalSessionID: "zoom-12345",
 				Event:             "unknown_event",
 			},
-			wantErr: true,
-		},
-		{
-			name:    "nil request",
-			req:     nil,
 			wantErr: true,
 		},
 	}

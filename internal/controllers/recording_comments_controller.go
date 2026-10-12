@@ -28,22 +28,12 @@ func (c *Controllers) CreateInlineComment(ctx *gin.Context) {
 
 	var req dtos.CreateCommentRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateCreateCommentRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -118,22 +108,12 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 
 	var req dtos.RecordingChatRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateRecordingChatRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 

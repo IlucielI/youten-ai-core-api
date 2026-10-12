@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +41,7 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 
 	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
 		hasAccess = true
-	} else if ownershipToken != "" && subtle.ConstantTimeCompare([]byte(ownershipToken), []byte(rec.OwnershipToken)) == 1 {
+	} else if ownershipToken != "" && strutil.ConstantTimeEqual(ownershipToken, rec.OwnershipToken) {
 		hasAccess = true
 	} else if rec.IsShareEnabled {
 		hasAccess = true
@@ -158,17 +157,6 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 	return nil, constants.ErrBadRequest
 }
 
-type formattedSection struct {
-	Heading string
-	Items   []string
-}
-
-type formattedSummary struct {
-	Overview    string
-	Sections    []formattedSection
-	ActionItems []string
-}
-
 func parseSummaryData(summary *models.Summary) (map[string]interface{}, string) {
 	if summary == nil {
 		return nil, ""
@@ -195,8 +183,8 @@ func parseSummaryData(summary *models.Summary) (map[string]interface{}, string) 
 	return data, rawMd
 }
 
-func formatSummaryContent(summary *models.Summary) formattedSummary {
-	var res formattedSummary
+func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
+	var res dtos.FormattedSummary
 	if summary == nil {
 		return res
 	}
@@ -247,7 +235,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 			}
 		}
 		if len(items) > 0 {
-			res.Sections = append(res.Sections, formattedSection{
+			res.Sections = append(res.Sections, dtos.FormattedSection{
 				Heading: "Pembaruan Anggota (Member Updates)",
 				Items:   items,
 			})
@@ -260,7 +248,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 			items = append(items, fmt.Sprintf("• %v", b))
 			res.ActionItems = append(res.ActionItems, fmt.Sprintf("Kendala Kritis: %v", b))
 		}
-		res.Sections = append(res.Sections, formattedSection{
+		res.Sections = append(res.Sections, dtos.FormattedSection{
 			Heading: "Kendala Kritis (Critical Blockers)",
 			Items:   items,
 		})
@@ -285,7 +273,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %v", p))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{
+		res.Sections = append(res.Sections, dtos.FormattedSection{
 			Heading: "Diskusi Lanjutan (Parking Lot)",
 			Items:   items,
 		})
@@ -303,7 +291,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 		for _, s := range str {
 			items = append(items, fmt.Sprintf("• %v", s))
 		}
-		res.Sections = append(res.Sections, formattedSection{
+		res.Sections = append(res.Sections, dtos.FormattedSection{
 			Heading: "Kekuatan Utama (Strengths)",
 			Items:   items,
 		})
@@ -313,7 +301,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 		for _, c := range con {
 			items = append(items, fmt.Sprintf("• %v", c))
 		}
-		res.Sections = append(res.Sections, formattedSection{
+		res.Sections = append(res.Sections, dtos.FormattedSection{
 			Heading: "Catatan & Kekhawatiran (Concerns)",
 			Items:   items,
 		})
@@ -328,7 +316,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %s [%s]: %s", comp, rating, evidence))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{
+		res.Sections = append(res.Sections, dtos.FormattedSection{
 			Heading: "Penilaian Kompetensi",
 			Items:   items,
 		})
@@ -347,7 +335,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 		for _, w := range kw {
 			items = append(items, fmt.Sprintf("• %v", w))
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Pencapaian Utama (Key Wins)", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Pencapaian Utama (Key Wins)", Items: items})
 	}
 	if bl, ok := data["blockers"].([]interface{}); ok && len(bl) > 0 {
 		var items []string
@@ -355,7 +343,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 			items = append(items, fmt.Sprintf("• %v", b))
 			res.ActionItems = append(res.ActionItems, fmt.Sprintf("Kendala 1-on-1: %v", b))
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Kendala (Blockers)", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Kendala (Blockers)", Items: items})
 	}
 	if com, ok := data["commitments"].([]interface{}); ok && len(com) > 0 {
 		for _, c := range com {
@@ -398,14 +386,14 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %v", d))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Keputusan Kunci (Key Decisions)", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Keputusan Kunci (Key Decisions)", Items: items})
 	}
 	if oi, ok := data["open_issues"].([]interface{}); ok && len(oi) > 0 {
 		var items []string
 		for _, o := range oi {
 			items = append(items, fmt.Sprintf("• %v", o))
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Isu Terbuka (Open Issues)", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Isu Terbuka (Open Issues)", Items: items})
 	}
 
 	// 5. Tech Review Schema
@@ -421,7 +409,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %s: %s", dec, just))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Keputusan Diadopsi", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Keputusan Diadopsi", Items: items})
 	}
 
 	// 6. Sales Discovery Schema
@@ -438,7 +426,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %s (Biaya Inaksi: %s)", pain, cost))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Titik Kendala (Pain Points)", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Titik Kendala (Pain Points)", Items: items})
 	}
 	if ns, ok := data["next_steps"].([]interface{}); ok && len(ns) > 0 {
 		for _, n := range ns {
@@ -465,7 +453,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("[%s] %s: %s", ts, top, sm))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Topik Pembahasan (Chapters)", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Topik Pembahasan (Chapters)", Items: items})
 	}
 	if gq, ok := data["golden_quotes"].([]interface{}); ok && len(gq) > 0 {
 		var items []string
@@ -476,7 +464,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("\"%s\" — %s", quote, spk))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Kutipan Berkesan (Golden Quotes)", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Kutipan Berkesan (Golden Quotes)", Items: items})
 	}
 
 	// 8. Lecture Schema
@@ -492,7 +480,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %s: %s", cp, exp))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Konsep & Teori Utama", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Konsep & Teori Utama", Items: items})
 	}
 	if tg, ok := data["technical_glossary"].([]interface{}); ok && len(tg) > 0 {
 		var items []string
@@ -503,7 +491,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %s: %s", term, def))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Glosarium Istilah Teknis", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Glosarium Istilah Teknis", Items: items})
 	}
 	if erq, ok := data["exam_review_questions"].([]interface{}); ok && len(erq) > 0 {
 		var items []string
@@ -513,7 +501,7 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("• %s", ques))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Pertanyaan Ujian & Diskusi", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Pertanyaan Ujian & Diskusi", Items: items})
 	}
 
 	// 9. Music Lyrics Schema
@@ -529,13 +517,13 @@ func formatSummaryContent(summary *models.Summary) formattedSummary {
 				items = append(items, fmt.Sprintf("[%s]\n%s", sec, lyr))
 			}
 		}
-		res.Sections = append(res.Sections, formattedSection{Heading: "Struktur Lirik Lagu", Items: items})
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Struktur Lirik Lagu", Items: items})
 	}
 	if et, ok := data["emotional_tone"].(map[string]interface{}); ok {
 		mood, _ := et["primary_mood"].(string)
 		energy, _ := et["energy_level"].(string)
 		if mood != "" {
-			res.Sections = append(res.Sections, formattedSection{
+			res.Sections = append(res.Sections, dtos.FormattedSection{
 				Heading: "Analisis Suasana & Emosi",
 				Items:   []string{fmt.Sprintf("Suasana Hati: %s, Tingkat Energi: %s", mood, energy)},
 			})

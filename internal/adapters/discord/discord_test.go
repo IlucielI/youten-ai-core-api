@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
-	"code-base-golang/internal/services"
+	"code-base-golang/internal/dtos"
 )
 
 func TestDiscordAdapter(t *testing.T) {
@@ -22,7 +22,7 @@ func TestDiscordAdapter(t *testing.T) {
 			t.Errorf("expected provider name %s, got %s", constants.BotProviderDiscord, adapter.ProviderName())
 		}
 
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			ChannelID: "123",
 		})
 		if err == nil {
@@ -37,7 +37,7 @@ func TestDiscordAdapter(t *testing.T) {
 		}
 
 		recID := uuid.New()
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			RecordingID: recID,
 			GuildID:     "guild-1",
 			ChannelID:   "chan-1",
@@ -73,7 +73,7 @@ func TestDiscordAdapter(t *testing.T) {
 
 	t.Run("dispatch missing channel id returns validation error", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true, BotToken: "valid-bot-token"})
-		_, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		_, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			ChannelID: "",
 		})
 		if err == nil {
@@ -84,7 +84,7 @@ func TestDiscordAdapter(t *testing.T) {
 	t.Run("concurrent status and stop access", func(t *testing.T) {
 		adapter := NewAdapter(Config{Enabled: true, BotToken: "valid-bot-token"})
 		recID := uuid.New()
-		extID, err := adapter.Dispatch(ctx, services.BotDispatchParams{
+		extID, err := adapter.Dispatch(ctx, dtos.BotDispatchParams{
 			RecordingID: recID,
 			GuildID:     "guild-1",
 			ChannelID:   "chan-1",

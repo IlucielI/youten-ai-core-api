@@ -17,7 +17,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
@@ -46,7 +46,7 @@ func (s *Service) failAndLog(ctx context.Context, recordingID uuid.UUID, errCode
 }
 
 // ProcessImport handles asynchronous downloading and extracting of remote media streams (e.g. YouTube).
-func (s *Service) ProcessImport(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -129,7 +129,7 @@ func (s *Service) ProcessImport(ctx context.Context, p payload.RecordingPipeline
 }
 
 // ProcessExtraction handles the audio extraction stage of the recording pipeline.
-func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessExtraction(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -194,7 +194,7 @@ func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipe
 }
 
 // ProcessTranscription handles the speech-to-text diarization stage.
-func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -370,7 +370,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 }
 
 // ProcessSummarization executes the active template prompt against transcript segments to generate structured notes.
-func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessSummarization(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -535,7 +535,7 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 }
 
 // ProcessIndexing chunks transcript segments and generates pgvector embeddings for RAG retrieval.
-func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessIndexing(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -625,7 +625,7 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 }
 
 // ProcessAnalytics calculates speaker talk-time distribution and speaking share metrics.
-func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessAnalytics(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -684,7 +684,7 @@ func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipel
 }
 
 // ProcessChapterization generates navigational chapters and key moment highlights.
-func (s *Service) ProcessChapterization(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessChapterization(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -826,7 +826,7 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 	}
 
 	// Publish completed domain event (best-effort terminal notification).
-	if err := s.publishEvent(ctx, constants.TopicRecordingCompleted, payload.RecordingPipelinePayload{
+	if err := s.publishEvent(ctx, constants.TopicRecordingCompleted, queue.RecordingPipelinePayload{
 		RecordingID: recordingID,
 		Stage:       models.RecordingStatusCompleted,
 	}); err != nil {
@@ -838,7 +838,7 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 }
 
 // RetryRecording executes Smart State Recovery: resumes pipeline from failed stage without re-uploading file.
-func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*payload.RecordingPipelinePayload, error) {
+func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*queue.RecordingPipelinePayload, error) {
 	recording, err := s.repo.FindRecordingByID(ctx, recordingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find recording: %w", err)
@@ -848,7 +848,7 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 }
 
 // ResumeRecordingPipeline executes Smart State Recovery using an already-loaded recording model.
-func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models.Recording) (*payload.RecordingPipelinePayload, error) {
+func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models.Recording) (*queue.RecordingPipelinePayload, error) {
 	if recording.Status != models.RecordingStatusFailed {
 		return nil, constants.ErrInvalidRetryState
 	}
@@ -867,7 +867,7 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 		return nil, fmt.Errorf("failed to check existing transcript chunks: %w", err)
 	}
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recording.ID,
 		Template:    recording.SelectedTemplate,
 		Language:    recording.OutputLanguage,
@@ -962,7 +962,7 @@ func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errC
 	s.publishProgress(recordingID, models.RecordingStatusFailed, &errCode, &errMsg)
 
 	// Best-effort terminal failure notification.
-	if err := s.publishEvent(ctx, constants.TopicRecordingFailed, payload.RecordingPipelinePayload{
+	if err := s.publishEvent(ctx, constants.TopicRecordingFailed, queue.RecordingPipelinePayload{
 		RecordingID: recordingID,
 		Stage:       models.RecordingStatusFailed,
 	}); err != nil {
@@ -999,37 +999,6 @@ func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 	return true
 }
 
-// SpeakerRosterItem holds an identified speaker in the recording session.
-type SpeakerRosterItem struct {
-	Label       string `json:"label"`
-	Name        string `json:"name"`
-	Role        string `json:"role"`
-	Speaker     string `json:"speaker,omitempty"`      // alias for label
-	SpeakerName string `json:"speaker_name,omitempty"` // alias for name
-}
-
-// Normalize standardizes field mappings for SpeakerRosterItem.
-func (s *SpeakerRosterItem) Normalize() {
-	if s.Label == "" && s.Speaker != "" {
-		s.Label = s.Speaker
-	}
-	if s.Name == "" && s.SpeakerName != "" {
-		s.Name = s.SpeakerName
-	}
-	if s.Label != "" {
-		parts := strings.Fields(s.Label)
-		if len(parts) >= 2 && strings.EqualFold(parts[0], "speaker") {
-			s.Label = "Speaker " + parts[1]
-		}
-	}
-	if s.Name == "" {
-		s.Name = s.Label
-	}
-	if s.Role == "" {
-		s.Role = "Speaker"
-	}
-}
-
 var speakerExtractRegex = regexp.MustCompile(`(?i)(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:`)
 
 // extractSpeakerLabelsFromText scans text for acoustic speaker patterns (e.g. "Speaker 0:", "Speaker 1:").
@@ -1057,12 +1026,12 @@ func extractSpeakerLabelsFromText(text string) []string {
 }
 
 // defaultRosterFromSegments constructs a fallback roster when LLM roster discovery is unavailable.
-func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string) []SpeakerRosterItem {
+func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string) []dtos.SpeakerRosterItem {
 	acousticSpeakers := extractSpeakerLabelsFromText(diarizedRef)
 	if len(acousticSpeakers) > 0 {
-		var list []SpeakerRosterItem
+		var list []dtos.SpeakerRosterItem
 		for _, spk := range acousticSpeakers {
-			list = append(list, SpeakerRosterItem{
+			list = append(list, dtos.SpeakerRosterItem{
 				Label: spk,
 				Name:  spk,
 				Role:  "Speaker",
@@ -1072,12 +1041,12 @@ func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string
 	}
 
 	seenLabels := make(map[string]bool)
-	var list []SpeakerRosterItem
+	var list []dtos.SpeakerRosterItem
 	for _, seg := range segments {
 		lbl := strings.TrimSpace(seg.SpeakerLabel)
 		if lbl != "" && !seenLabels[lbl] {
 			seenLabels[lbl] = true
-			list = append(list, SpeakerRosterItem{
+			list = append(list, dtos.SpeakerRosterItem{
 				Label: lbl,
 				Name:  lbl,
 				Role:  "Speaker",
@@ -1088,7 +1057,7 @@ func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string
 		return list
 	}
 
-	return []SpeakerRosterItem{
+	return []dtos.SpeakerRosterItem{
 		{Label: "Speaker 0", Name: "Speaker 0", Role: "Speaker"},
 		{Label: "Speaker 1", Name: "Speaker 1", Role: "Speaker"},
 	}
@@ -1096,7 +1065,7 @@ func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string
 
 // discoverSpeakerRoster analyzes audio foundations (acoustic reference or transcript turns)
 // to discover the global cast of participants (handles 2, 3, or 10+ speakers reliably).
-func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.SegmentResult, diarizedRef string) []SpeakerRosterItem {
+func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.SegmentResult, diarizedRef string) []dtos.SpeakerRosterItem {
 	if s.llm == nil {
 		return defaultRosterFromSegments(segments, diarizedRef)
 	}
@@ -1178,12 +1147,12 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 		cleanJSON = cleanJSON[:idx+1]
 	}
 
-	var items []SpeakerRosterItem
+	var items []dtos.SpeakerRosterItem
 	if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
 		return defaultRosterFromSegments(segments, diarizedRef)
 	}
 
-	rosterMap := make(map[string]SpeakerRosterItem)
+	rosterMap := make(map[string]dtos.SpeakerRosterItem)
 	for i := range items {
 		items[i].Normalize()
 		if items[i].Label != "" {
@@ -1195,7 +1164,7 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 	acousticSpeakers := extractSpeakerLabelsFromText(diarizedRef)
 	for _, spk := range acousticSpeakers {
 		if _, exists := rosterMap[spk]; !exists {
-			item := SpeakerRosterItem{
+			item := dtos.SpeakerRosterItem{
 				Label: spk,
 				Name:  spk,
 				Role:  "Participant",
@@ -1272,7 +1241,7 @@ func sliceAcousticReference(ref string, startTime, endTime, totalDuration float6
 
 // pruneGhostSpeakers filters false-positive outlier speaker spikes (e.g. noise/laughter < 1.2% total words,
 // <= 3 segments) and reassigns them to adjacent primary speakers while preserving legitimate multi-speaker turns (up to 10+ speakers).
-func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]SpeakerRosterItem) []dtos.SegmentResult {
+func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]dtos.SpeakerRosterItem) []dtos.SegmentResult {
 	if len(segments) == 0 {
 		return segments
 	}
@@ -1379,7 +1348,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 	// Pass 1: Global Speaker Roster Discovery
 	rosterList := s.discoverSpeakerRoster(ctx, segments, rawRef)
-	rosterMap := make(map[string]SpeakerRosterItem)
+	rosterMap := make(map[string]dtos.SpeakerRosterItem)
 	for _, r := range rosterList {
 		rosterMap[r.Label] = r
 	}

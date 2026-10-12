@@ -1,6 +1,7 @@
 package strutil
 
 import (
+	"crypto/subtle"
 	"strings"
 	"unicode"
 )
@@ -136,4 +137,21 @@ func DetectLanguage(text string, fallback string) string {
 	}
 	return "id"
 }
+
+// ConstantTimeEqual performs a constant-time comparison of two strings to prevent timing side channels.
+func ConstantTimeEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// LikePattern returns a sanitized SQL LIKE wildcard pattern "%<trimmed-query>%".
+// If the input is empty or contains only whitespace, it returns an empty string.
+func LikePattern(query string) string {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return ""
+	}
+	return "%" + trimmed + "%"
+}
+
+
 

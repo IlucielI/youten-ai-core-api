@@ -30,6 +30,7 @@ type routeItem struct {
 	AdminAuth       bool   `yaml:"admin_auth,omitempty"`
 	Permission      string `yaml:"permission,omitempty"`
 	AdminPermission string `yaml:"admin_permission,omitempty"`
+	Scope           string `yaml:"scope,omitempty"`
 }
 
 // UnmarshalYAML implements case-insensitive mapping for route keys (e.g. method/Method, path/Path).
@@ -78,6 +79,10 @@ func (r *routeItem) UnmarshalYAML(value *yaml.Node) error {
 				if r.Permission == "" {
 					r.Permission = s
 				}
+			}
+		case "scope":
+			if s, ok := v.(string); ok {
+				r.Scope = s
 			}
 		}
 	}
@@ -159,13 +164,12 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 		if r.BasicAuth {
 			handlers = append(handlers, middlewares.BasicAuth(cfg.BasicAuthUsername, cfg.BasicAuthPassword))
 		}
-		if r.Auth {
+		isAdminRoute := r.AdminAuth || r.AdminPermission != "" || (r.Permission != "" && strings.HasPrefix(r.Path, "/v1/admin/"))
+		if r.Auth || r.Scope != "" || (!isAdminRoute && r.Permission != "") {
 			handlers = append(handlers, middlewares.RequireAuth(validator))
-		}
-		if r.OptionalAuth {
+		} else if r.OptionalAuth {
 			handlers = append(handlers, middlewares.OptionalAuth(validator))
 		}
-		isAdminRoute := r.AdminAuth || r.AdminPermission != "" || (r.Permission != "" && strings.HasPrefix(r.Path, "/v1/admin/"))
 		if isAdminRoute {
 			if adminValidator == nil {
 				log.Fatalf("route configuration error: admin validator required for route %s %s", r.Method, r.Path)
@@ -178,8 +182,11 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 			if perm != "" {
 				handlers = append(handlers, middlewares.RequireAdminPermission(perm))
 			}
-		} else if r.Auth && r.Permission != "" {
+		} else if r.Permission != "" {
 			handlers = append(handlers, middlewares.RequireUserPermission(r.Permission))
+		}
+		if r.Scope != "" {
+			handlers = append(handlers, middlewares.RequireScope(r.Scope))
 		}
 		handlers = append(handlers, fn)
 

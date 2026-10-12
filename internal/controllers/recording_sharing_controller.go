@@ -2,9 +2,7 @@
 package controllers
 
 import (
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -29,12 +27,7 @@ func (c *Controllers) DeleteRecording(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recording deleted successfully",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "recording deleted successfully")
 }
 
 // ClaimRecording handles claiming a guest recording session to the authenticated user.
@@ -49,22 +42,12 @@ func (c *Controllers) ClaimRecording(ctx *gin.Context) {
 
 	var req dtos.ClaimRecordingRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateClaimRecordingRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -81,22 +64,12 @@ func (c *Controllers) ClaimBulkRecordings(ctx *gin.Context) {
 
 	var req dtos.BulkClaimRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateBulkClaimRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
@@ -121,22 +94,12 @@ func (c *Controllers) ToggleRecordingShare(ctx *gin.Context) {
 
 	var req dtos.ShareToggleRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 
 	if err := validations.ValidateShareToggleRequest(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Status:    constants.ResponseStatusFail,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
 

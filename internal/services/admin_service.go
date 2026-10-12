@@ -712,9 +712,18 @@ func (s *Service) AdminAssignUserRole(ctx context.Context, meta AdminActionMeta,
 	return &resp, nil
 }
 
-// AdminListTemplates retrieves all prompt templates for administrative management.
-func (s *Service) AdminListTemplates(ctx context.Context) (*dtos.AdminTemplateListResponse, error) {
-	templates, err := s.repo.ListAllTemplates(ctx)
+// AdminListTemplates retrieves paginated prompt templates for administrative management.
+func (s *Service) AdminListTemplates(ctx context.Context, q dtos.AdminTemplateListQuery) (*dtos.AdminTemplateListResponse, error) {
+	q.SetDefaults()
+
+	offset := (q.Page - 1) * q.Limit
+	repoQuery := repositories.ListTemplatesQuery{
+		Search: q.Search,
+		Offset: offset,
+		Limit:  q.Limit,
+	}
+
+	templates, total, err := s.repo.ListTemplatesPaginated(ctx, repoQuery)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
@@ -735,7 +744,22 @@ func (s *Service) AdminListTemplates(ctx context.Context) (*dtos.AdminTemplateLi
 		})
 	}
 
-	return &dtos.AdminTemplateListResponse{Items: items}, nil
+	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
+	if totalPages == 0 && total == 0 {
+		totalPages = 0
+	} else if totalPages == 0 {
+		totalPages = 1
+	}
+
+	return &dtos.AdminTemplateListResponse{
+		Items: items,
+		Pagination: dtos.PaginationMeta{
+			CurrentPage: q.Page,
+			PageSize:    q.Limit,
+			TotalItems:  total,
+			TotalPages:  totalPages,
+		},
+	}, nil
 }
 
 // AdminCreateTemplate creates a new prompt template and writes an administrative audit log.

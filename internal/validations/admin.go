@@ -362,6 +362,18 @@ func ValidateAdminUserRoleListQuery(q *dtos.AdminUserRoleListQuery) error {
 	)
 }
 
+// ValidateAdminTemplateListQuery validates prompt template listing pagination queries.
+func ValidateAdminTemplateListQuery(q *dtos.AdminTemplateListQuery) error {
+	if q == nil {
+		return errors.New("query is required")
+	}
+	return validation.ValidateStruct(q,
+		validation.Field(&q.Page, validation.Min(1)),
+		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
+		validation.Field(&q.Search, validation.Length(0, 100)),
+	)
+}
+
 // ValidateAdminForgotPasswordRequest validates a password reset request payload for admin.
 func ValidateAdminForgotPasswordRequest(r *dtos.AdminForgotPasswordRequest) error {
 	if r == nil {

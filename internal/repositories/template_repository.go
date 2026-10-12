@@ -55,6 +55,36 @@ func (r *Repositories) ListActiveTemplates(ctx context.Context) ([]models.Templa
 	return list, nil
 }
 
+// ListTemplatesQuery holds filter criteria for listing prompt templates.
+type ListTemplatesQuery struct {
+	Search string
+	Offset int
+	Limit  int
+}
+
+// ListTemplatesPaginated retrieves paginated prompt templates matching search criteria,
+// ordering by category_key ascending.
+func (r *Repositories) ListTemplatesPaginated(ctx context.Context, q ListTemplatesQuery) ([]models.Template, int64, error) {
+	var templates []models.Template
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&models.Template{})
+	if q.Search != "" {
+		pattern := "%" + q.Search + "%"
+		query = query.Where("name ILIKE ? OR category_key ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := query.Order("category_key ASC").Limit(q.Limit).Offset(q.Offset).Find(&templates).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return templates, total, nil
+}
+
 // ListAllTemplates lists all templates (both active and inactive) ordered by category key.
 func (r *Repositories) ListAllTemplates(ctx context.Context) ([]models.Template, error) {
 	var list []models.Template

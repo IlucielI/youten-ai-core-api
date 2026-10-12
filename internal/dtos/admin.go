@@ -207,9 +207,34 @@ type AdminTemplateItem struct {
 	UpdatedAt    time.Time              `json:"updated_at"`
 }
 
-// AdminTemplateListResponse encapsulates a list of prompt templates.
+// AdminTemplateListQuery defines query parameters for paginating and filtering prompt templates.
+type AdminTemplateListQuery struct {
+	Search string `form:"search" json:"search"`
+	Page   int    `form:"page" json:"page"`
+	Limit  int    `form:"limit" json:"limit"`
+}
+
+// SetDefaults ensures fallback defaults for pagination parameters.
+func (q *AdminTemplateListQuery) SetDefaults() {
+	q.Search = strings.TrimSpace(q.Search)
+	if len(q.Search) > 100 {
+		q.Search = q.Search[:100]
+	}
+
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Limit < 1 {
+		q.Limit = 10
+	} else if q.Limit > 100 {
+		q.Limit = 100
+	}
+}
+
+// AdminTemplateListResponse encapsulates a list of prompt templates and pagination metadata.
 type AdminTemplateListResponse struct {
-	Items []AdminTemplateItem `json:"items"`
+	Items      []AdminTemplateItem `json:"items"`
+	Pagination PaginationMeta      `json:"pagination"`
 }
 
 // AdminCreateTemplateRequest defines the payload for creating a new prompt template.

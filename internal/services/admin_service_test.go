@@ -543,18 +543,22 @@ func TestService_AdminUpdateRole(t *testing.T) {
 }
 
 func TestService_AdminListTemplates(t *testing.T) {
-	t.Run("success returns all templates", func(t *testing.T) {
+	t.Run("success returns paginated templates", func(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
 		tmplID := uuid.New()
 		now := time.Now()
 
-		mock.ExpectQuery(`SELECT \* FROM "templates" ORDER BY category_key ASC`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "templates"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "templates" ORDER BY category_key ASC LIMIT $1`)).
+			WithArgs(10).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "name", "description", "prompt", "output_schema", "version", "is_active", "created_at", "updated_at"}).
 				AddRow(tmplID, "MOM", "Minutes of Meeting", "Standard MOM", "Extract minutes...", []byte(`{}`), 1, true, now, now))
 
-		resp, err := svc.AdminListTemplates(context.Background())
+		resp, err := svc.AdminListTemplates(context.Background(), dtos.AdminTemplateListQuery{})
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -564,16 +568,19 @@ func TestService_AdminListTemplates(t *testing.T) {
 		if resp.Items[0].CategoryKey != "MOM" {
 			t.Errorf("expected CategoryKey MOM, got %s", resp.Items[0].CategoryKey)
 		}
+		if resp.Pagination.CurrentPage != 1 || resp.Pagination.PageSize != 10 || resp.Pagination.TotalItems != 1 || resp.Pagination.TotalPages != 1 {
+			t.Errorf("unexpected pagination: %+v", resp.Pagination)
+		}
 	})
 
 	t.Run("db failure returns error", func(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
-		mock.ExpectQuery(`SELECT \* FROM "templates" ORDER BY category_key ASC`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "templates"`)).
 			WillReturnError(errors.New("db error"))
 
-		_, err := svc.AdminListTemplates(context.Background())
+		_, err := svc.AdminListTemplates(context.Background(), dtos.AdminTemplateListQuery{})
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}

@@ -1563,6 +1563,21 @@ paths:
       security:
         - AdminAuth: []
       description: Lists all AI summary prompt templates (requires templates:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: search
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           description: Prompt templates list
@@ -2789,9 +2804,14 @@ components:
         - type: object
           properties:
             data:
-              type: array
-              items:
-                $ref: '#/components/schemas/AdminTemplateItem'
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminTemplateItem'
+                pagination:
+                  $ref: '#/components/schemas/PaginationMeta'
 
     AdminTemplateItem:
       type: object

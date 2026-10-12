@@ -11,7 +11,20 @@ import (
 
 // AdminListTemplates handles GET /v1/admin/templates.
 func (c *Controllers) AdminListTemplates(ctx *gin.Context) {
-	resp, err := c.svc.AdminListTemplates(ctx.Request.Context())
+	var query dtos.AdminTemplateListQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
+		return
+	}
+
+	query.SetDefaults()
+
+	if err := validations.ValidateAdminTemplateListQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	resp, err := c.svc.AdminListTemplates(ctx.Request.Context(), query)
 	if err != nil {
 		c.wrapError(ctx, err)
 		return

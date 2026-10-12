@@ -1,31 +1,31 @@
 package constants
 
-// Administrative Audit Entities
+// Administrative Audit Entities (consistent lowercase dot notation)
 const (
-	AuditEntityAdminUser    = "ADMIN_USER"
+	AuditEntityAdmin        = "admin"
 	AuditEntityUser         = "user"
 	AuditEntityRole         = "role"
-	AuditEntityUserRole     = "user_role"
+	AuditEntityUserRole     = "user.role"
 	AuditEntityTemplate     = "template"
 	AuditEntityRecording    = "recording"
-	AuditEntitySystemConfig = "system_config"
+	AuditEntitySystemConfig = "system.config"
 	AuditEntityReport       = "report"
 )
 
-// Administrative Audit Actions
+// Administrative Audit Actions (consistent lowercase dot notation matching role.create)
 const (
-	AuditActionAdminLogin         = "ADMIN_LOGIN"
-	AuditActionAdminPasswordReset = "ADMIN_PASSWORD_RESET"
-	AuditActionUserQuotaOverride  = "user.quota_override"
-	AuditActionUserRevokeSessions = "user.revoke_sessions"
-	AuditActionUserAssignRole     = "user.assign_role"
+	AuditActionAdminLogin         = "admin.login"
+	AuditActionAdminPasswordReset = "admin.password.reset"
+	AuditActionUserQuotaOverride  = "user.quota.override"
+	AuditActionUserRevokeSessions = "user.sessions.revoke"
+	AuditActionUserAssignRole     = "user.role.assign"
 	AuditActionRoleCreate         = "role.create"
 	AuditActionRoleUpdate         = "role.update"
-	AuditActionUserRoleCreate     = "user_role.create"
-	AuditActionUserRoleUpdate     = "user_role.update"
+	AuditActionUserRoleCreate     = "user.role.create"
+	AuditActionUserRoleUpdate     = "user.role.update"
 	AuditActionTemplateCreate     = "template.create"
 	AuditActionTemplateUpdate     = "template.update"
-	AuditActionPipelineDLQRetry   = "pipeline.dlq_retry"
-	AuditActionConfigUpdateFlags  = "config.update_flags"
+	AuditActionPipelineDLQRetry   = "pipeline.dlq.retry"
+	AuditActionConfigUpdateFlags  = "config.flags.update"
 	AuditActionReportResolve      = "report.resolve"
 )

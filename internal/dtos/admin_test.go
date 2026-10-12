@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"code-base-golang/internal/constants"
 )
 
 func TestAdminUserListQuery_SetDefaults(t *testing.T) {
@@ -491,8 +493,8 @@ func TestAdminAuditLogListResponse(t *testing.T) {
 				AdminID:       &adminID,
 				AdminUsername: &username,
 				AdminFullName: &fullname,
-				Action:        "user.quota_override",
-				Entity:        "user",
+				Action:        constants.AuditActionUserQuotaOverride,
+				Entity:        constants.AuditEntityUser,
 				CreatedAt:     now,
 			},
 		},
@@ -507,8 +509,8 @@ func TestAdminAuditLogListResponse(t *testing.T) {
 	if len(resp.Items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(resp.Items))
 	}
-	if resp.Items[0].Action != "user.quota_override" {
-		t.Errorf("expected action 'user.quota_override', got %q", resp.Items[0].Action)
+	if resp.Items[0].Action != constants.AuditActionUserQuotaOverride {
+		t.Errorf("expected action %q, got %q", constants.AuditActionUserQuotaOverride, resp.Items[0].Action)
 	}
 }
 

@@ -1337,15 +1337,15 @@ func TestService_AdminListAuditLogs(t *testing.T) {
 		now := time.Now()
 
 		mock.ExpectQuery(`SELECT count\(\*\) FROM "admin_audit_logs" WHERE action = \$1`).
-			WithArgs("user.quota_override").
+			WithArgs(constants.AuditActionUserQuotaOverride).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 
 		mock.ExpectQuery(`SELECT \* FROM "admin_audit_logs" WHERE action = \$1 ORDER BY created_at DESC LIMIT \$2`).
-			WithArgs("user.quota_override", 20).
+			WithArgs(constants.AuditActionUserQuotaOverride, 20).
 			WillReturnRows(sqlmock.NewRows([]string{
 				"id", "admin_id", "action", "entity", "entity_id", "payload", "ip_address", "user_agent", "created_at",
 			}).AddRow(
-				logID, adminID, "user.quota_override", "user", "target-123", []byte(`{}`), "127.0.0.1", "test-agent", now,
+				logID, adminID, constants.AuditActionUserQuotaOverride, constants.AuditEntityUser, "target-123", []byte(`{}`), "127.0.0.1", "test-agent", now,
 			))
 
 		mock.ExpectQuery(`SELECT \* FROM "admin_users" WHERE "admin_users"\."id" = \$1 AND "admin_users"\."deleted_at" IS NULL`).
@@ -1353,7 +1353,7 @@ func TestService_AdminListAuditLogs(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name"}).AddRow(adminID, "auditadmin", "Audit Admin"))
 
 		resp, err := svc.AdminListAuditLogs(context.Background(), dtos.AdminAuditLogListQuery{
-			Action: "user.quota_override",
+			Action: constants.AuditActionUserQuotaOverride,
 			Page:   1,
 			Limit:  20,
 		})
@@ -1363,8 +1363,8 @@ func TestService_AdminListAuditLogs(t *testing.T) {
 		if len(resp.Items) != 1 {
 			t.Fatalf("expected 1 audit item, got %d", len(resp.Items))
 		}
-		if resp.Items[0].Action != "user.quota_override" {
-			t.Errorf("expected action 'user.quota_override', got %q", resp.Items[0].Action)
+		if resp.Items[0].Action != constants.AuditActionUserQuotaOverride {
+			t.Errorf("expected action %q, got %q", constants.AuditActionUserQuotaOverride, resp.Items[0].Action)
 		}
 		if resp.Items[0].AdminUsername == nil || *resp.Items[0].AdminUsername != "auditadmin" {
 			t.Errorf("expected username 'auditadmin', got %v", resp.Items[0].AdminUsername)

@@ -13,7 +13,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -87,7 +87,7 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta dtos.AdminAction
 	}
 
 	tmplIDStr := tmpl.ID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionTemplateCreate,
 		Entity:   constants.AuditEntityTemplate,
@@ -150,7 +150,7 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminAction
 	}
 
 	tmplIDStr := tmpl.ID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionTemplateUpdate,
 		Entity:   constants.AuditEntityTemplate,

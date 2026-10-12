@@ -12,7 +12,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -118,7 +118,7 @@ func (s *Service) AdminResolveReport(ctx context.Context, meta dtos.AdminActionM
 	}
 
 	entityIDStr := reportID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:   meta.AdminIDPtr(),
 		Action:    constants.AuditActionReportResolve,
 		Entity:    constants.AuditEntityReport,

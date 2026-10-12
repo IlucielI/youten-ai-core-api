@@ -17,7 +17,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
@@ -125,7 +125,7 @@ func (s *Service) UploadRecording(
 
 	// Publish background extraction event
 	if s.publisher != nil {
-		eventPayload := payload.RecordingPipelinePayload{
+		eventPayload := queue.RecordingPipelinePayload{
 			RecordingID: rec.ID,
 			SourcePath:  objectKey,
 			Template:    rec.SelectedTemplate,
@@ -286,7 +286,7 @@ func (s *Service) ImportRecordingFromURL(
 		}
 
 		if s.publisher != nil {
-			importPayload := payload.RecordingPipelinePayload{
+			importPayload := queue.RecordingPipelinePayload{
 				RecordingID: rec.ID,
 				URL:         canonicalURL,
 				Template:    rec.SelectedTemplate,
@@ -418,7 +418,7 @@ func (s *Service) ImportRecordingFromURL(
 
 	// 7. Publish background extraction event
 	if s.publisher != nil {
-		eventPayload := payload.RecordingPipelinePayload{
+		eventPayload := queue.RecordingPipelinePayload{
 			RecordingID: rec.ID,
 			SourcePath:  objectKey,
 			Template:    rec.SelectedTemplate,

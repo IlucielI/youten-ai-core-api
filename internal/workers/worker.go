@@ -7,7 +7,7 @@ import (
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/services"
 )
 
@@ -81,8 +81,8 @@ func (w *WorkerServer) HandleRecordingImport(ctx context.Context, msg []byte) bo
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse import payload: %v", err)
 		return false
 	}
@@ -101,8 +101,8 @@ func (w *WorkerServer) HandleRecordingExtract(ctx context.Context, msg []byte) b
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse extract payload: %v", err)
 		return false
 	}
@@ -121,8 +121,8 @@ func (w *WorkerServer) HandleRecordingTranscribe(ctx context.Context, msg []byte
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse transcribe payload: %v", err)
 		return false
 	}
@@ -141,8 +141,8 @@ func (w *WorkerServer) HandleRecordingSummarize(ctx context.Context, msg []byte)
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse summarize payload: %v", err)
 		return false
 	}
@@ -161,8 +161,8 @@ func (w *WorkerServer) HandleRecordingIndex(ctx context.Context, msg []byte) boo
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse index payload: %v", err)
 		return false
 	}
@@ -181,8 +181,8 @@ func (w *WorkerServer) HandleRecordingAnalytics(ctx context.Context, msg []byte)
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse analytics payload: %v", err)
 		return false
 	}
@@ -200,8 +200,8 @@ func (w *WorkerServer) HandleRecordingChapterize(ctx context.Context, msg []byte
 	if w.svc == nil {
 		return false
 	}
-	var p payload.RecordingPipelinePayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.RecordingPipelinePayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse chapterize payload: %v", err)
 		return false
 	}
@@ -219,8 +219,8 @@ func (w *WorkerServer) HandleAdminAuditLog(ctx context.Context, msg []byte) bool
 	if w.svc == nil {
 		return false
 	}
-	var p payload.AdminAuditPayload
-	if err := payload.Parse(msg, &p); err != nil {
+	var p queue.AdminAuditPayload
+	if err := queue.Parse(msg, &p); err != nil {
 		log.Printf("[WORKER ERROR] failed to parse admin audit payload: %v", err)
 		return false
 	}

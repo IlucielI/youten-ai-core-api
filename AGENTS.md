@@ -94,7 +94,7 @@ This document defines the architectural invariants, conventions, and workflows f
 8. **Unit Tests**: Add tests alongside code using Go's standard `testing` package.
 
 ### Adding an Asynchronous Event / Worker
-1. Define event payload struct in `internal/payload/`.
+1. Define queue payload struct in `internal/queue/`.
 2. Publish event via `services.EventPublisher.Publish(ctx, exchange, routingKey, body)`.
 3. Register worker handler in `internal/workers/worker.go` using `w.sub.Subscribe(ctx, queue, exchange, routingKey, handler)`.
 

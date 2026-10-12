@@ -12,7 +12,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
 	"code-base-golang/internal/templates"
@@ -48,7 +48,7 @@ func (s *Service) AdminLogin(ctx context.Context, req dtos.AdminLoginRequest, me
 
 	// Record audit log asynchronously via broker
 	entityIDStr := admin.ID.String()
-	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
+	s.emitAdminAuditLog(ctx, queue.AdminAuditPayload{
 		AdminID:   &admin.ID,
 		Action:    constants.AuditActionAdminLogin,
 		Entity:    constants.AuditEntityAdmin,
@@ -174,7 +174,7 @@ func (s *Service) AdminResetPassword(ctx context.Context, req dtos.AdminResetPas
 	}
 
 	entityIDStr := admin.ID.String()
-	s.emitAdminAuditLog(ctx, payload.AdminAuditPayload{
+	s.emitAdminAuditLog(ctx, queue.AdminAuditPayload{
 		AdminID:   &admin.ID,
 		Action:    constants.AuditActionAdminPasswordReset,
 		Entity:    constants.AuditEntityAdmin,

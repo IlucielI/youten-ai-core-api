@@ -10,7 +10,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -83,7 +83,7 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminAct
 	effectiveQuota := resolveDailyQuota(user)
 
 	entityIDStr := userID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserQuotaOverride,
 		Entity:   constants.AuditEntityUser,
@@ -119,7 +119,7 @@ func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta dtos.AdminAc
 	}
 
 	entityIDStr := userID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserRevokeSessions,
 		Entity:   constants.AuditEntityUser,
@@ -171,7 +171,7 @@ func (s *Service) AdminAssignUserRole(ctx context.Context, meta dtos.AdminAction
 	}
 
 	userIDStr := user.ID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserAssignRole,
 		Entity:   constants.AuditEntityUser,

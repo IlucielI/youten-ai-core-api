@@ -17,7 +17,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
@@ -46,7 +46,7 @@ func (s *Service) failAndLog(ctx context.Context, recordingID uuid.UUID, errCode
 }
 
 // ProcessImport handles asynchronous downloading and extracting of remote media streams (e.g. YouTube).
-func (s *Service) ProcessImport(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -126,7 +126,7 @@ func (s *Service) ProcessImport(ctx context.Context, p payload.RecordingPipeline
 }
 
 // ProcessExtraction handles the audio extraction stage of the recording pipeline.
-func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessExtraction(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -191,7 +191,7 @@ func (s *Service) ProcessExtraction(ctx context.Context, p payload.RecordingPipe
 }
 
 // ProcessTranscription handles the speech-to-text diarization stage.
-func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -367,7 +367,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p payload.RecordingP
 }
 
 // ProcessSummarization executes the active template prompt against transcript segments to generate structured notes.
-func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessSummarization(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -532,7 +532,7 @@ func (s *Service) ProcessSummarization(ctx context.Context, p payload.RecordingP
 }
 
 // ProcessIndexing chunks transcript segments and generates pgvector embeddings for RAG retrieval.
-func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessIndexing(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -622,7 +622,7 @@ func (s *Service) ProcessIndexing(ctx context.Context, p payload.RecordingPipeli
 }
 
 // ProcessAnalytics calculates speaker talk-time distribution and speaking share metrics.
-func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessAnalytics(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -681,7 +681,7 @@ func (s *Service) ProcessAnalytics(ctx context.Context, p payload.RecordingPipel
 }
 
 // ProcessChapterization generates navigational chapters and key moment highlights.
-func (s *Service) ProcessChapterization(ctx context.Context, p payload.RecordingPipelinePayload) error {
+func (s *Service) ProcessChapterization(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
 	if err != nil {
 		return fmt.Errorf("failed to find recording: %w", err)
@@ -823,7 +823,7 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 	}
 
 	// Publish completed domain event (best-effort terminal notification).
-	if err := s.publishEvent(ctx, constants.TopicRecordingCompleted, payload.RecordingPipelinePayload{
+	if err := s.publishEvent(ctx, constants.TopicRecordingCompleted, queue.RecordingPipelinePayload{
 		RecordingID: recordingID,
 		Stage:       models.RecordingStatusCompleted,
 	}); err != nil {
@@ -835,7 +835,7 @@ func (s *Service) CheckAndCompleteRecording(ctx context.Context, recordingID uui
 }
 
 // RetryRecording executes Smart State Recovery: resumes pipeline from failed stage without re-uploading file.
-func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*payload.RecordingPipelinePayload, error) {
+func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*queue.RecordingPipelinePayload, error) {
 	recording, err := s.repo.FindRecordingByID(ctx, recordingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find recording: %w", err)
@@ -845,7 +845,7 @@ func (s *Service) RetryRecording(ctx context.Context, recordingID uuid.UUID) (*p
 }
 
 // ResumeRecordingPipeline executes Smart State Recovery using an already-loaded recording model.
-func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models.Recording) (*payload.RecordingPipelinePayload, error) {
+func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models.Recording) (*queue.RecordingPipelinePayload, error) {
 	if recording.Status != models.RecordingStatusFailed {
 		return nil, constants.ErrInvalidRetryState
 	}
@@ -864,7 +864,7 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 		return nil, fmt.Errorf("failed to check existing transcript chunks: %w", err)
 	}
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recording.ID,
 		Template:    recording.SelectedTemplate,
 		Language:    recording.OutputLanguage,
@@ -939,7 +939,7 @@ func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errC
 	s.publishProgress(recordingID, models.RecordingStatusFailed, &errCode, &errMsg)
 
 	// Best-effort terminal failure notification.
-	if err := s.publishEvent(ctx, constants.TopicRecordingFailed, payload.RecordingPipelinePayload{
+	if err := s.publishEvent(ctx, constants.TopicRecordingFailed, queue.RecordingPipelinePayload{
 		RecordingID: recordingID,
 		Stage:       models.RecordingStatusFailed,
 	}); err != nil {

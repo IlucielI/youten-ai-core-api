@@ -22,7 +22,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/services"
 )
@@ -123,7 +123,7 @@ func TestPipelineService_ProcessExtraction_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		SourcePath:  audioPath,
 	}
@@ -176,7 +176,7 @@ func TestPipelineService_ProcessTranscription_NoSpeech(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		AudioPath:   audioPath,
 	}
@@ -382,7 +382,7 @@ func TestPipelineService_ProcessImport_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 		Template:    "GENERAL",
@@ -433,7 +433,7 @@ func TestPipelineService_ProcessImport_ExtractorFailure(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 	}
@@ -501,7 +501,7 @@ func TestPipelineService_ProcessImport_GoogleDrive_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 		Template:    "GENERAL",
@@ -552,7 +552,7 @@ func TestPipelineService_ProcessImport_GoogleDrive_PermissionDenied(t *testing.T
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 	}
@@ -607,7 +607,7 @@ func TestPipelineService_ProcessImport_UnsupportedMediaType(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	p := payload.RecordingPipelinePayload{
+	p := queue.RecordingPipelinePayload{
 		RecordingID: recID,
 		URL:         targetURL,
 	}

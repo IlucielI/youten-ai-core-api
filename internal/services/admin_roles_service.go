@@ -12,7 +12,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -89,7 +89,7 @@ func (s *Service) AdminCreateRole(ctx context.Context, meta dtos.AdminActionMeta
 	}
 
 	roleIDStr := role.ID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionRoleCreate,
 		Entity:   constants.AuditEntityRole,
@@ -153,7 +153,7 @@ func (s *Service) AdminUpdateRole(ctx context.Context, meta dtos.AdminActionMeta
 	}
 
 	roleIDStr := role.ID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionRoleUpdate,
 		Entity:   constants.AuditEntityRole,
@@ -275,7 +275,7 @@ func (s *Service) AdminCreateUserRole(ctx context.Context, meta dtos.AdminAction
 	}
 
 	roleIDStr := role.ID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserRoleCreate,
 		Entity:   constants.AuditEntityUserRole,
@@ -362,7 +362,7 @@ func (s *Service) AdminUpdateUserRole(ctx context.Context, meta dtos.AdminAction
 	}
 
 	roleIDStr := role.ID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionUserRoleUpdate,
 		Entity:   constants.AuditEntityUserRole,

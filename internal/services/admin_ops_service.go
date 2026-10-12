@@ -11,7 +11,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 )
 
 // AdminGetDLQMessages retrieves failed and stuck pipeline items for DLQ monitoring.
@@ -165,7 +165,7 @@ func (s *Service) AdminRetryDLQJob(ctx context.Context, meta dtos.AdminActionMet
 	}
 
 	entityIDStr := req.RecordingID.String()
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:  meta.AdminIDPtr(),
 		Action:   constants.AuditActionPipelineDLQRetry,
 		Entity:   constants.AuditEntityRecording,
@@ -225,7 +225,7 @@ func (s *Service) AdminUpdateSystemConfig(ctx context.Context, meta dtos.AdminAc
 		"bot_waitlist_enabled": cfg.BotWaitlistEnabled,
 	}
 
-	auditLog := payload.AdminAuditPayload{
+	auditLog := queue.AdminAuditPayload{
 		AdminID:   meta.AdminIDPtr(),
 		Action:    constants.AuditActionConfigUpdateFlags,
 		Entity:    constants.AuditEntitySystemConfig,

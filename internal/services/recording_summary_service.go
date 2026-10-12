@@ -17,7 +17,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/payload"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/apperror"
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/templates"
@@ -80,7 +80,7 @@ func (s *Service) UpdateTranscriptSegment(ctx context.Context, id uuid.UUID, seg
 	}
 
 	// Trigger async re-indexing so RAG chunk embeddings stay in sync
-	_ = s.publishEvent(ctx, constants.TopicRecordingIndex, payload.RecordingPipelinePayload{
+	_ = s.publishEvent(ctx, constants.TopicRecordingIndex, queue.RecordingPipelinePayload{
 		RecordingID: rec.ID,
 	})
 

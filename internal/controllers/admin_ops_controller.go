@@ -1,8 +1,6 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -18,10 +16,20 @@ func (c *Controllers) AdminGetDLQPipeline(ctx *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "20"))
+	var query dtos.AdminDLQListQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
+		return
+	}
 
-	resp, err := c.svc.AdminGetDLQMessages(ctx.Request.Context(), meta, page, limit)
+	query.SetDefaults()
+
+	if err := validations.ValidateAdminDLQListQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	resp, err := c.svc.AdminGetDLQMessages(ctx.Request.Context(), meta, query.Page, query.Limit)
 	if err != nil {
 		c.wrapError(ctx, err)
 		return

@@ -287,6 +287,24 @@ type DLQMessageItem struct {
 	UserEmail    string    `json:"user_email,omitempty"`
 }
 
+// AdminDLQListQuery defines query parameters for paginating and monitoring DLQ messages.
+type AdminDLQListQuery struct {
+	Page  int `form:"page" json:"page"`
+	Limit int `form:"limit" json:"limit"`
+}
+
+// SetDefaults ensures fallback defaults for DLQ pagination parameters.
+func (q *AdminDLQListQuery) SetDefaults() {
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Limit < 1 {
+		q.Limit = 20
+	} else if q.Limit > 100 {
+		q.Limit = 100
+	}
+}
+
 // DLQMessagesResponse represents the monitor output for DLQ pipeline messages and stuck recordings.
 type DLQMessagesResponse struct {
 	Total       int64            `json:"total"`

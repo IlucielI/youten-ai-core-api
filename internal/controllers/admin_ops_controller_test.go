@@ -87,6 +87,30 @@ func TestControllers_AdminGetDLQPipeline(t *testing.T) {
 			t.Fatalf("expected status 401, got %d", w.Code)
 		}
 	})
+
+	t.Run("invalid query returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			ctx := ctxmeta.WithAdminAuthUser(c.Request.Context(), ctxmeta.AdminAuthUser{
+				AdminID:  uuid.New(),
+				Username: "ops_admin",
+			})
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		})
+		r.GET("/v1/admin/pipeline/dlq", ctrls.AdminGetDLQPipeline)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/pipeline/dlq?page=invalid", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400 for invalid query parameter, got %d", w.Code)
+		}
+	})
 }
 
 func TestControllers_AdminRetryDLQJob(t *testing.T) {

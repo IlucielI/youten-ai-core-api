@@ -409,3 +409,14 @@ func ValidateAdminResetPasswordRequest(r *dtos.AdminResetPasswordRequest) error 
 	)
 }
 
+// ValidateAdminDLQListQuery validates DLQ monitoring pagination queries.
+func ValidateAdminDLQListQuery(q *dtos.AdminDLQListQuery) error {
+	if q == nil {
+		return errors.New("query is required")
+	}
+	return validation.ValidateStruct(q,
+		validation.Field(&q.Page, validation.Min(1)),
+		validation.Field(&q.Limit, validation.Min(1), validation.Max(100)),
+	)
+}
+

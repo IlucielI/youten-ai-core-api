@@ -110,6 +110,34 @@ const (
 	ExportFormatPDF      ExportFormat = "pdf"
 )
 
+// Meeting bot capability availability statuses.
+const (
+	CapabilityStatusAvailable  = "available"
+	CapabilityStatusComingSoon = "coming_soon"
+)
+
+// Bot webhook event types.
+const (
+	BotWebhookEventWaitingAdmit     = "waiting_admit"
+	BotWebhookEventJoined           = "joined"
+	BotWebhookEventCallConnected    = "call_connected"
+	BotWebhookEventRecording        = "recording"
+	BotWebhookEventRecordingStarted = "recording_started"
+	BotWebhookEventCompleted        = "completed"
+	BotWebhookEventFailed           = "failed"
+)
+
+// Bot error codes.
+const (
+	ErrCodeInvalidProvider      = "INVALID_PROVIDER"
+	ErrCodeFeatureComingSoon    = "FEATURE_COMING_SOON"
+	ErrCodeInvalidWebhookSecret = "INVALID_WEBHOOK_SECRET"
+	ErrCodeSessionNotFound      = "SESSION_NOT_FOUND"
+	ErrCodeInvalidEvent         = "INVALID_EVENT"
+	ErrCodeBotSessionFailed     = "BOT_SESSION_FAILED"
+)
+
 // DefaultExpiredRecordingsCleanupBatchSize defines the fallback batch size when purging expired guest recordings.
 const DefaultExpiredRecordingsCleanupBatchSize = 100
+
 

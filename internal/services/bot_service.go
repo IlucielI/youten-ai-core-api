@@ -19,11 +19,11 @@ import (
 func (s *Service) DispatchMeetingBot(ctx context.Context, req dtos.DispatchBotRequest) (*dtos.DispatchBotResponse, error) {
 	provider, exists := s.BotProvider(req.Provider)
 	if !exists {
-		return nil, apperror.New(http.StatusBadRequest, "INVALID_PROVIDER", fmt.Sprintf("unsupported bot provider %q", req.Provider))
+		return nil, apperror.New(http.StatusBadRequest, constants.ErrCodeInvalidProvider, fmt.Sprintf("unsupported bot provider %q", req.Provider))
 	}
 
 	if !provider.IsEnabled() {
-		return nil, apperror.New(http.StatusNotImplemented, "FEATURE_COMING_SOON", fmt.Sprintf("%s voice bot is currently unavailable or coming soon", req.Provider))
+		return nil, apperror.New(http.StatusNotImplemented, constants.ErrCodeFeatureComingSoon, fmt.Sprintf("%s voice bot is currently unavailable or coming soon", req.Provider))
 	}
 
 	// Verify user daily quota
@@ -233,9 +233,9 @@ func (s *Service) GetCapabilities(ctx context.Context) *dtos.CapabilitiesRespons
 	for _, name := range supportedProviders {
 		p, exists := s.BotProvider(name)
 		if exists && p.IsEnabled() {
-			meetingBots[name] = "available"
+			meetingBots[name] = constants.CapabilityStatusAvailable
 		} else {
-			meetingBots[name] = "coming_soon"
+			meetingBots[name] = constants.CapabilityStatusComingSoon
 		}
 	}
 
@@ -246,193 +246,126 @@ func (s *Service) GetCapabilities(ctx context.Context) *dtos.CapabilitiesRespons
 	}
 }
 
-// HandleGoogleMeetWebhook processes asynchronous status updates and completion signals from Google Meet workers.
-func (s *Service) HandleGoogleMeetWebhook(ctx context.Context, req dtos.GoogleMeetWebhookRequest, secretHeader string) error {
-	if s.cfg.GoogleMeetBotWebhookSecret != "" && secretHeader != s.cfg.GoogleMeetBotWebhookSecret {
-		return apperror.New(http.StatusUnauthorized, "INVALID_WEBHOOK_SECRET", "invalid webhook secret")
+// botWebhookPayload encapsulates normalized callback attributes received across heterogeneous meeting bot engines.
+type botWebhookPayload struct {
+	ExternalSessionID string
+	Event             string
+	AudioURL          *string
+	DurationSeconds   *int
+	ErrorMessage      *string
+}
+
+// mapBotWebhookEvent maps external provider lifecycle events into canonical bot session statuses.
+func mapBotWebhookEvent(event string) (status string, isStarted bool, isEnded bool, ok bool) {
+	switch event {
+	case constants.BotWebhookEventWaitingAdmit:
+		return constants.BotSessionStatusWaitingAdmit, false, false, true
+	case constants.BotWebhookEventJoined, constants.BotWebhookEventCallConnected:
+		return constants.BotSessionStatusJoined, true, false, true
+	case constants.BotWebhookEventRecording, constants.BotWebhookEventRecordingStarted:
+		return constants.BotSessionStatusRecording, true, false, true
+	case constants.BotWebhookEventCompleted:
+		return constants.BotSessionStatusCompleted, false, true, true
+	case constants.BotWebhookEventFailed:
+		return constants.BotSessionStatusFailed, false, true, true
+	default:
+		return "", false, false, false
+	}
+}
+
+// processBotWebhook handles shared state transitions and recording updates triggered by webhook callbacks.
+func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPayload) error {
+	session, err := s.repo.FindBotSessionByExternalID(ctx, payload.ExternalSessionID)
+	if err != nil {
+		return apperror.New(http.StatusNotFound, constants.ErrCodeSessionNotFound, "bot session not found for external id")
 	}
 
-	session, err := s.repo.FindBotSessionByExternalID(ctx, req.ExternalSessionID)
-	if err != nil {
-		return apperror.New(http.StatusNotFound, "SESSION_NOT_FOUND", "bot session not found for external id")
+	mappedStatus, isStarted, isEnded, ok := mapBotWebhookEvent(payload.Event)
+	if !ok {
+		return apperror.New(http.StatusBadRequest, constants.ErrCodeInvalidEvent, "unrecognized webhook event")
 	}
 
 	now := time.Now().UTC()
-	var mappedStatus string
 	var startedAt, endedAt *time.Time
 	var errMsg *string
 
-	switch req.Event {
-	case "waiting_admit":
-		mappedStatus = constants.BotSessionStatusWaitingAdmit
-	case "joined":
-		mappedStatus = constants.BotSessionStatusJoined
+	if isStarted && (session.StartedAt == nil || mappedStatus == constants.BotSessionStatusJoined) {
 		startedAt = &now
-	case "recording":
-		mappedStatus = constants.BotSessionStatusRecording
-		if session.StartedAt == nil {
-			startedAt = &now
+	}
+	if isEnded {
+		endedAt = &now
+		if mappedStatus == constants.BotSessionStatusFailed {
+			errMsg = payload.ErrorMessage
 		}
-	case "completed":
-		mappedStatus = constants.BotSessionStatusCompleted
-		endedAt = &now
-	case "failed":
-		mappedStatus = constants.BotSessionStatusFailed
-		endedAt = &now
-		errMsg = req.ErrorMessage
-	default:
-		return apperror.New(http.StatusBadRequest, "INVALID_EVENT", "unrecognized webhook event")
 	}
 
 	if err := s.repo.UpdateBotSessionStatus(ctx, session.ID, mappedStatus, errMsg, startedAt, endedAt); err != nil {
 		return err
 	}
 
-	if mappedStatus == constants.BotSessionStatusCompleted && req.AudioURL != nil && *req.AudioURL != "" {
+	if mappedStatus == constants.BotSessionStatusCompleted && payload.AudioURL != nil && *payload.AudioURL != "" {
 		duration := float64(0)
-		if req.DurationSeconds != nil {
-			duration = float64(*req.DurationSeconds)
+		if payload.DurationSeconds != nil {
+			duration = float64(*payload.DurationSeconds)
 		}
-		if err := s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *req.AudioURL, duration); err != nil {
+		if err := s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *payload.AudioURL, duration); err != nil {
 			return err
 		}
-		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil); err != nil {
-			return err
-		}
-	} else if mappedStatus == constants.BotSessionStatusFailed {
-		errCode := "BOT_SESSION_FAILED"
-		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, req.ErrorMessage); err != nil {
-			return err
-		}
+		return s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil)
+	}
+
+	if mappedStatus == constants.BotSessionStatusFailed {
+		errCode := constants.ErrCodeBotSessionFailed
+		return s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, payload.ErrorMessage)
 	}
 
 	return nil
+}
+
+// HandleGoogleMeetWebhook processes asynchronous status updates and completion signals from Google Meet workers.
+func (s *Service) HandleGoogleMeetWebhook(ctx context.Context, req dtos.GoogleMeetWebhookRequest, secretHeader string) error {
+	if s.cfg.GoogleMeetBotWebhookSecret != "" && secretHeader != s.cfg.GoogleMeetBotWebhookSecret {
+		return apperror.New(http.StatusUnauthorized, constants.ErrCodeInvalidWebhookSecret, "invalid webhook secret")
+	}
+
+	return s.processBotWebhook(ctx, botWebhookPayload{
+		ExternalSessionID: req.ExternalSessionID,
+		Event:             req.Event,
+		AudioURL:          req.AudioURL,
+		DurationSeconds:   req.DurationSeconds,
+		ErrorMessage:      req.ErrorMessage,
+	})
 }
 
 // HandleMSTeamsWebhook processes asynchronous status updates and completion signals from Microsoft Teams / Azure Calling bot workers.
 func (s *Service) HandleMSTeamsWebhook(ctx context.Context, req dtos.MSTeamsWebhookRequest, secretHeader string) error {
 	if s.cfg.MSTeamsBotWebhookSecret != "" && secretHeader != s.cfg.MSTeamsBotWebhookSecret {
-		return apperror.New(http.StatusUnauthorized, "INVALID_WEBHOOK_SECRET", "invalid webhook secret")
+		return apperror.New(http.StatusUnauthorized, constants.ErrCodeInvalidWebhookSecret, "invalid webhook secret")
 	}
 
-	session, err := s.repo.FindBotSessionByExternalID(ctx, req.ExternalSessionID)
-	if err != nil {
-		return apperror.New(http.StatusNotFound, "SESSION_NOT_FOUND", "bot session not found for external id")
-	}
-
-	now := time.Now().UTC()
-	var mappedStatus string
-	var startedAt, endedAt *time.Time
-	var errMsg *string
-
-	switch req.Event {
-	case "waiting_admit":
-		mappedStatus = constants.BotSessionStatusWaitingAdmit
-	case "joined", "call_connected":
-		mappedStatus = constants.BotSessionStatusJoined
-		startedAt = &now
-	case "recording", "recording_started":
-		mappedStatus = constants.BotSessionStatusRecording
-		if session.StartedAt == nil {
-			startedAt = &now
-		}
-	case "completed":
-		mappedStatus = constants.BotSessionStatusCompleted
-		endedAt = &now
-	case "failed":
-		mappedStatus = constants.BotSessionStatusFailed
-		endedAt = &now
-		errMsg = req.ErrorMessage
-	default:
-		return apperror.New(http.StatusBadRequest, "INVALID_EVENT", "unrecognized webhook event")
-	}
-
-	if err := s.repo.UpdateBotSessionStatus(ctx, session.ID, mappedStatus, errMsg, startedAt, endedAt); err != nil {
-		return err
-	}
-
-	if mappedStatus == constants.BotSessionStatusCompleted && req.AudioURL != nil && *req.AudioURL != "" {
-		duration := float64(0)
-		if req.DurationSeconds != nil {
-			duration = float64(*req.DurationSeconds)
-		}
-		if err := s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *req.AudioURL, duration); err != nil {
-			return err
-		}
-		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil); err != nil {
-			return err
-		}
-	} else if mappedStatus == constants.BotSessionStatusFailed {
-		errCode := "BOT_SESSION_FAILED"
-		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, req.ErrorMessage); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return s.processBotWebhook(ctx, botWebhookPayload{
+		ExternalSessionID: req.ExternalSessionID,
+		Event:             req.Event,
+		AudioURL:          req.AudioURL,
+		DurationSeconds:   req.DurationSeconds,
+		ErrorMessage:      req.ErrorMessage,
+	})
 }
 
 // HandleZoomWebhook processes asynchronous status updates and completion signals from Zoom bot workers.
 func (s *Service) HandleZoomWebhook(ctx context.Context, req dtos.ZoomWebhookRequest, secretHeader string) error {
 	if s.cfg.ZoomBotWebhookSecret != "" && secretHeader != s.cfg.ZoomBotWebhookSecret {
-		return apperror.New(http.StatusUnauthorized, "INVALID_WEBHOOK_SECRET", "invalid webhook secret")
+		return apperror.New(http.StatusUnauthorized, constants.ErrCodeInvalidWebhookSecret, "invalid webhook secret")
 	}
 
-	session, err := s.repo.FindBotSessionByExternalID(ctx, req.ExternalSessionID)
-	if err != nil {
-		return apperror.New(http.StatusNotFound, "SESSION_NOT_FOUND", "bot session not found for external id")
-	}
-
-	now := time.Now().UTC()
-	var mappedStatus string
-	var startedAt, endedAt *time.Time
-	var errMsg *string
-
-	switch req.Event {
-	case "waiting_admit":
-		mappedStatus = constants.BotSessionStatusWaitingAdmit
-	case "joined":
-		mappedStatus = constants.BotSessionStatusJoined
-		startedAt = &now
-	case "recording", "recording_started":
-		mappedStatus = constants.BotSessionStatusRecording
-		if session.StartedAt == nil {
-			startedAt = &now
-		}
-	case "completed":
-		mappedStatus = constants.BotSessionStatusCompleted
-		endedAt = &now
-	case "failed":
-		mappedStatus = constants.BotSessionStatusFailed
-		endedAt = &now
-		errMsg = req.ErrorMessage
-	default:
-		return apperror.New(http.StatusBadRequest, "INVALID_EVENT", "unrecognized webhook event")
-	}
-
-	if err := s.repo.UpdateBotSessionStatus(ctx, session.ID, mappedStatus, errMsg, startedAt, endedAt); err != nil {
-		return err
-	}
-
-	if mappedStatus == constants.BotSessionStatusCompleted && req.AudioURL != nil && *req.AudioURL != "" {
-		duration := float64(0)
-		if req.DurationSeconds != nil {
-			duration = float64(*req.DurationSeconds)
-		}
-		if err := s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *req.AudioURL, duration); err != nil {
-			return err
-		}
-		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil); err != nil {
-			return err
-		}
-	} else if mappedStatus == constants.BotSessionStatusFailed {
-		errCode := "BOT_SESSION_FAILED"
-		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, req.ErrorMessage); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return s.processBotWebhook(ctx, botWebhookPayload{
+		ExternalSessionID: req.ExternalSessionID,
+		Event:             req.Event,
+		AudioURL:          req.AudioURL,
+		DurationSeconds:   req.DurationSeconds,
+		ErrorMessage:      req.ErrorMessage,
+	})
 }
+
 
 

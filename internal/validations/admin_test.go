@@ -316,6 +316,10 @@ func TestValidateAdminRefreshTokenRequest(t *testing.T) {
 			t.Fatal("expected error for empty refresh token, got nil")
 		}
 	})
+
+	t.Run("nil request does not panic", func(t *testing.T) {
+		_ = ValidateAdminRefreshTokenRequest(nil)
+	})
 }
 
 func TestValidateAdminJobListQuery(t *testing.T) {

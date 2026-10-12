@@ -262,7 +262,7 @@ func ValidateAdminToken(cfg config.Config, tokenStr string) (*AdminClaims, error
 // ValidateAdminRefreshToken parses and verifies the signature and expiration of an Admin Refresh JWT token.
 func ValidateAdminRefreshToken(cfg config.Config, tokenStr string) (*AdminClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		if t.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return []byte(cfg.JWTSecret), nil

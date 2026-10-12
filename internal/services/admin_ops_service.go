@@ -12,6 +12,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/queue"
+	"code-base-golang/internal/repositories"
 )
 
 // AdminGetDLQMessages retrieves failed and stuck pipeline items for DLQ monitoring.
@@ -67,7 +68,12 @@ func (s *Service) AdminGetDLQMessages(ctx context.Context, meta dtos.AdminAction
 
 // AdminListJobs retrieves paginated generation and pipeline recordings across all users and statuses.
 func (s *Service) AdminListJobs(ctx context.Context, meta dtos.AdminActionMeta, query dtos.AdminJobListQuery) (*dtos.AdminJobListResponse, error) {
-	recs, total, err := s.repo.ListAllRecordingsForAdmin(ctx, query.Status, query.Search, query.Limit, query.Offset())
+	recs, total, err := s.repo.ListAllRecordingsForAdmin(ctx, repositories.AdminRecordingsFilter{
+		Status: query.Status,
+		Search: query.Search,
+		Limit:  query.Limit,
+		Offset: query.Offset(),
+	})
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}

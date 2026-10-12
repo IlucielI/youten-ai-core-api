@@ -3,8 +3,49 @@ package repositories
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	"code-base-golang/internal/models"
 )
+
+// AdminRecordingsFilter specifies criteria and pagination for admin job listings.
+type AdminRecordingsFilter struct {
+	Status string
+	Search string
+	Limit  int
+	Offset int
+}
+
+func (f AdminRecordingsFilter) scope(db *gorm.DB) *gorm.DB {
+	if f.Status != "" {
+		db = db.Where("status = ?", f.Status)
+	}
+	if f.Search != "" {
+		pattern := "%" + f.Search + "%"
+		db = db.Where("title ILIKE ? OR original_filename ILIKE ?", pattern, pattern)
+	}
+	return db
+}
+
+// ListAllRecordingsForAdmin queries paginated generation recordings across all users and statuses.
+func (r *Repositories) ListAllRecordingsForAdmin(ctx context.Context, f AdminRecordingsFilter) ([]models.Recording, int64, error) {
+	var recordings []models.Recording
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&models.Recording{}).Scopes(f.scope)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.
+		Preload("User").
+		Order("created_at DESC").
+		Limit(f.Limit).
+		Offset(f.Offset).
+		Find(&recordings).Error
+
+	return recordings, total, err
+}
 
 // SystemOverviewStats contains high-level database aggregates for telemetry.
 type SystemOverviewStats struct {
@@ -46,35 +87,4 @@ func (r *Repositories) GetSystemOverviewStats(ctx context.Context) (*SystemOverv
 	}
 
 	return &stats, nil
-}
-
-// ListAllRecordingsForAdmin queries paginated generation recordings across all users and statuses.
-func (r *Repositories) ListAllRecordingsForAdmin(ctx context.Context, status, search string, limit, offset int) ([]models.Recording, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.Recording{})
-
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if search != "" {
-		searchPattern := "%" + search + "%"
-		query = query.Where("title ILIKE ? OR original_filename ILIKE ?", searchPattern, searchPattern)
-	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	var recordings []models.Recording
-	err := query.
-		Preload("User").
-		Order("created_at DESC").
-		Limit(limit).
-		Offset(offset).
-		Find(&recordings).Error
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return recordings, total, nil
 }

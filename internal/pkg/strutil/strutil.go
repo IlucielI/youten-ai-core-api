@@ -143,4 +143,15 @@ func ConstantTimeEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// LikePattern returns a sanitized SQL LIKE wildcard pattern "%<trimmed-query>%".
+// If the input is empty or contains only whitespace, it returns an empty string.
+func LikePattern(query string) string {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return ""
+	}
+	return "%" + trimmed + "%"
+}
+
+
 

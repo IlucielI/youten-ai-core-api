@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // FindUserRoleByID retrieves a user role by its UUID.
@@ -62,8 +63,7 @@ type ListUserRolesQuery struct {
 }
 
 func (q ListUserRolesQuery) scope(db *gorm.DB) *gorm.DB {
-	if q.Search != "" {
-		pattern := "%" + q.Search + "%"
+	if pattern := strutil.LikePattern(q.Search); pattern != "" {
 		return db.Where("name ILIKE ? OR code ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
 	}
 	return db

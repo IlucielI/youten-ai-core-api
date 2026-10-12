@@ -6,6 +6,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // AdminRecordingsFilter specifies criteria and pagination for admin job listings.
@@ -20,8 +21,7 @@ func (f AdminRecordingsFilter) scope(db *gorm.DB) *gorm.DB {
 	if f.Status != "" {
 		db = db.Where("status = ?", f.Status)
 	}
-	if f.Search != "" {
-		pattern := "%" + f.Search + "%"
+	if pattern := strutil.LikePattern(f.Search); pattern != "" {
 		db = db.Where("title ILIKE ? OR original_filename ILIKE ?", pattern, pattern)
 	}
 	return db

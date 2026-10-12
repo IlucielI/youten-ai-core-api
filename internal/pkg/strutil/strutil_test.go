@@ -177,4 +177,27 @@ func TestConstantTimeEqual(t *testing.T) {
 	}
 }
 
+func TestLikePattern(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"empty string", "", ""},
+		{"whitespace only", "   \t\n  ", ""},
+		{"normal text", "test", "%test%"},
+		{"leading and trailing spaces", "  meeting audio  ", "%meeting audio%"},
+		{"special characters preserved", "client@corp.com", "%client@corp.com%"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := strutil.LikePattern(tt.input); got != tt.expected {
+				t.Errorf("LikePattern(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+
 

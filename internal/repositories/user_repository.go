@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // CreateUser persists a new user into the database.
@@ -119,8 +120,7 @@ func (q ListUsersQuery) scope(db *gorm.DB) *gorm.DB {
 		db = db.Where("status = ?", q.Status)
 	}
 
-	if q.Search != "" {
-		pattern := "%" + q.Search + "%"
+	if pattern := strutil.LikePattern(q.Search); pattern != "" {
 		db = db.Where("email ILIKE ? OR full_name ILIKE ?", pattern, pattern)
 	}
 

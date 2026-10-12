@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // CreateRecording inserts a new recording session into the database.
@@ -157,8 +158,7 @@ type RecordingFilter struct {
 }
 
 func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
-	if f.Search != "" {
-		pattern := "%" + strings.ToLower(f.Search) + "%"
+	if pattern := strutil.LikePattern(strings.ToLower(f.Search)); pattern != "" {
 		db = db.Where("LOWER(title) LIKE ? OR LOWER(original_filename) LIKE ?", pattern, pattern)
 	}
 	if f.Status != "" {

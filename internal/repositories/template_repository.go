@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/strutil"
 )
 
 // FindTemplateByCategoryKey retrieves an active template by its unique category key (e.g. "MOM", "TECH_REVIEW").
@@ -64,8 +65,7 @@ type ListTemplatesQuery struct {
 }
 
 func (q ListTemplatesQuery) scope(db *gorm.DB) *gorm.DB {
-	if q.Search != "" {
-		pattern := "%" + q.Search + "%"
+	if pattern := strutil.LikePattern(q.Search); pattern != "" {
 		return db.Where("name ILIKE ? OR category_key ILIKE ? OR description ILIKE ?", pattern, pattern, pattern)
 	}
 	return db

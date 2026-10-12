@@ -29,12 +29,7 @@ func (c *Controllers) DeleteRecording(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "recording deleted successfully",
-		Timestamp: time.Now(),
-	})
+	c.respondEmpty(ctx, "recording deleted successfully")
 }
 
 // ClaimRecording handles claiming a guest recording session to the authenticated user.

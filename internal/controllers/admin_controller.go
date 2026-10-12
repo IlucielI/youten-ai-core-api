@@ -1,9 +1,7 @@
 package controllers
 
 import (
-	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -30,13 +28,7 @@ func (c *Controllers) AdminListUsers(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Users retrieved successfully", resp)
 }
 
 // AdminOverrideUserQuota handles PATCH /v1/admin/users/:id/quota.
@@ -77,13 +69,7 @@ func (c *Controllers) AdminOverrideUserQuota(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserQuotaResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "User quota updated successfully", resp)
 }
 
 // AdminRevokeUserSessions handles POST /v1/admin/users/:id/revoke-sessions.
@@ -113,13 +99,7 @@ func (c *Controllers) AdminRevokeUserSessions(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminRevokeUserSessionsResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "User sessions revoked successfully", resp)
 }
 
 // AdminListRoles handles GET /v1/admin/roles.
@@ -130,13 +110,7 @@ func (c *Controllers) AdminListRoles(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminRoleListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Roles retrieved successfully", resp)
 }
 
 // AdminCreateRole handles POST /v1/admin/roles.
@@ -170,13 +144,7 @@ func (c *Controllers) AdminCreateRole(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.AdminRoleItem]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondCreated(ctx, "Role created successfully", resp)
 }
 
 // AdminUpdateRole handles PUT /v1/admin/roles/:id.
@@ -217,13 +185,7 @@ func (c *Controllers) AdminUpdateRole(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminRoleItem]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Role updated successfully", resp)
 }
 
 // AdminListUserRoles handles GET /v1/admin/user-roles.
@@ -234,13 +196,7 @@ func (c *Controllers) AdminListUserRoles(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserRoleListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "User roles retrieved successfully", resp)
 }
 
 // AdminCreateUserRole handles POST /v1/admin/user-roles.
@@ -274,13 +230,7 @@ func (c *Controllers) AdminCreateUserRole(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.AdminUserRoleItem]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondCreated(ctx, "User role created successfully", resp)
 }
 
 // AdminUpdateUserRole handles PUT /v1/admin/user-roles/:id.
@@ -321,13 +271,7 @@ func (c *Controllers) AdminUpdateUserRole(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminUserRoleItem]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "User role updated successfully", resp)
 }
 
 // AdminAssignUserRole handles PATCH /v1/admin/users/:id/role.
@@ -368,13 +312,7 @@ func (c *Controllers) AdminAssignUserRole(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.UserResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "User role assigned successfully", resp)
 }
 
 // AdminListTemplates handles GET /v1/admin/templates.
@@ -385,13 +323,7 @@ func (c *Controllers) AdminListTemplates(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminTemplateListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Templates retrieved successfully", resp)
 }
 
 // AdminCreateTemplate handles POST /v1/admin/templates.
@@ -425,13 +357,7 @@ func (c *Controllers) AdminCreateTemplate(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.AdminTemplateItem]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondCreated(ctx, "Template created successfully", resp)
 }
 
 // AdminUpdateTemplate handles PUT /v1/admin/templates/:id.
@@ -472,13 +398,7 @@ func (c *Controllers) AdminUpdateTemplate(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminTemplateItem]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Template updated successfully", resp)
 }
 
 // AdminTestTemplate handles POST /v1/admin/templates/test.
@@ -512,13 +432,7 @@ func (c *Controllers) AdminTestTemplate(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminTestTemplateResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Template test executed successfully", resp)
 }
 
 // AdminGetDLQPipeline retrieves dead-lettered and stuck pipeline jobs.
@@ -544,13 +458,7 @@ func (c *Controllers) AdminGetDLQPipeline(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.DLQMessagesResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "DLQ messages retrieved successfully", resp)
 }
 
 // AdminRetryDLQJob handles POST /v1/admin/pipeline/dlq/retry.
@@ -584,13 +492,7 @@ func (c *Controllers) AdminRetryDLQJob(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.DLQRetryResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "DLQ job retried successfully", resp)
 }
 
 // AdminGetSystemConfig handles GET /v1/admin/config.
@@ -613,13 +515,7 @@ func (c *Controllers) AdminGetSystemConfig(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SystemConfigResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "System configuration retrieved successfully", resp)
 }
 
 // AdminUpdateSystemConfig handles PATCH /v1/admin/config.
@@ -652,13 +548,7 @@ func (c *Controllers) AdminUpdateSystemConfig(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SystemConfigResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "System configuration updated successfully", resp)
 }
 
 // AdminListReports handles GET /v1/admin/reports.
@@ -682,13 +572,7 @@ func (c *Controllers) AdminListReports(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminReportListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Reports retrieved successfully", resp)
 }
 
 // AdminResolveReport handles POST /v1/admin/reports/:id/resolve.
@@ -728,13 +612,7 @@ func (c *Controllers) AdminResolveReport(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ResolveReportResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Report resolved successfully", resp)
 }
 
 // AdminListAuditLogs handles GET /v1/admin/audit-logs.
@@ -758,13 +636,7 @@ func (c *Controllers) AdminListAuditLogs(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminAuditLogListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Audit logs retrieved successfully", resp)
 }
 
 // AdminGetOverviewStats handles GET /v1/admin/stats/overview.
@@ -781,13 +653,7 @@ func (c *Controllers) AdminGetOverviewStats(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.SystemOverviewStatsResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Overview stats retrieved successfully", resp)
 }
 
 // AdminGetCostOversight handles GET /v1/admin/stats/costs.
@@ -804,13 +670,7 @@ func (c *Controllers) AdminGetCostOversight(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.CostOversightResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Cost oversight retrieved successfully", resp)
 }
 
 // AdminListJobs handles GET /v1/admin/jobs to retrieve all platform generation jobs.
@@ -839,13 +699,7 @@ func (c *Controllers) AdminListJobs(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminJobListResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   constants.ResponseMessageSuccess,
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Jobs retrieved successfully", resp)
 }
 
 // AdminLogin handles POST /v1/admin/login to authenticate staff administrators.
@@ -872,19 +726,5 @@ func (c *Controllers) AdminLogin(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.AdminLoginResponse]{
-		Status:    constants.ResponseStatusSuccess,
-		Code:      constants.ResponseCodeSuccess,
-		Message:   "admin logged in successfully",
-		Data:      resp,
-		Timestamp: time.Now(),
-	})
+	c.respondOK(ctx, "Admin logged in successfully", resp)
 }
-
-
-
-
-
-
-
-

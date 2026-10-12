@@ -46,6 +46,8 @@ func (c *Controllers) ListRecordings(ctx *gin.Context) {
 		return
 	}
 
+	query.SetDefaults()
+
 	resp, err := c.svc.ListRecordings(ctx.Request.Context(), query)
 	if err != nil {
 		c.wrapError(ctx, err)

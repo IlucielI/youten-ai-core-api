@@ -14,6 +14,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/payload"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/validations"
 )
@@ -109,12 +110,12 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta dtos.AdminAction
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "template.create",
 		Entity:   "template",
 		EntityID: &tmplIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"category_key": tmpl.CategoryKey,
 			"name":         tmpl.Name,
 			"version":      tmpl.Version,
@@ -122,9 +123,7 @@ func (s *Service) AdminCreateTemplate(ctx context.Context, meta dtos.AdminAction
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.AdminTemplateItem{
 		ID:           tmpl.ID,
@@ -184,12 +183,12 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminAction
 		ua = &meta.UserAgent
 	}
 
-	auditLog := &models.AdminAuditLog{
+	auditLog := payload.AdminAuditPayload{
 		AdminID:  &adminIDVal,
 		Action:   "template.update",
 		Entity:   "template",
 		EntityID: &tmplIDStr,
-		Payload: models.JSONMap{
+		Payload: map[string]any{
 			"category_key":   tmpl.CategoryKey,
 			"name":           tmpl.Name,
 			"version":        tmpl.Version,
@@ -199,9 +198,7 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminAction
 		IPAddress: ip,
 		UserAgent: ua,
 	}
-	if err := s.repo.CreateAdminAuditLog(ctx, auditLog); err != nil {
-		return nil, s.wrapError(ctx, err)
-	}
+	s.emitAdminAuditLog(ctx, auditLog)
 
 	return &dtos.AdminTemplateItem{
 		ID:           tmpl.ID,

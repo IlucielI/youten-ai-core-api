@@ -21,9 +21,7 @@ func ValidateAdminUserQuotaOverrideRequest(r *dtos.AdminUserQuotaOverrideRequest
 func ValidateAdminCreateRoleRequest(r *dtos.AdminCreateRoleRequest) error {
 	r.Name = strings.TrimSpace(r.Name)
 	r.Description = strings.TrimSpace(r.Description)
-	for i, p := range r.Permissions {
-		r.Permissions[i] = strings.TrimSpace(p)
-	}
+	TrimSlice(r.Permissions)
 
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Name, validation.Required, validation.Length(1, 100)),
@@ -36,9 +34,7 @@ func ValidateAdminCreateRoleRequest(r *dtos.AdminCreateRoleRequest) error {
 func ValidateAdminUpdateRoleRequest(r *dtos.AdminUpdateRoleRequest) error {
 	r.Name = strings.TrimSpace(r.Name)
 	r.Description = strings.TrimSpace(r.Description)
-	for i, p := range r.Permissions {
-		r.Permissions[i] = strings.TrimSpace(p)
-	}
+	TrimSlice(r.Permissions)
 
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Name, validation.Required, validation.Length(1, 100)),
@@ -52,9 +48,7 @@ func ValidateAdminCreateUserRoleRequest(r *dtos.AdminCreateUserRoleRequest) erro
 	r.Name = strings.TrimSpace(r.Name)
 	r.Code = strings.ToUpper(strings.TrimSpace(r.Code))
 	r.Description = strings.TrimSpace(r.Description)
-	for i, p := range r.Permissions {
-		r.Permissions[i] = strings.TrimSpace(p)
-	}
+	TrimSlice(r.Permissions)
 
 	return validation.ValidateStruct(r,
 		validation.Field(&r.Name, validation.Required, validation.Length(1, 100)),
@@ -67,17 +61,9 @@ func ValidateAdminCreateUserRoleRequest(r *dtos.AdminCreateUserRoleRequest) erro
 
 // ValidateAdminUpdateUserRoleRequest normalizes and validates customer role update payloads.
 func ValidateAdminUpdateUserRoleRequest(r *dtos.AdminUpdateUserRoleRequest) error {
-	if r.Name != nil {
-		*r.Name = strings.TrimSpace(*r.Name)
-	}
-	if r.Description != nil {
-		*r.Description = strings.TrimSpace(*r.Description)
-	}
-	if r.Permissions != nil {
-		for i, p := range *r.Permissions {
-			(*r.Permissions)[i] = strings.TrimSpace(p)
-		}
-	}
+	TrimSpacePtr(r.Name)
+	TrimSpacePtr(r.Description)
+	TrimSlicePtr(r.Permissions)
 
 	rules := []*validation.FieldRules{
 		validation.Field(&r.Name, validation.NilOrNotEmpty, validation.Length(1, 100)),

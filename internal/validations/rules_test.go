@@ -67,3 +67,51 @@ func TestSixDigitCodeRegex(t *testing.T) {
 		}
 	})
 }
+
+func TestTrimSpacePtr(t *testing.T) {
+	t.Run("nil pointer remains nil", func(t *testing.T) {
+		res := TrimSpacePtr(nil)
+		if res != nil {
+			t.Fatalf("expected nil, got %v", res)
+		}
+	})
+
+	t.Run("trims string whitespace", func(t *testing.T) {
+		str := "  hello world  "
+		res := TrimSpacePtr(&str)
+		if *res != "hello world" || str != "hello world" {
+			t.Fatalf("expected 'hello world', got '%s'", *res)
+		}
+	})
+}
+
+func TestTrimSlice(t *testing.T) {
+	t.Run("trims slice items", func(t *testing.T) {
+		items := []string{"  foo ", "bar  ", " baz "}
+		TrimSlice(items)
+		expected := []string{"foo", "bar", "baz"}
+		for i, v := range items {
+			if v != expected[i] {
+				t.Fatalf("at index %d: expected %s, got %s", i, expected[i], v)
+			}
+		}
+	})
+}
+
+func TestTrimSlicePtr(t *testing.T) {
+	t.Run("nil pointer remains nil", func(t *testing.T) {
+		res := TrimSlicePtr(nil)
+		if res != nil {
+			t.Fatalf("expected nil, got %v", res)
+		}
+	})
+
+	t.Run("trims slice pointer items", func(t *testing.T) {
+		items := []string{" a ", " b "}
+		TrimSlicePtr(&items)
+		if items[0] != "a" || items[1] != "b" {
+			t.Fatalf("expected ['a', 'b'], got %v", items)
+		}
+	})
+}
+

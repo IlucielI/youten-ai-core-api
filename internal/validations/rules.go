@@ -3,6 +3,7 @@ package validations
 import (
 	"errors"
 	"regexp"
+	"strings"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
@@ -27,3 +28,27 @@ var (
 	})
 	notEmptyUUID = NotEmptyUUID
 )
+
+// TrimSpacePtr trims whitespace from the referenced string if the pointer is non-nil.
+func TrimSpacePtr(s *string) *string {
+	if s != nil {
+		*s = strings.TrimSpace(*s)
+	}
+	return s
+}
+
+// TrimSlice trims whitespace from each string item in the provided slice in-place.
+func TrimSlice(items []string) []string {
+	for i, item := range items {
+		items[i] = strings.TrimSpace(item)
+	}
+	return items
+}
+
+// TrimSlicePtr trims whitespace from each string item if the slice pointer is non-nil.
+func TrimSlicePtr(items *[]string) *[]string {
+	if items != nil {
+		TrimSlice(*items)
+	}
+	return items
+}

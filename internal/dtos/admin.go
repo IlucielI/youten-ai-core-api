@@ -82,9 +82,34 @@ type AdminRoleItem struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// AdminRoleListResponse encapsulates a list of administrative roles.
+// AdminRoleListQuery defines query parameters for paginating and filtering administrative roles.
+type AdminRoleListQuery struct {
+	Search string `form:"search" json:"search"`
+	Page   int    `form:"page" json:"page"`
+	Limit  int    `form:"limit" json:"limit"`
+}
+
+// SetDefaults ensures fallback defaults for pagination parameters.
+func (q *AdminRoleListQuery) SetDefaults() {
+	q.Search = strings.TrimSpace(q.Search)
+	if len(q.Search) > 100 {
+		q.Search = q.Search[:100]
+	}
+
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Limit < 1 {
+		q.Limit = 10
+	} else if q.Limit > 100 {
+		q.Limit = 100
+	}
+}
+
+// AdminRoleListResponse encapsulates a list of administrative roles and pagination metadata.
 type AdminRoleListResponse struct {
-	Items []AdminRoleItem `json:"items"`
+	Items      []AdminRoleItem `json:"items"`
+	Pagination PaginationMeta  `json:"pagination"`
 }
 
 // AdminCreateRoleRequest defines the payload for creating a new administrative RBAC role.

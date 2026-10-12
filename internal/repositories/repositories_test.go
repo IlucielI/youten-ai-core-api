@@ -804,6 +804,72 @@ func TestRepositories_UserRole(t *testing.T) {
 	}
 }
 
+func TestRepositories_AdminRole_ListRolesPaginated(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	roleID := uuid.New()
+	now := time.Now()
+
+	t.Run("ListRolesPaginated success with search and ordering", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2`)).
+			WithArgs("%admin%", "%admin%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2 ORDER BY is_system DESC, name ASC LIMIT $3`)).
+			WithArgs("%admin%", "%admin%", 10).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Super Admin", "Root administrator", []byte(`["*"]`), true, now, now))
+
+		roles, total, err := repo.ListRolesPaginated(context.Background(), ListRolesQuery{
+			Search: "admin",
+			Offset: 0,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 1 {
+			t.Fatalf("expected total 1, got %d", total)
+		}
+		if len(roles) != 1 {
+			t.Fatalf("expected 1 role, got %d", len(roles))
+		}
+		if roles[0].Name != "Super Admin" {
+			t.Errorf("expected role name Super Admin, got %s", roles[0].Name)
+		}
+	})
+
+	t.Run("ListRoles success ordering system roles first", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" ORDER BY is_system DESC, name ASC`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Super Admin", "Root administrator", []byte(`["*"]`), true, now, now))
+
+		roles, err := repo.ListRoles(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(roles) != 1 {
+			t.Fatalf("expected 1 role, got %d", len(roles))
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 
 
 

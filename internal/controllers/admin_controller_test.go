@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -312,14 +313,18 @@ func TestControllers_AdminRevokeUserSessions(t *testing.T) {
 func TestControllers_AdminListRoles(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("success returns 200 with role list", func(t *testing.T) {
+	t.Run("success returns 200 with role list and pagination", func(t *testing.T) {
 		ctrls, mock, cleanup := setupAdminTestControllers(t)
 		defer cleanup()
 
 		roleID := uuid.New()
 		now := time.Now()
 
-		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" ORDER BY is_system DESC, name ASC LIMIT $1`)).
+			WithArgs(10).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
 				AddRow(roleID, "Support", "Support Staff", []byte(`["users:read"]`), false, now, now))
 
@@ -335,11 +340,39 @@ func TestControllers_AdminListRoles(t *testing.T) {
 		}
 	})
 
+	t.Run("success returns 200 with query parameters", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		roleID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2`)).
+			WithArgs("%support%", "%support%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2 ORDER BY is_system DESC, name ASC LIMIT $3 OFFSET $4`)).
+			WithArgs("%support%", "%support%", 5, 5).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Support", "Support Staff", []byte(`["users:read"]`), false, now, now))
+
+		r := gin.New()
+		r.GET("/v1/admin/roles", ctrls.AdminListRoles)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/roles?search=support&page=2&limit=5", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
 	t.Run("service failure returns 500", func(t *testing.T) {
 		ctrls, mock, cleanup := setupAdminTestControllers(t)
 		defer cleanup()
 
-		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles"`)).
 			WillReturnError(gorm.ErrInvalidDB)
 
 		r := gin.New()

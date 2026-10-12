@@ -1314,6 +1314,21 @@ paths:
       security:
         - AdminAuth: []
       description: Lists all RBAC roles with associated permissions (requires roles:read).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: search
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           description: Roles list
@@ -2509,9 +2524,14 @@ components:
         - type: object
           properties:
             data:
-              type: array
-              items:
-                $ref: '#/components/schemas/AdminRoleItem'
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminRoleItem'
+                pagination:
+                  $ref: '#/components/schemas/PaginationMeta'
 
     AdminRoleItem:
       type: object

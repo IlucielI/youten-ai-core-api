@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
@@ -325,18 +326,22 @@ func TestService_AdminRevokeUserSessions(t *testing.T) {
 }
 
 func TestService_AdminListRoles(t *testing.T) {
-	t.Run("success returns roles with decoded permissions", func(t *testing.T) {
+	t.Run("success returns roles with decoded permissions and pagination meta", func(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
 		roleID := uuid.New()
 		now := time.Now()
 
-		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" ORDER BY is_system DESC, name ASC LIMIT $1`)).
+			WithArgs(10).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
 				AddRow(roleID, "Super Admin", "Root admin", []byte(`["*"]`), true, now, now))
 
-		resp, err := svc.AdminListRoles(context.Background())
+		resp, err := svc.AdminListRoles(context.Background(), dtos.AdminRoleListQuery{})
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -349,16 +354,48 @@ func TestService_AdminListRoles(t *testing.T) {
 		if len(resp.Items[0].Permissions) != 1 || resp.Items[0].Permissions[0] != "*" {
 			t.Errorf("expected permissions [*], got %v", resp.Items[0].Permissions)
 		}
+		if resp.Pagination.CurrentPage != 1 || resp.Pagination.PageSize != 10 || resp.Pagination.TotalItems != 1 || resp.Pagination.TotalPages != 1 {
+			t.Errorf("unexpected pagination: %+v", resp.Pagination)
+		}
+	})
+
+	t.Run("success with search and custom page/limit", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		roleID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2`)).
+			WithArgs("%admin%", "%admin%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(12))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "admin_roles" WHERE name ILIKE $1 OR description ILIKE $2 ORDER BY is_system DESC, name ASC LIMIT $3 OFFSET $4`)).
+			WithArgs("%admin%", "%admin%", 5, 5).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "permissions", "is_system", "created_at", "updated_at"}).
+				AddRow(roleID, "Super Admin", "Root admin", []byte(`["*"]`), true, now, now))
+
+		resp, err := svc.AdminListRoles(context.Background(), dtos.AdminRoleListQuery{
+			Search: "admin",
+			Page:   2,
+			Limit:  5,
+		})
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.Pagination.CurrentPage != 2 || resp.Pagination.PageSize != 5 || resp.Pagination.TotalItems != 12 || resp.Pagination.TotalPages != 3 {
+			t.Errorf("unexpected pagination: %+v", resp.Pagination)
+		}
 	})
 
 	t.Run("db failure returns wrapped error", func(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)
 		defer cleanup()
 
-		mock.ExpectQuery(`SELECT \* FROM "admin_roles"`).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "admin_roles"`)).
 			WillReturnError(errors.New("db error"))
 
-		_, err := svc.AdminListRoles(context.Background())
+		_, err := svc.AdminListRoles(context.Background(), dtos.AdminRoleListQuery{})
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}

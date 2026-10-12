@@ -189,9 +189,19 @@ func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta AdminActionM
 	}, nil
 }
 
-// AdminListRoles retrieves all administrative RBAC roles with decoded permission lists.
-func (s *Service) AdminListRoles(ctx context.Context) (*dtos.AdminRoleListResponse, error) {
-	roles, err := s.repo.ListRoles(ctx)
+// AdminListRoles retrieves paginated administrative RBAC roles with decoded permission lists,
+// ordering default system roles first.
+func (s *Service) AdminListRoles(ctx context.Context, q dtos.AdminRoleListQuery) (*dtos.AdminRoleListResponse, error) {
+	q.SetDefaults()
+
+	offset := (q.Page - 1) * q.Limit
+	repoQuery := repositories.ListRolesQuery{
+		Search: q.Search,
+		Offset: offset,
+		Limit:  q.Limit,
+	}
+
+	roles, total, err := s.repo.ListRolesPaginated(ctx, repoQuery)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
@@ -217,7 +227,22 @@ func (s *Service) AdminListRoles(ctx context.Context) (*dtos.AdminRoleListRespon
 		})
 	}
 
-	return &dtos.AdminRoleListResponse{Items: items}, nil
+	totalPages := int(math.Ceil(float64(total) / float64(q.Limit)))
+	if totalPages == 0 && total == 0 {
+		totalPages = 0
+	} else if totalPages == 0 {
+		totalPages = 1
+	}
+
+	return &dtos.AdminRoleListResponse{
+		Items: items,
+		Pagination: dtos.PaginationMeta{
+			CurrentPage: q.Page,
+			PageSize:    q.Limit,
+			TotalItems:  total,
+			TotalPages:  totalPages,
+		},
+	}, nil
 }
 
 // AdminCreateRole creates a new custom administrative role and writes an audit log.

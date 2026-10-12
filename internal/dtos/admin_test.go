@@ -1,6 +1,7 @@
 package dtos
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +112,46 @@ func TestAdminRevokeUserSessionsResponse(t *testing.T) {
 	}
 }
 
+func TestAdminRoleListQuery_SetDefaults(t *testing.T) {
+	t.Run("defaults assigned when fields are empty or negative", func(t *testing.T) {
+		q := AdminRoleListQuery{
+			Page:  0,
+			Limit: -5,
+		}
+		q.SetDefaults()
+
+		if q.Page != 1 {
+			t.Errorf("expected page 1, got %d", q.Page)
+		}
+		if q.Limit != 10 {
+			t.Errorf("expected limit 10, got %d", q.Limit)
+		}
+		if q.Search != "" {
+			t.Errorf("expected empty search, got %q", q.Search)
+		}
+	})
+
+	t.Run("limit capped at 100 and search trimmed", func(t *testing.T) {
+		longSearch := strings.Repeat("a", 150)
+		q := AdminRoleListQuery{
+			Search: "  " + longSearch + "  ",
+			Page:   2,
+			Limit:  500,
+		}
+		q.SetDefaults()
+
+		if q.Page != 2 {
+			t.Errorf("expected page 2, got %d", q.Page)
+		}
+		if q.Limit != 100 {
+			t.Errorf("expected limit 100, got %d", q.Limit)
+		}
+		if len(q.Search) != 100 {
+			t.Errorf("expected search length 100, got %d", len(q.Search))
+		}
+	})
+}
+
 func TestAdminRoleListResponse(t *testing.T) {
 	id := uuid.New()
 	now := time.Now()
@@ -126,6 +167,12 @@ func TestAdminRoleListResponse(t *testing.T) {
 				UpdatedAt:   now,
 			},
 		},
+		Pagination: PaginationMeta{
+			CurrentPage: 1,
+			PageSize:    10,
+			TotalItems:  1,
+			TotalPages:  1,
+		},
 	}
 
 	if len(resp.Items) != 1 {
@@ -139,6 +186,9 @@ func TestAdminRoleListResponse(t *testing.T) {
 	}
 	if !resp.Items[0].IsSystem {
 		t.Error("expected is_system true")
+	}
+	if resp.Pagination.TotalItems != 1 || resp.Pagination.TotalPages != 1 {
+		t.Errorf("unexpected pagination: %+v", resp.Pagination)
 	}
 }
 

@@ -89,7 +89,20 @@ func (c *Controllers) AdminRevokeUserSessions(ctx *gin.Context) {
 
 // AdminListRoles handles GET /v1/admin/roles.
 func (c *Controllers) AdminListRoles(ctx *gin.Context) {
-	resp, err := c.svc.AdminListRoles(ctx.Request.Context())
+	var query dtos.AdminRoleListQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
+		return
+	}
+
+	query.SetDefaults()
+
+	if err := validations.ValidateAdminRoleListQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	resp, err := c.svc.AdminListRoles(ctx.Request.Context(), query)
 	if err != nil {
 		c.wrapError(ctx, err)
 		return

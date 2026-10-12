@@ -170,87 +170,61 @@ func TestRouter_DocsEndpoints(t *testing.T) {
 func TestRouter_AuthEndpoints(t *testing.T) {
 	cfg := config.Load()
 	ctrls := controllers.New(cfg, nil)
-	router := routes.NewRouter(cfg, ctrls, services.New(cfg, nil, nil))
+	mockVal := &mockScopedValidator{
+		user: &ctxmeta.AuthUser{
+			UserID:    uuid.New(),
+			SessionID: uuid.New().String(),
+			RoleCode:  "USER",
+		},
+	}
+	router := routes.NewRouter(cfg, ctrls, mockVal)
 
-	// Verify POST /v1/auth/login route is registered and resolves to handler (returns 400 for empty body, not 404)
-	w := httptest.NewRecorder()
-	req, err := http.NewRequest(http.MethodPost, "/v1/auth/login", strings.NewReader("{}"))
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	router.ServeHTTP(w, req)
-	if w.Code == http.StatusNotFound {
-		t.Fatalf("expected /v1/auth/login to be registered, but got 404 Not Found")
-	}
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", w.Code)
-	}
-
-	// Verify POST /v1/auth/refresh route is registered and resolves to handler
-	wRefresh := httptest.NewRecorder()
-	reqRefresh, err := http.NewRequest(http.MethodPost, "/v1/auth/refresh", strings.NewReader("{}"))
-	if err != nil {
-		t.Fatalf("failed to create refresh request: %v", err)
-	}
-	reqRefresh.Header.Set("Content-Type", "application/json")
-
-	router.ServeHTTP(wRefresh, reqRefresh)
-	if wRefresh.Code == http.StatusNotFound {
-		t.Fatalf("expected /v1/auth/refresh to be registered, but got 404 Not Found")
-	}
-	if wRefresh.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wRefresh.Code)
+	authProtectedEndpoints := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"login", http.MethodPost, "/v1/auth/login"},
+		{"refresh", http.MethodPost, "/v1/auth/refresh"},
+		{"logout", http.MethodPost, "/v1/auth/logout"},
+		{"forgot-password", http.MethodPost, "/v1/auth/forgot-password"},
+		{"reset-password", http.MethodPost, "/v1/auth/reset-password"},
 	}
 
-	// Verify POST /v1/auth/logout route is registered and protected by auth middleware
-	// (returns 401 Unauthorized without a bearer token, since logout requires an active session).
-	wLogout := httptest.NewRecorder()
-	reqLogout, err := http.NewRequest(http.MethodPost, "/v1/auth/logout", strings.NewReader("{}"))
-	if err != nil {
-		t.Fatalf("failed to create logout request: %v", err)
-	}
-	reqLogout.Header.Set("Content-Type", "application/json")
+	for _, ep := range authProtectedEndpoints {
+		t.Run(ep.name+" without token returns 401", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, err := http.NewRequest(ep.method, ep.path, strings.NewReader("{}"))
+			if err != nil {
+				t.Fatalf("failed to create request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
 
-	router.ServeHTTP(wLogout, reqLogout)
-	if wLogout.Code == http.StatusNotFound {
-		t.Fatalf("expected /v1/auth/logout to be registered, but got 404 Not Found")
-	}
-	if wLogout.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 Unauthorized for POST /v1/auth/logout without token (auth-protected), got %d", wLogout.Code)
-	}
+			router.ServeHTTP(w, req)
+			if w.Code == http.StatusNotFound {
+				t.Fatalf("expected %s %s to be registered, got 404", ep.method, ep.path)
+			}
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("expected 401 Unauthorized without bearer token for %s %s, got %d", ep.method, ep.path, w.Code)
+			}
+		})
 
-	// Verify POST /v1/auth/forgot-password route is registered and resolves to handler
-	wForgot := httptest.NewRecorder()
-	reqForgot, err := http.NewRequest(http.MethodPost, "/v1/auth/forgot-password", strings.NewReader("{}"))
-	if err != nil {
-		t.Fatalf("failed to create forgot-password request: %v", err)
-	}
-	reqForgot.Header.Set("Content-Type", "application/json")
+		if ep.path != "/v1/auth/logout" {
+			t.Run(ep.name+" with valid bearer resolves to handler", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req, err := http.NewRequest(ep.method, ep.path, strings.NewReader("{}"))
+				if err != nil {
+					t.Fatalf("failed to create request: %v", err)
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Bearer valid-token")
 
-	router.ServeHTTP(wForgot, reqForgot)
-	if wForgot.Code == http.StatusNotFound {
-		t.Fatalf("expected /v1/auth/forgot-password to be registered, but got 404 Not Found")
-	}
-	if wForgot.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wForgot.Code)
-	}
-
-	// Verify POST /v1/auth/reset-password route is registered and resolves to handler
-	wReset := httptest.NewRecorder()
-	reqReset, err := http.NewRequest(http.MethodPost, "/v1/auth/reset-password", strings.NewReader("{}"))
-	if err != nil {
-		t.Fatalf("failed to create reset-password request: %v", err)
-	}
-	reqReset.Header.Set("Content-Type", "application/json")
-
-	router.ServeHTTP(wReset, reqReset)
-	if wReset.Code == http.StatusNotFound {
-		t.Fatalf("expected /v1/auth/reset-password to be registered, but got 404 Not Found")
-	}
-	if wReset.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request for empty json payload, got %d", wReset.Code)
+				router.ServeHTTP(w, req)
+				if w.Code != http.StatusBadRequest {
+					t.Fatalf("expected 400 Bad Request for empty json with bearer for %s %s, got %d", ep.method, ep.path, w.Code)
+				}
+			})
+		}
 	}
 }
 
@@ -363,15 +337,15 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected /v1/recordings/import-url to return 401 Unauthorized without header (scope: recordings:create), got %d", wImport.Code)
 	}
 
-	// Verify /v1/recordings/:id is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify /v1/recordings/:id is configured with auth: true (returns 401 Unauthorized without header)
 	wDetail := httptest.NewRecorder()
 	reqDetail, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wDetail, reqDetail)
-	if wDetail.Code == http.StatusUnauthorized {
-		t.Fatalf("expected /v1/recordings/:id not to return 401 Unauthorized without header (optional_auth), got %d", wDetail.Code)
+	if wDetail.Code != http.StatusUnauthorized {
+		t.Fatalf("expected /v1/recordings/:id to return 401 Unauthorized without header, got %d", wDetail.Code)
 	}
 
 	// Verify /v1/recordings is configured with auth: true (returns 401 Unauthorized without header)
@@ -432,40 +406,40 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected PATCH /v1/recordings/:id/share to return 401 Unauthorized without header (auth: true), got %d", wShare.Code)
 	}
 
-	// Verify GET /v1/recordings/shared/:token is a public route (does NOT return 401 Unauthorized without header)
+	// Verify GET /v1/recordings/shared/:token is protected by auth (returns 401 Unauthorized without header)
 	wShared := httptest.NewRecorder()
 	reqShared, err := http.NewRequest(http.MethodGet, "/v1/recordings/shared/token-123", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wShared, reqShared)
-	if wShared.Code == http.StatusUnauthorized {
-		t.Fatalf("expected GET /v1/recordings/shared/:token not to return 401 Unauthorized (public route), got %d", wShared.Code)
+	if wShared.Code != http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/shared/:token to return 401 Unauthorized without header, got %d", wShared.Code)
 	}
 
-	// Verify GET /v1/recordings/:id/progress is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify GET /v1/recordings/:id/progress is configured with auth: true (returns 401 Unauthorized without header)
 	wProgress := httptest.NewRecorder()
 	reqProgress, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001/progress", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wProgress, reqProgress)
-	if wProgress.Code == http.StatusUnauthorized {
-		t.Fatalf("expected GET /v1/recordings/:id/progress not to return 401 Unauthorized without header (optional_auth), got %d", wProgress.Code)
+	if wProgress.Code != http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/:id/progress to return 401 Unauthorized without header (auth: true), got %d", wProgress.Code)
 	}
 
-	// Verify POST /v1/recordings/:id/retry is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify POST /v1/recordings/:id/retry is configured with auth: true (returns 401 Unauthorized without header)
 	wRetry := httptest.NewRecorder()
 	reqRetry, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/retry", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wRetry, reqRetry)
-	if wRetry.Code == http.StatusUnauthorized {
-		t.Fatalf("expected POST /v1/recordings/:id/retry not to return 401 Unauthorized without header (optional_auth), got %d", wRetry.Code)
+	if wRetry.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/retry to return 401 Unauthorized without header (auth: true), got %d", wRetry.Code)
 	}
 
-	// Verify POST /v1/recordings/:id/chat is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify POST /v1/recordings/:id/chat is configured with auth: true (returns 401 Unauthorized without header)
 	wChat := httptest.NewRecorder()
 	reqChat, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/chat", strings.NewReader(`{"message":"test"}`))
 	if err != nil {
@@ -473,11 +447,11 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	}
 	reqChat.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wChat, reqChat)
-	if wChat.Code == http.StatusUnauthorized {
-		t.Fatalf("expected POST /v1/recordings/:id/chat not to return 401 Unauthorized without header (optional_auth), got %d", wChat.Code)
+	if wChat.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/chat to return 401 Unauthorized without header (auth: true), got %d", wChat.Code)
 	}
 
-	// Verify PUT /v1/recordings/:id/speakers is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify PUT /v1/recordings/:id/speakers is configured with auth: true (returns 401 Unauthorized without header)
 	wSpeakers := httptest.NewRecorder()
 	reqSpeakers, err := http.NewRequest(http.MethodPut, "/v1/recordings/00000000-0000-0000-0000-000000000001/speakers", strings.NewReader(`{"speakers":{"SPEAKER_00":"Alice"}}`))
 	if err != nil {
@@ -485,11 +459,11 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	}
 	reqSpeakers.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wSpeakers, reqSpeakers)
-	if wSpeakers.Code == http.StatusUnauthorized {
-		t.Fatalf("expected PUT /v1/recordings/:id/speakers not to return 401 Unauthorized without header (optional_auth), got %d", wSpeakers.Code)
+	if wSpeakers.Code != http.StatusUnauthorized {
+		t.Fatalf("expected PUT /v1/recordings/:id/speakers to return 401 Unauthorized without header (auth: true), got %d", wSpeakers.Code)
 	}
 
-	// Verify POST /v1/recordings/:id/regenerate is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify POST /v1/recordings/:id/regenerate is configured with auth: true (returns 401 Unauthorized without header)
 	wRegen := httptest.NewRecorder()
 	reqRegen, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/regenerate", strings.NewReader(`{"template_category":"MOM"}`))
 	if err != nil {
@@ -497,33 +471,33 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	}
 	reqRegen.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wRegen, reqRegen)
-	if wRegen.Code == http.StatusUnauthorized {
-		t.Fatalf("expected POST /v1/recordings/:id/regenerate not to return 401 Unauthorized without header (optional_auth), got %d", wRegen.Code)
+	if wRegen.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/regenerate to return 401 Unauthorized without header (auth: true), got %d", wRegen.Code)
 	}
 
-	// Verify GET /v1/recordings/:id/summaries is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify GET /v1/recordings/:id/summaries is configured with auth: true (returns 401 Unauthorized without header)
 	wSummaries := httptest.NewRecorder()
 	reqSummaries, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001/summaries", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wSummaries, reqSummaries)
-	if wSummaries.Code == http.StatusUnauthorized {
-		t.Fatalf("expected GET /v1/recordings/:id/summaries not to return 401 Unauthorized without header (optional_auth), got %d", wSummaries.Code)
+	if wSummaries.Code != http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/:id/summaries to return 401 Unauthorized without header (auth: true), got %d", wSummaries.Code)
 	}
 
-	// Verify PATCH /v1/recordings/:id/summaries/:versionId/activate is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify PATCH /v1/recordings/:id/summaries/:versionId/activate is configured with auth: true (returns 401 Unauthorized without header)
 	wActivate := httptest.NewRecorder()
 	reqActivate, err := http.NewRequest(http.MethodPatch, "/v1/recordings/00000000-0000-0000-0000-000000000001/summaries/1/activate", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wActivate, reqActivate)
-	if wActivate.Code == http.StatusUnauthorized {
-		t.Fatalf("expected PATCH /v1/recordings/:id/summaries/:versionId/activate not to return 401 Unauthorized without header (optional_auth), got %d", wActivate.Code)
+	if wActivate.Code != http.StatusUnauthorized {
+		t.Fatalf("expected PATCH /v1/recordings/:id/summaries/:versionId/activate to return 401 Unauthorized without header (auth: true), got %d", wActivate.Code)
 	}
 
-	// Verify POST /v1/recordings/:id/comments is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify POST /v1/recordings/:id/comments is configured with auth: true (returns 401 Unauthorized without header)
 	wComments := httptest.NewRecorder()
 	reqComments, err := http.NewRequest(http.MethodPost, "/v1/recordings/00000000-0000-0000-0000-000000000001/comments", strings.NewReader(`{"comment_text":"test"}`))
 	if err != nil {
@@ -531,19 +505,19 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	}
 	reqComments.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wComments, reqComments)
-	if wComments.Code == http.StatusUnauthorized {
-		t.Fatalf("expected POST /v1/recordings/:id/comments not to return 401 Unauthorized without header (optional_auth), got %d", wComments.Code)
+	if wComments.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/recordings/:id/comments to return 401 Unauthorized without header (auth: true), got %d", wComments.Code)
 	}
 
-	// Verify GET /v1/recordings/:id/comments is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify GET /v1/recordings/:id/comments is configured with auth: true (returns 401 Unauthorized without header)
 	wListComments := httptest.NewRecorder()
 	reqListComments, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001/comments", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wListComments, reqListComments)
-	if wListComments.Code == http.StatusUnauthorized {
-		t.Fatalf("expected GET /v1/recordings/:id/comments not to return 401 Unauthorized without header (optional_auth), got %d", wListComments.Code)
+	if wListComments.Code != http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/:id/comments to return 401 Unauthorized without header (auth: true), got %d", wListComments.Code)
 	}
 
 	foundDeleteCommentRoute := false
@@ -557,15 +531,15 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected DELETE /v1/recordings/:id/comments/:commentId route to be registered")
 	}
 
-	// Verify DELETE /v1/recordings/:id/comments/:commentId is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify DELETE /v1/recordings/:id/comments/:commentId is configured with auth: true (returns 401 Unauthorized without header)
 	wDelComment := httptest.NewRecorder()
 	reqDelComment, err := http.NewRequest(http.MethodDelete, "/v1/recordings/00000000-0000-0000-0000-000000000001/comments/00000000-0000-0000-0000-000000000002", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wDelComment, reqDelComment)
-	if wDelComment.Code == http.StatusUnauthorized {
-		t.Fatalf("expected DELETE /v1/recordings/:id/comments/:commentId not to return 401 Unauthorized without header (optional_auth), got %d", wDelComment.Code)
+	if wDelComment.Code != http.StatusUnauthorized {
+		t.Fatalf("expected DELETE /v1/recordings/:id/comments/:commentId to return 401 Unauthorized without header (auth: true), got %d", wDelComment.Code)
 	}
 
 	foundExportRoute := false
@@ -579,15 +553,15 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected GET /v1/recordings/:id/export route to be registered")
 	}
 
-	// Verify GET /v1/recordings/:id/export is configured with optional_auth (does NOT return 401 Unauthorized without header)
+	// Verify GET /v1/recordings/:id/export is configured with auth: true (returns 401 Unauthorized without header)
 	wExport := httptest.NewRecorder()
 	reqExport, err := http.NewRequest(http.MethodGet, "/v1/recordings/00000000-0000-0000-0000-000000000001/export?format=markdown", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	router.ServeHTTP(wExport, reqExport)
-	if wExport.Code == http.StatusUnauthorized {
-		t.Fatalf("expected GET /v1/recordings/:id/export not to return 401 Unauthorized without header (optional_auth), got %d", wExport.Code)
+	if wExport.Code != http.StatusUnauthorized {
+		t.Fatalf("expected GET /v1/recordings/:id/export to return 401 Unauthorized without header (auth: true), got %d", wExport.Code)
 	}
 
 	foundSearchRoute := false
@@ -657,7 +631,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		t.Fatalf("expected GET /v1/speakers to return 401 Unauthorized without auth header, got %d", wSpkDir.Code)
 	}
 
-	// Verify POST /v1/waitlist/bot is public (does NOT return 401 Unauthorized without auth header)
+	// Verify POST /v1/waitlist/bot is protected by auth: true (returns 401 Unauthorized without auth header)
 	wWaitlist := httptest.NewRecorder()
 	reqWaitlist, err := http.NewRequest(http.MethodPost, "/v1/waitlist/bot", strings.NewReader(`{}`))
 	if err != nil {
@@ -665,8 +639,8 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 	}
 	reqWaitlist.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wWaitlist, reqWaitlist)
-	if wWaitlist.Code == http.StatusUnauthorized {
-		t.Fatalf("expected POST /v1/waitlist/bot to be public and not return 401 Unauthorized, got %d", wWaitlist.Code)
+	if wWaitlist.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST /v1/waitlist/bot to return 401 Unauthorized without header, got %d", wWaitlist.Code)
 	}
 }
 

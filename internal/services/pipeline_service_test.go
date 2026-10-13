@@ -58,6 +58,9 @@ func (m *mockPipelineStorage) PresignGetObject(ctx context.Context, bucketName, 
 func (m *mockPipelineStorage) PresignPutObject(ctx context.Context, bucketName, objectName string, expiry time.Duration) (string, error) {
 	return "https://mock.storage/put", nil
 }
+func (m *mockPipelineStorage) StatObject(ctx context.Context, bucketName, objectName string) (int64, error) {
+	return 1024, nil
+}
 
 func setupTestPipelineService(t *testing.T) (*services.Service, sqlmock.Sqlmock, *mockPublisher, func()) {
 	sqlDB, mock, err := sqlmock.New()
@@ -119,7 +122,7 @@ func TestPipelineService_ProcessExtraction_Success(t *testing.T) {
 	// 3. UpdateRecordingAudioURL
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
-		WithArgs("recordings/"+recID.String()+"/audio.mp3", 120.0, sqlmock.AnyArg(), recID).
+		WithArgs("recordings/"+recID.String()+"/audio.mp3", 120.0, 17, sqlmock.AnyArg(), recID).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
@@ -372,7 +375,7 @@ func TestPipelineService_ProcessImport_Success(t *testing.T) {
 	// 3. UpdateRecordingAudioURL
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
-		WithArgs("recordings/"+recID.String()+"/audio.mp3", 180.0, sqlmock.AnyArg(), recID).
+		WithArgs("recordings/"+recID.String()+"/audio.mp3", 180.0, 512, sqlmock.AnyArg(), recID).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
@@ -491,7 +494,7 @@ func TestPipelineService_ProcessImport_GoogleDrive_Success(t *testing.T) {
 	// 3. UpdateRecordingAudioURL
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE id = .*`).
-		WithArgs("recordings/"+recID.String()+"/audio.mp3", 120.0, sqlmock.AnyArg(), recID).
+		WithArgs("recordings/"+recID.String()+"/audio.mp3", 120.0, 17, sqlmock.AnyArg(), recID).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 

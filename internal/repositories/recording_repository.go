@@ -210,13 +210,16 @@ func (r *Repositories) ListRecordingsByUserID(ctx context.Context, userID uuid.U
 	})
 }
 
-// UpdateRecordingAudioURL sets the audio_url and duration_seconds of a recording.
-func (r *Repositories) UpdateRecordingAudioURL(ctx context.Context, id uuid.UUID, audioURL string, durationSeconds float64) error {
+// UpdateRecordingAudioURL sets the audio_url, duration_seconds, and optional file_size_bytes of a recording.
+func (r *Repositories) UpdateRecordingAudioURL(ctx context.Context, id uuid.UUID, audioURL string, durationSeconds float64, fileSizeBytes ...int64) error {
 	updates := map[string]interface{}{
 		"audio_url": audioURL,
 	}
 	if durationSeconds > 0 {
 		updates["duration_seconds"] = durationSeconds
+	}
+	if len(fileSizeBytes) > 0 && fileSizeBytes[0] > 0 {
+		updates["file_size_bytes"] = fileSizeBytes[0]
 	}
 	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", id).Updates(updates)
 	if res.Error != nil {

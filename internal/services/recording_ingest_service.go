@@ -98,6 +98,13 @@ func (s *Service) UploadRecording(
 	recordingID := uuid.New()
 	now := time.Now().UTC()
 
+	fileSizeBytes := req.FileSizeBytes
+	if fileSizeBytes <= 0 && s.storage != nil {
+		if probedSize, err := s.storage.StatObject(ctx, s.cfg.S3BucketName, objectKey); err == nil && probedSize > 0 {
+			fileSizeBytes = probedSize
+		}
+	}
+
 	rec := models.Recording{
 		BaseModel: models.BaseModel{
 			ID:        recordingID,
@@ -106,6 +113,7 @@ func (s *Service) UploadRecording(
 		},
 		Title:            title,
 		OriginalFilename: safeFilename,
+		FileSizeBytes:    fileSizeBytes,
 		AudioURL:         &objectKey,
 		SourceType:       constants.RecordingSourceTypeUpload,
 		Status:           models.RecordingStatusPending,

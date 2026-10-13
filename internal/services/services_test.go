@@ -42,6 +42,10 @@ func (m *mockStorage) PresignPutObject(ctx context.Context, bucketName, objectNa
 	return "https://mock.storage/put", nil
 }
 
+func (m *mockStorage) StatObject(ctx context.Context, bucketName, objectName string) (int64, error) {
+	return 1024, nil
+}
+
 func TestService_FileStorage_Mock(t *testing.T) {
 	mock := &mockStorage{}
 	svc := New(config.Config{}, nil, mock)

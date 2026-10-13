@@ -27,4 +27,7 @@ type FileStorage interface {
 
 	// PresignPutObject generates a temporary pre-signed PUT URL for direct uploading.
 	PresignPutObject(ctx context.Context, bucketName, objectName string, expiry time.Duration) (string, error)
+
+	// StatObject retrieves the size of an object in bytes from storage.
+	StatObject(ctx context.Context, bucketName, objectName string) (int64, error)
 }

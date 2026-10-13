@@ -36,26 +36,18 @@ func (s *Service) InitiateRecordingChatStream(
 
 	// Access verification: owner, matching ownership token, active guest session, or valid share token
 	policy := dtos.RecordingAccessPolicy{AllowShareToken: true}
-	effectiveToken := ownershipToken
-	if effectiveToken == "" && req.ShareToken != "" {
-		effectiveToken = req.ShareToken
-	}
-	if !s.authorizeRecordingAccess(ctx, rec, effectiveToken, policy) {
-		return nil, constants.ErrForbidden
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, policy) {
+		if req.ShareToken == "" || !s.authorizeRecordingAccess(ctx, rec, req.ShareToken, policy) {
+			return nil, constants.ErrForbidden
+		}
 	}
 
 	trimmedMsg := strings.TrimSpace(req.Message)
 
-	// Resolve conversation session ID
+	// Resolve conversation session ID: use client-provided session ID, or generate a fresh unique UUID
 	var sessionID uuid.UUID
 	if req.SessionID != nil && *req.SessionID != uuid.Nil {
 		sessionID = *req.SessionID
-	} else if authUser, ok := ctxmeta.GetAuthUser(ctx); ok && authUser.SessionID != "" {
-		if parsed, parseErr := uuid.Parse(authUser.SessionID); parseErr == nil && parsed != uuid.Nil {
-			sessionID = parsed
-		} else {
-			sessionID = uuid.New()
-		}
 	} else {
 		sessionID = uuid.New()
 	}
@@ -185,12 +177,10 @@ func (s *Service) ListRecordingChatHistory(
 	}
 
 	policy := dtos.RecordingAccessPolicy{AllowShareToken: true}
-	effectiveToken := ownershipToken
-	if effectiveToken == "" && shareToken != "" {
-		effectiveToken = shareToken
-	}
-	if !s.authorizeRecordingAccess(ctx, rec, effectiveToken, policy) {
-		return nil, constants.ErrForbidden
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, policy) {
+		if shareToken == "" || !s.authorizeRecordingAccess(ctx, rec, shareToken, policy) {
+			return nil, constants.ErrForbidden
+		}
 	}
 
 	messages, err := s.repo.ListChatMessagesBySession(ctx, recordingID, sessionID)

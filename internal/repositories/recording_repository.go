@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/strutil"
 )
@@ -319,6 +320,21 @@ func (r *Repositories) FindExpiredRecordings(ctx context.Context, limit int) ([]
 // HardDeleteRecording permanently deletes a recording row, triggering database CASCADE rules.
 func (r *Repositories) HardDeleteRecording(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Unscoped().Delete(&models.Recording{}, "id = ?", id).Error
+}
+
+// FailStaleRecordings transitions recordings stuck in active pipeline stages into FAILED state.
+func (r *Repositories) FailStaleRecordings(ctx context.Context, threshold time.Duration) (int64, error) {
+	cutoff := time.Now().UTC().Add(-threshold)
+	res := r.db.WithContext(ctx).
+		Model(&models.Recording{}).
+		Where("status IN ('PENDING', 'QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING') AND updated_at < ?", cutoff).
+		Updates(map[string]interface{}{
+			"status":        models.RecordingStatusFailed,
+			"error_code":    constants.ErrCodePipelineTimeout,
+			"error_message": "Pipeline processing timed out or was abandoned",
+			"updated_at":    time.Now().UTC(),
+		})
+	return res.RowsAffected, res.Error
 }
 
 // ListDLQRecordings queries failed and stuck pipeline recordings with preloaded users.

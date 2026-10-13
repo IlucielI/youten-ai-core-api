@@ -17,11 +17,16 @@ import (
 	"code-base-golang/internal/pkg/ctxmeta"
 )
 
-// DeleteRecording handles soft-deleting a recording owned by the authenticated user.
-func (s *Service) DeleteRecording(ctx context.Context, id uuid.UUID) error {
+// DeleteRecording handles soft-deleting a recording owned by the caller or verified via ownership token.
+func (s *Service) DeleteRecording(ctx context.Context, id uuid.UUID, ownershipToken ...string) error {
+	token := ""
+	if len(ownershipToken) > 0 {
+		token = ownershipToken[0]
+	}
+
 	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-	if !isAuth || !hasUserID {
+	_, hasUserID := ctxmeta.GetAuthUserID(ctx)
+	if token == "" && (!isAuth || !hasUserID) {
 		return constants.ErrUnauthorized
 	}
 
@@ -33,7 +38,10 @@ func (s *Service) DeleteRecording(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("failed to retrieve recording: %w", err)
 	}
 
-	if rec.UserID == nil || *rec.UserID != userID {
+	if !s.authorizeRecordingAccess(ctx, rec, token, dtos.RecordingAccessPolicy{}) {
+		if !isAuth || !hasUserID {
+			return constants.ErrUnauthorized
+		}
 		return constants.ErrForbidden
 	}
 

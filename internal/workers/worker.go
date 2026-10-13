@@ -71,6 +71,13 @@ func (w *WorkerServer) StartCleanupTicker(ctx context.Context, interval time.Dur
 				} else if count > 0 {
 					log.Printf("[CLEANUP] successfully removed %d expired recordings and storage objects", count)
 				}
+
+				staleCount, errStale := w.svc.CleanupStaleRecordings(ctx, 2*time.Hour)
+				if errStale != nil {
+					log.Printf("[CLEANUP ERROR] failed to sweep stale recordings: %v", errStale)
+				} else if staleCount > 0 {
+					log.Printf("[CLEANUP] successfully marked %d stale recordings as failed (timed out)", staleCount)
+				}
 			}
 		}
 	}()

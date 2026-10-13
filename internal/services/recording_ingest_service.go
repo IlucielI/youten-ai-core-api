@@ -189,6 +189,15 @@ func (s *Service) CleanupExpiredRecordings(ctx context.Context, batchSize int) (
 	return deletedCount, nil
 }
 
+// CleanupStaleRecordings identifies pipeline recordings that have been stuck or abandoned
+// beyond the configured duration threshold and marks them as FAILED.
+func (s *Service) CleanupStaleRecordings(ctx context.Context, threshold time.Duration) (int64, error) {
+	if threshold <= 0 {
+		threshold = 2 * time.Hour
+	}
+	return s.repo.FailStaleRecordings(ctx, threshold)
+}
+
 // ImportRecordingFromURL validates target link against SSRF defense policies, streams media into S3,
 // records the new recording entry, and emits the background pipeline extraction event.
 func (s *Service) ImportRecordingFromURL(

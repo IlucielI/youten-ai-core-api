@@ -140,4 +140,9 @@ const (
 // DefaultExpiredRecordingsCleanupBatchSize defines the fallback batch size when purging expired guest recordings.
 const DefaultExpiredRecordingsCleanupBatchSize = 100
 
+// Pipeline error codes.
+const (
+	ErrCodePipelineTimeout = "ERR_PIPELINE_TIMEOUT"
+)
+
 

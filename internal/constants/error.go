@@ -94,6 +94,9 @@ var (
 	// ErrResendDailyLimit is returned when user exceeds maximum daily resend attempts.
 	ErrResendDailyLimit = apperror.New(http.StatusTooManyRequests, "ERR_RESEND_DAILY_LIMIT", "daily verification resend limit reached (maximum 3 times per 24 hours)")
 
+	// ErrPipelineTimeout is returned when processing exceeds the maximum duration limit or pipeline stalls.
+	ErrPipelineTimeout = apperror.New(http.StatusInternalServerError, "ERR_PIPELINE_TIMEOUT", "pipeline processing timed out or was abandoned")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

@@ -296,6 +296,23 @@ func TestService_CleanupExpiredRecordings(t *testing.T) {
 	}
 }
 
+func TestService_CleanupStaleRecordings(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET .* WHERE \(status IN \('PENDING', 'QUEUED', 'VALIDATING', 'EXTRACTING', 'TRANSCRIBING', 'SUMMARIZING', 'INDEXING'\) AND updated_at < \$[0-9]+\) AND "recordings"\."deleted_at" IS NULL`).
+		WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectCommit()
+
+	count, err := svc.CleanupStaleRecordings(context.Background(), 2*time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected stale cleanup error: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("expected 3 stale recordings transitioned, got %d", count)
+	}
+}
+
 func TestService_ImportRecordingFromURL_SSRFBlocked(t *testing.T) {
 	svc, _, _, _ := setupRecordingTestService(t)
 

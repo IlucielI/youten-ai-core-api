@@ -22,7 +22,12 @@ func (c *Controllers) DeleteRecording(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.svc.DeleteRecording(ctx.Request.Context(), id); err != nil {
+	ownershipToken := ctx.Query("token")
+	if ownershipToken == "" {
+		ownershipToken = ctx.GetHeader("x-ownership-token")
+	}
+
+	if err := c.svc.DeleteRecording(ctx.Request.Context(), id, ownershipToken); err != nil {
 		c.wrapError(ctx, err)
 		return
 	}

@@ -293,6 +293,7 @@ type SharedRecordingResponse struct {
 	ActiveSummary    *SummaryDTO            `json:"active_summary,omitempty"`
 	Chapters         []ChapterDTO           `json:"chapters"`
 	Highlights       []HighlightDTO         `json:"highlights"`
+	AnalyticsData    map[string]interface{} `json:"analytics_data,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
 }
 

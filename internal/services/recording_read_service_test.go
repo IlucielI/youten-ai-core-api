@@ -401,8 +401,8 @@ func TestService_GetSharedRecording_Success(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE \(share_token = \$1 AND is_share_enabled = TRUE\) AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
 		WithArgs("valid-token", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "audio_url", "is_share_enabled", "share_token"}).
-			AddRow(recID, "Public Meeting", 180.0, audioKey, true, "valid-token"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "audio_url", "is_share_enabled", "share_token", "analytics_data"}).
+			AddRow(recID, "Public Meeting", 180.0, audioKey, true, "valid-token", []byte(`{"total_words":100}`)))
 
 	// ListTranscriptSegmentsByRecordingID
 	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
@@ -450,6 +450,9 @@ func TestService_GetSharedRecording_Success(t *testing.T) {
 	}
 	if len(resp.Highlights) != 1 {
 		t.Errorf("expected 1 highlight, got %d", len(resp.Highlights))
+	}
+	if resp.AnalyticsData == nil {
+		t.Errorf("expected AnalyticsData to be non-nil")
 	}
 }
 

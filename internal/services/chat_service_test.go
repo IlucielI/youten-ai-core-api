@@ -342,3 +342,43 @@ func TestService_InitiateRecordingChatStream_LLMError(t *testing.T) {
 		t.Errorf("expected error message to propagate, got %v", err)
 	}
 }
+
+func TestService_InitiateRecordingChatStream_Success_GuestSession(t *testing.T) {
+	svc, mock, mockLLM, emb := setupChatTestService(t)
+	emb.err = errors.New("embedding skipped in guest test")
+	recID := uuid.New()
+	anonSessionID := "anon-session-12345"
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+		IsGuest:   true,
+		SessionID: anonSessionID,
+	})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "is_guest"}).
+			AddRow(recID, anonSessionID, true))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	mockLLM.StreamChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+		out := make(chan dtos.StreamChunk, 1)
+		go func() {
+			defer close(out)
+			out <- dtos.StreamChunk{Content: "Hello guest!"}
+		}()
+		return out, nil
+	}
+
+	result, err := svc.InitiateRecordingChatStream(ctx, recID, "", dtos.RecordingChatRequest{
+		Message: "Hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for guest session: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+}

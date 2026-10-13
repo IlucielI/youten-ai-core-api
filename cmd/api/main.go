@@ -135,7 +135,9 @@ func main() {
 		audioExtractor = audio.NewMock()
 	}
 
-	ytExtractor, err := youtube.NewExtractor()
+	ytExtractor, err := youtube.NewExtractorWithConfig(youtube.Config{
+		ProxyURL: cfg.YouTubeProxyURL,
+	})
 	if err != nil {
 		log.Printf("[WARN] Failed to initialize YouTube media extractor: %v", err)
 	}

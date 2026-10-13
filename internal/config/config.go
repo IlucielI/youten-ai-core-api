@@ -128,6 +128,9 @@ type Config struct {
 	ZoomClientID               string
 	ZoomClientSecret           string
 	ZoomAccountID              string
+
+	// YouTube Extractor Configuration
+	YouTubeProxyURL string
 }
 
 func Load() Config {
@@ -250,6 +253,9 @@ func Load() Config {
 		ZoomClientID:               getEnv("ZOOM_CLIENT_ID", ""),
 		ZoomClientSecret:           getEnv("ZOOM_CLIENT_SECRET", ""),
 		ZoomAccountID:              getEnv("ZOOM_ACCOUNT_ID", ""),
+
+		// YouTube Extractor settings
+		YouTubeProxyURL: getEnv("YOUTUBE_PROXY_URL", ""),
 	}
 }
 

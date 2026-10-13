@@ -70,6 +70,7 @@ type Config struct {
 	MaxConcurrency    int
 	MetadataTimeout   time.Duration
 	DownloadTimeout   time.Duration
+	ProxyURL          string
 }
 
 // Extractor implements services.YouTubeExtractor using the yt-dlp system CLI.
@@ -80,6 +81,7 @@ type Extractor struct {
 	maxAudioSizeBytes int64
 	metadataTimeout   time.Duration
 	downloadTimeout   time.Duration
+	proxyURL          string
 	sem               chan struct{}
 }
 
@@ -142,6 +144,7 @@ func NewExtractorWithConfig(cfg Config) (*Extractor, error) {
 		maxAudioSizeBytes: maxAudio,
 		metadataTimeout:   metaTimeout,
 		downloadTimeout:   dlTimeout,
+		proxyURL:          strings.TrimSpace(cfg.ProxyURL),
 		sem:               make(chan struct{}, maxConc),
 	}, nil
 }
@@ -299,8 +302,11 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.Med
 		"--no-playlist",
 		"--no-warnings",
 		"--socket-timeout", "15",
-		normURL,
 	}
+	if e.proxyURL != "" {
+		args = append(args, "--proxy", e.proxyURL)
+	}
+	args = append(args, normURL)
 
 	stdout, err := e.runCommand(execCtx, true, args)
 	if err != nil {
@@ -382,8 +388,11 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 		"--socket-timeout", "30",
 		"--write-info-json",
 		"-o", outputTemplate,
-		normURL,
 	}
+	if e.proxyURL != "" {
+		args = append(args, "--proxy", e.proxyURL)
+	}
+	args = append(args, normURL)
 
 	if _, err := e.runCommand(execCtx, false, args); err != nil {
 		return nil, fmt.Errorf("%w: audio download failed: %v", services.ErrExtractionFailed, err)

@@ -45,6 +45,9 @@ func (d *dummyStorage) PresignPutObject(ctx context.Context, bucketName, objectN
 	}
 	return "https://mock.storage/presigned-put-url", nil
 }
+func (d *dummyStorage) StatObject(ctx context.Context, bucketName, objectName string) (int64, error) {
+	return 1024, nil
+}
 
 type dummyPublisher struct{}
 

@@ -110,7 +110,7 @@ func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePa
 		return fmt.Errorf("failed to upload extracted audio: %w", uploadErr)
 	}
 
-	if err := s.repo.UpdateRecordingAudioURL(ctx, recording.ID, destAudioKey, extracted.DurationSeconds); err != nil {
+	if err := s.repo.UpdateRecordingAudioURL(ctx, recording.ID, destAudioKey, extracted.DurationSeconds, extracted.SizeBytes); err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, fmt.Sprintf("failed to update audio url: %v", err))
 		return fmt.Errorf("failed to update audio url: %w", err)
 	}
@@ -179,7 +179,11 @@ func (s *Service) ProcessExtraction(ctx context.Context, p queue.RecordingPipeli
 		return fmt.Errorf("failed to upload extracted audio: %w", err)
 	}
 
-	if err := s.repo.UpdateRecordingAudioURL(ctx, recording.ID, destAudioKey, extracted.DurationSeconds); err != nil {
+	sizeToUpdate := recording.FileSizeBytes
+	if sizeToUpdate <= 0 {
+		sizeToUpdate = extracted.SizeBytes
+	}
+	if err := s.repo.UpdateRecordingAudioURL(ctx, recording.ID, destAudioKey, extracted.DurationSeconds, sizeToUpdate); err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeExtractionFailed, fmt.Sprintf("failed to update audio url: %v", err))
 		return fmt.Errorf("failed to update audio url: %w", err)
 	}

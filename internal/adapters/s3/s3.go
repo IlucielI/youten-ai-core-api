@@ -234,6 +234,27 @@ func (s *S3) PresignPutObject(ctx context.Context, bucketName, objectName string
 	return presignedURL.String(), nil
 }
 
+// StatObject retrieves the size of an object in bytes from the bucket.
+func (s *S3) StatObject(ctx context.Context, bucketName, objectName string) (int64, error) {
+	if s == nil || s.client == nil {
+		return 0, errors.New("s3 client is nil")
+	}
+
+	targetBucket := s.resolveBucket(bucketName)
+	if targetBucket == "" {
+		return 0, errors.New("bucket name is required")
+	}
+	if strings.TrimSpace(objectName) == "" {
+		return 0, errors.New("object name is required")
+	}
+
+	info, err := s.client.StatObject(ctx, targetBucket, objectName, minio.StatObjectOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return info.Size, nil
+}
+
 func (s *S3) resolveBucket(bucketName string) string {
 	trimmed := strings.TrimSpace(bucketName)
 	if trimmed != "" {

@@ -44,6 +44,9 @@ func (m *testRecordingStorage) PresignPutObject(ctx context.Context, bucketName,
 	}
 	return "https://mock.storage/recordings/upload-url", nil
 }
+func (m *testRecordingStorage) StatObject(ctx context.Context, bucketName, objectName string) (int64, error) {
+	return 1024, nil
+}
 
 type testEventPublisher struct {
 	publishedTopics []string

@@ -67,11 +67,12 @@ type PresignUploadResponse struct {
 
 // UploadRecordingRequest carries metadata sent by the client after uploading directly to S3.
 type UploadRecordingRequest struct {
-	Filename  string `form:"filename" json:"filename"`
-	ObjectKey string `form:"object_key" json:"object_key"`
-	Title     string `form:"title" json:"title"`
-	Template  string `form:"template" json:"template"`
-	Language  string `form:"language" json:"language"`
+	Filename      string `form:"filename" json:"filename"`
+	ObjectKey     string `form:"object_key" json:"object_key"`
+	Title         string `form:"title" json:"title"`
+	Template      string `form:"template" json:"template"`
+	Language      string `form:"language" json:"language"`
+	FileSizeBytes int64  `form:"file_size_bytes" json:"file_size_bytes"`
 }
 
 // RecordingUploadResponse represents the response payload returned after successful ingestion.

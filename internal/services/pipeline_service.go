@@ -86,12 +86,17 @@ func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePa
 	extracted, err := s.mediaLinkExtractor.ExtractAudio(importCtx, targetURL)
 	if err != nil {
 		errCode := models.ErrCodeImportFetchFailed
-		if errors.Is(err, ErrMediaAccessDenied) || strings.Contains(strings.ToLower(err.Error()), "access denied") || strings.Contains(strings.ToLower(err.Error()), "permission") {
+		var errMsg string
+		if errors.Is(err, ErrMediaAccessDenied) || strings.Contains(strings.ToLower(err.Error()), "access denied") || strings.Contains(strings.ToLower(err.Error()), "permission") || strings.Contains(strings.ToLower(err.Error()), "private") {
 			errCode = models.ErrCodeGDriveAccessDenied
+			errMsg = "Google Drive file is private or requires access permission. Please set link sharing to 'Anyone with the link' and retry."
 		} else if errors.Is(err, ErrUnsupportedMedia) || strings.Contains(strings.ToLower(err.Error()), "unsupported media") || strings.Contains(strings.ToLower(err.Error()), "audio extractor is not configured") {
 			errCode = models.ErrCodeUnsupportedMediaType
+			errMsg = "The provided media link points to an unsupported or invalid media format."
+		} else {
+			errMsg = fmt.Sprintf("media import failed: %v", err)
 		}
-		s.failAndLog(ctx, recording.ID, errCode, fmt.Sprintf("media import failed: %v", err))
+		s.failAndLog(ctx, recording.ID, errCode, errMsg)
 		return fmt.Errorf("media import failed: %w", err)
 	}
 	defer extracted.Close()
@@ -959,11 +964,12 @@ func (s *Service) ResumeRecordingPipeline(ctx context.Context, recording *models
 func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errCode, errMsg string) error {
 	log.Printf("[PIPELINE ERROR] Recording %s FAILED: [%s] %s", recordingID.String(), errCode, errMsg)
 
-	if err := s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusFailed, &errCode, &errMsg); err != nil {
+	cleanMsg := sanitizePipelineErrorMessage(errMsg)
+	if err := s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusFailed, &errCode, &cleanMsg); err != nil {
 		log.Printf("[PIPELINE ERROR] recording %s: failed to update status to FAILED in DB: %v", recordingID.String(), err)
 		return err
 	}
-	s.publishProgress(recordingID, models.RecordingStatusFailed, &errCode, &errMsg)
+	s.publishProgress(recordingID, models.RecordingStatusFailed, &errCode, &cleanMsg)
 
 	// Best-effort terminal failure notification.
 	if err := s.publishEvent(ctx, constants.TopicRecordingFailed, queue.RecordingPipelinePayload{
@@ -974,6 +980,37 @@ func (s *Service) FailRecording(ctx context.Context, recordingID uuid.UUID, errC
 	}
 
 	return nil
+}
+
+// sanitizePipelineErrorMessage strips internal implementation details, raw third-party JSON payloads,
+// and vendor model references from user-visible error messages.
+func sanitizePipelineErrorMessage(errMsg string) string {
+	trimmed := strings.TrimSpace(errMsg)
+	lower := strings.ToLower(trimmed)
+
+	// Detect raw JSON errors from STT/LLM APIs (e.g. {"error": {"message": "..."}})
+	if strings.Contains(lower, "could not process file") || (strings.Contains(lower, "valid media file") && strings.Contains(lower, "status 400")) {
+		return "Audio processing failed: the media file is corrupt, invalid, or contains no readable audio stream."
+	}
+	if strings.Contains(lower, "stt transcription failed") || strings.Contains(lower, "primary stt") || strings.Contains(lower, "whisper") {
+		if strings.Contains(lower, "valid media") || strings.Contains(lower, "400") {
+			return "Audio processing failed: the media file is corrupt, invalid, or contains no readable audio stream."
+		}
+		return "Speech-to-text audio transcription failed. Please try again."
+	}
+	if strings.Contains(lower, "media resource access denied or private") || strings.Contains(lower, "access denied") {
+		return "Google Drive file is private or requires access permission. Please set link sharing to 'Anyone with the link' and retry."
+	}
+	if strings.Contains(lower, "llm generation failed") || strings.Contains(lower, "openrouter") || strings.Contains(lower, "anthropic") {
+		return "AI summarization failed while processing transcript. Please retry."
+	}
+
+	// If error string contains raw JSON object {"error": ...}, replace with clean fallback
+	if strings.Contains(trimmed, `{"error"`) || strings.Contains(trimmed, `{"message"`) {
+		return "An unexpected error occurred during audio processing. Please try again."
+	}
+
+	return trimmed
 }
 
 func (s *Service) publishProgress(recordingID uuid.UUID, status string, errCode, errMsg *string) {

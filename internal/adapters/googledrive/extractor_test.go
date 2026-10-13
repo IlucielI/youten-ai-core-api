@@ -3,6 +3,7 @@ package googledrive_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"code-base-golang/internal/adapters/googledrive"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/services"
 )
 
 type mockAudioConverter struct {
@@ -317,5 +319,76 @@ func TestExtractor_ExtractAudio_SizeExceeded(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "exceeds maximum allowed size") {
 		t.Errorf("expected size exceeded error, got: %v", err)
+	}
+}
+
+func TestExtractor_ExtractAudio_AccessDenied_Forbidden(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	ext := googledrive.NewExtractorForTest(server.URL, googledrive.Config{
+		Transport: server.Client().Transport,
+	})
+
+	targetURL := "https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view"
+	_, err := ext.ExtractAudio(context.Background(), targetURL)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, services.ErrMediaAccessDenied) {
+		t.Errorf("expected ErrMediaAccessDenied, got: %v", err)
+	}
+}
+
+func TestExtractor_ExtractAudio_AccessDenied_HTMLSignInPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head><title>Sign in - Google Accounts</title></head>
+			<body>
+				<h1>You need permission</h1>
+				<p>Want in? Ask for access, or switch to an account with permission.</p>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	ext := googledrive.NewExtractorForTest(server.URL, googledrive.Config{
+		Transport: server.Client().Transport,
+	})
+
+	targetURL := "https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view"
+	_, err := ext.ExtractAudio(context.Background(), targetURL)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, services.ErrMediaAccessDenied) {
+		t.Errorf("expected ErrMediaAccessDenied, got: %v", err)
+	}
+}
+
+func TestExtractor_FetchMetadata_AccessDenied(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	ext := googledrive.NewExtractorForTest(server.URL, googledrive.Config{
+		Transport: server.Client().Transport,
+	})
+
+	targetURL := "https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view"
+	_, err := ext.FetchMetadata(context.Background(), targetURL)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, services.ErrMediaAccessDenied) {
+		t.Errorf("expected ErrMediaAccessDenied, got: %v", err)
 	}
 }

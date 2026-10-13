@@ -218,8 +218,11 @@ func (r *Repositories) UpdateRecordingAudioURL(ctx context.Context, id uuid.UUID
 	if durationSeconds > 0 {
 		updates["duration_seconds"] = durationSeconds
 	}
-	if len(fileSizeBytes) > 0 && fileSizeBytes[0] > 0 {
-		updates["file_size_bytes"] = fileSizeBytes[0]
+	for _, size := range fileSizeBytes {
+		if size > 0 {
+			updates["file_size_bytes"] = size
+			break
+		}
 	}
 	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", id).Updates(updates)
 	if res.Error != nil {

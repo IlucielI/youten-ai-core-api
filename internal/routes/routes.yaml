@@ -3,7 +3,7 @@
 #
 # Style conventions (keep consistent):
 #   - One list item per route using an inline leading dash.
-#   - Field order: method, path, handler, then auth/optional_auth/basic_auth when needed.
+#   - Field order: method, path, handler, then auth/optional_auth when needed.
 #   - A single comment line above each route describing its purpose.
 routes:
   # Liveness and readiness health probe.

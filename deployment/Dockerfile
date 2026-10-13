@@ -1,4 +1,5 @@
-FROM code-base-golang-api-base:latest AS builder
+ARG BASE_IMAGE=code-base-golang-api-base:latest
+FROM ${BASE_IMAGE} AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH

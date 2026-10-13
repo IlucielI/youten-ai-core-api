@@ -26,7 +26,6 @@ type routeItem struct {
 	Handler         string `yaml:"handler"`
 	Auth            bool   `yaml:"auth,omitempty"`
 	OptionalAuth    bool   `yaml:"optional_auth,omitempty"`
-	BasicAuth       bool   `yaml:"basic_auth,omitempty"`
 	AdminAuth       bool   `yaml:"admin_auth,omitempty"`
 	Permission      string `yaml:"permission,omitempty"`
 	AdminPermission string `yaml:"admin_permission,omitempty"`
@@ -60,10 +59,6 @@ func (r *routeItem) UnmarshalYAML(value *yaml.Node) error {
 		case "optional_auth":
 			if b, ok := v.(bool); ok {
 				r.OptionalAuth = b
-			}
-		case "basic_auth":
-			if b, ok := v.(bool); ok {
-				r.BasicAuth = b
 			}
 		case "admin_auth":
 			if b, ok := v.(bool); ok {
@@ -161,9 +156,6 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 		}
 
 		var handlers []gin.HandlerFunc
-		if r.BasicAuth {
-			handlers = append(handlers, middlewares.BasicAuth(cfg.BasicAuthUsername, cfg.BasicAuthPassword))
-		}
 		isAdminRoute := r.AdminAuth || r.AdminPermission != "" || (r.Permission != "" && strings.HasPrefix(r.Path, "/v1/admin/"))
 		if r.Auth || r.Scope != "" || (!isAdminRoute && r.Permission != "") {
 			handlers = append(handlers, middlewares.RequireAuth(validator))

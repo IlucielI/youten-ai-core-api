@@ -46,6 +46,14 @@ func WriteChatToken(w io.Writer, token string) error {
 	})
 }
 
+// WriteChatSession serializes and writes a ChatSessionEvent as an SSE event named "session".
+func WriteChatSession(w io.Writer, sessionID string) error {
+	return WriteEvent(w, Event{
+		Event: "session",
+		Data:  ChatSessionEvent{SessionID: sessionID},
+	})
+}
+
 // WriteChatDone serializes and writes a ChatDoneEvent as an SSE event named "done".
 func WriteChatDone(w io.Writer, event ChatDoneEvent) error {
 	return WriteEvent(w, Event{

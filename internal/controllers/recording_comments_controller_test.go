@@ -929,3 +929,68 @@ func TestControllers_AskWorkspaceMemory_Success(t *testing.T) {
 		t.Errorf("expected source title 'Q3 Planning', got %s", resp.Data.Sources[0].RecordingTitle)
 	}
 }
+
+func TestControllers_GetRecordingChatHistory_InvalidUUID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/invalid-uuid/chat", nil)
+
+	ctrls.GetRecordingChatHistory(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetRecordingChatHistory_MissingSessionID(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/chat", nil)
+
+	ctrls.GetRecordingChatHistory(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", w.Code)
+	}
+}
+
+func TestControllers_GetRecordingChatHistory_Success(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	sessionID := uuid.New()
+	ownerID := uuid.New()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, &ownerID))
+
+	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE recording_id = \$1 AND session_id = \$2 ORDER BY created_at ASC`).
+		WithArgs(recID, sessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "session_id", "content", "sender_role"}).
+			AddRow(uuid.New(), recID, sessionID, "User question", "user").
+			AddRow(uuid.New(), recID, sessionID, "Assistant answer", "assistant"))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/recordings/"+recID.String()+"/chat?session_id="+sessionID.String(), nil)
+	c.Request = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{UserID: ownerID}))
+
+	ctrls.GetRecordingChatHistory(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+}

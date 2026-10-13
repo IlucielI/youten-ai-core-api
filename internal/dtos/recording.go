@@ -375,8 +375,9 @@ type CommentResponse struct {
 	UpdatedAt    time.Time         `json:"updated_at,omitempty"`
 }
 
-// RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
+// RecordingChatStreamResult carries the stream channel, session ID, and retrieved context chunk IDs.
 type RecordingChatStreamResult struct {
+	SessionID         uuid.UUID          `json:"session_id"`
 	StreamChannel     <-chan StreamChunk `json:"-"`
 	RetrievedChunkIDs []string           `json:"retrieved_chunk_ids,omitempty"`
 }

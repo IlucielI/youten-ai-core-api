@@ -108,8 +108,30 @@ func TestService_InitiateRecordingChatStream_Forbidden_Unauthorized(t *testing.T
 	}
 }
 
-func TestService_InitiateRecordingChatStream_Forbidden_ShareToken(t *testing.T) {
+func TestService_InitiateRecordingChatStream_Forbidden_ShareTokenDisabled(t *testing.T) {
 	svc, mock, _, _ := setupChatTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	ownershipToken := "secret-ownership-token"
+	shareToken := "viewer-share-token"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token", "is_share_enabled", "share_token"}).
+			AddRow(recID, &ownerID, ownershipToken, false, &shareToken))
+
+	// When share is disabled, viewer supplies shareToken -> must be rejected with ErrForbidden
+	_, err := svc.InitiateRecordingChatStream(ctx, recID, shareToken, dtos.RecordingChatRequest{
+		Message: "Hello from viewer",
+	})
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for share token viewer when sharing is disabled, got %v", err)
+	}
+}
+
+func TestService_InitiateRecordingChatStream_Success_ShareToken(t *testing.T) {
+	svc, mock, mockLLM, _ := setupChatTestService(t)
 	recID := uuid.New()
 	ownerID := uuid.New()
 	ownershipToken := "secret-ownership-token"
@@ -121,12 +143,26 @@ func TestService_InitiateRecordingChatStream_Forbidden_ShareToken(t *testing.T) 
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "ownership_token", "is_share_enabled", "share_token"}).
 			AddRow(recID, &ownerID, ownershipToken, true, &shareToken))
 
-	// Viewer supplies shareToken -> must be rejected with ErrForbidden (AC2)
-	_, err := svc.InitiateRecordingChatStream(ctx, recID, shareToken, dtos.RecordingChatRequest{
-		Message: "Hello from viewer",
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	mockLLM.StreamChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+		ch := make(chan dtos.StreamChunk, 1)
+		ch <- dtos.StreamChunk{Content: "Response for shared session viewer"}
+		close(ch)
+		return ch, nil
+	}
+
+	result, err := svc.InitiateRecordingChatStream(ctx, recID, shareToken, dtos.RecordingChatRequest{
+		Message: "Question from viewer",
 	})
-	if !errors.Is(err, constants.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden for share token viewer, got %v", err)
+	if err != nil {
+		t.Fatalf("unexpected error for share token viewer: %v", err)
+	}
+	if result.SessionID == uuid.Nil {
+		t.Error("expected non-nil session ID")
 	}
 }
 
@@ -222,7 +258,7 @@ func TestService_InitiateRecordingChatStream_Success_WithCitations(t *testing.T)
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
 	mock.ExpectCommit()
 
-	asstMsg, citations, err := svc.SaveAssistantChatMessage(ctx, recID, fullText, result.RetrievedChunkIDs)
+	asstMsg, citations, err := svc.SaveAssistantChatMessage(ctx, recID, result.SessionID, fullText, result.RetrievedChunkIDs)
 	if err != nil {
 		t.Fatalf("unexpected error saving assistant message: %v", err)
 	}
@@ -295,7 +331,7 @@ func TestService_InitiateRecordingChatStream_Success_EmptyContextFallback(t *tes
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
 	mock.ExpectCommit()
 
-	asstMsg, citations, err := svc.SaveAssistantChatMessage(ctx, recID, "I have no transcript context available.", result.RetrievedChunkIDs)
+	asstMsg, citations, err := svc.SaveAssistantChatMessage(ctx, recID, result.SessionID, "I have no transcript context available.", result.RetrievedChunkIDs)
 	if err != nil {
 		t.Fatalf("unexpected error saving assistant message: %v", err)
 	}
@@ -380,5 +416,51 @@ func TestService_InitiateRecordingChatStream_Success_GuestSession(t *testing.T) 
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+	}
+}
+
+func TestService_ListRecordingChatHistory_Success(t *testing.T) {
+	svc, mock, _, _ := setupChatTestService(t)
+	recID := uuid.New()
+	sessionID := uuid.New()
+	ownerID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: ownerID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, &ownerID))
+
+	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE recording_id = \$1 AND session_id = \$2 ORDER BY created_at ASC`).
+		WithArgs(recID, sessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "session_id", "content", "sender_role"}).
+			AddRow(uuid.New(), recID, sessionID, "Hello", "user").
+			AddRow(uuid.New(), recID, sessionID, "Hi there!", "assistant"))
+
+	msgs, err := svc.ListRecordingChatHistory(ctx, recID, sessionID, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error listing chat history: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+}
+
+func TestService_ListRecordingChatHistory_Forbidden(t *testing.T) {
+	svc, mock, _, _ := setupChatTestService(t)
+	recID := uuid.New()
+	sessionID := uuid.New()
+	ownerID := uuid.New()
+	wrongUserID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: wrongUserID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).
+			AddRow(recID, &ownerID))
+
+	_, err := svc.ListRecordingChatHistory(ctx, recID, sessionID, "", "")
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 }

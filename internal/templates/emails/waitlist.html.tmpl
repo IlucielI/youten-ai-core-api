@@ -5,34 +5,61 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Welcome to Youten Voice Bot Beta</title>
   <style>
-    body { margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f1f5f9; }
-    .wrapper { max-width: 580px; margin: 40px auto; background: #13192b; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
-    .header { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 36px 32px; text-align: center; }
-    .brand-title { font-size: 24px; font-weight: 800; color: #ffffff; margin: 0; }
-    .content { padding: 36px 32px; background: #0f1423; }
-    h2 { font-size: 20px; font-weight: 700; color: #f8fafc; margin-top: 0; margin-bottom: 16px; }
-    p { font-size: 15px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
-    .info-box { background: #182033; border: 1px solid rgba(99,102,241,0.4); border-radius: 12px; padding: 20px; margin: 24px 0; }
-    .info-item { margin: 8px 0; font-size: 14px; color: #cbd5e1; }
-    .info-label { font-weight: 600; color: #818cf8; }
-    .notice { font-size: 13px; color: #64748b; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; margin-top: 28px; }
+    body { margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155; -webkit-font-smoothing: antialiased; }
+    .wrapper { max-width: 540px; margin: 40px auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 24px -2px rgba(15, 23, 42, 0.06); }
+    .top-accent { height: 4px; background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 50%, #3b82f6 100%); width: 100%; }
+    .header { padding: 32px 32px 18px 32px; text-align: center; }
+    .brand-logo { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; }
+    .brand-text { font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
+    .brand-pill { display: inline-block; padding: 4px 12px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 9999px; font-size: 11px; font-weight: 600; color: #6d28d9; letter-spacing: 0.02em; }
+    .content { padding: 0 32px 32px 32px; }
+    h1 { font-size: 20px; font-weight: 700; color: #0f172a; margin: 16px 0 10px 0; letter-spacing: -0.01em; text-align: center; }
+    p { font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 16px 0; }
+    .info-box { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 14px; padding: 18px 22px; margin: 22px 0; }
+    .info-table { width: 100%; border-collapse: collapse; }
+    .info-table td { padding: 8px 0; font-size: 13px; border-bottom: 1px solid #f3e8ff; }
+    .info-table tr:last-child td { border-bottom: none; }
+    .info-label { font-weight: 600; color: #6d28d9; width: 45%; }
+    .info-val { font-weight: 700; color: #0f172a; }
+    .notice { font-size: 12px; color: #64748b; line-height: 1.5; border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 24px; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px 32px; text-align: center; font-size: 12px; color: #94a3b8; }
   </style>
 </head>
 <body>
   <div class="wrapper">
+    <div class="top-accent"></div>
     <div class="header">
-      <div class="brand-title">Youten AI</div>
+      <div class="brand-logo">
+        <span class="brand-text">Youten AI</span>
+      </div>
+      <div>
+        <span class="brand-pill">AI Voice &amp; Conversation Intelligence</span>
+      </div>
     </div>
     <div class="content">
-      <h2>Welcome to Youten Voice Bot Beta!</h2>
-      <p>Thank you for your interest in joining the <strong>Meeting Voice Bot Beta</strong> program.</p>
+      <h1>Voice Bot Beta Waitlist</h1>
+      <p>We received your registration for the <strong>Meeting Voice Bot Beta</strong> program.</p>
       <div class="info-box">
-        <div class="info-item"><span class="info-label">Preferred Platform:</span> {{.Platform}}</div>
-        <div class="info-item"><span class="info-label">Company Size:</span> {{.CompanySize}}</div>
-        <div class="info-item"><span class="info-label">Status:</span> {{.Status}}</div>
+        <table class="info-table">
+          <tr>
+            <td class="info-label">Preferred Platform:</td>
+            <td class="info-val">{{.Platform}}</td>
+          </tr>
+          <tr>
+            <td class="info-label">Company Size:</td>
+            <td class="info-val">{{.CompanySize}}</td>
+          </tr>
+          <tr>
+            <td class="info-label">Status:</td>
+            <td class="info-val">{{.Status}}</td>
+          </tr>
+        </table>
       </div>
-      <p>We are rolling out beta invites gradually. You will receive an invitation email as soon as your workspace is provisioned.</p>
+      <p>We roll out beta invites in batches. We'll send an invitation to this email address as soon as your workspace is ready.</p>
       <p class="notice">Best regards,<br><strong>The Youten Team</strong></p>
+    </div>
+    <div class="footer">
+      &copy; 2026 Youten AI &bull; Intelligent Speech &amp; Meeting Synthesis
     </div>
   </div>
 </body>

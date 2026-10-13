@@ -14,9 +14,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/jsonutil"
-	"code-base-golang/internal/pkg/strutil"
 )
 
 // InitiateRecordingChatStream validates ownership, retrieves relevant context chunks via vector search,
@@ -35,18 +33,8 @@ func (s *Service) InitiateRecordingChatStream(
 		return nil, fmt.Errorf("failed to lookup recording: %w", err)
 	}
 
-	// Owner verification: only the owner (authenticated or guest with ownership token) may chat
-	hasAccess := false
-	isAuth := ctxmeta.IsAuthenticated(ctx)
-	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
-
-	if isAuth && hasUserID && rec.UserID != nil && *rec.UserID == userID {
-		hasAccess = true
-	} else if ownershipToken != "" && strutil.ConstantTimeEqual(ownershipToken, rec.OwnershipToken) {
-		hasAccess = true
-	}
-
-	if !hasAccess {
+	// Owner verification: only the owner (authenticated user, matching ownership token, or active guest session) may chat
+	if !s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{}) {
 		return nil, constants.ErrForbidden
 	}
 

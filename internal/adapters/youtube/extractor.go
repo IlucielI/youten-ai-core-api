@@ -298,7 +298,6 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.Med
 		"-j",
 		"--no-playlist",
 		"--no-warnings",
-		"--no-call-home",
 		"--socket-timeout", "15",
 		normURL,
 	}
@@ -379,7 +378,6 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 		"-f", "ba[ext=m4a]/ba[ext=webm]/ba",
 		"--no-playlist",
 		"--no-warnings",
-		"--no-call-home",
 		"--max-filesize", fmt.Sprintf("%d", e.maxAudioSizeBytes),
 		"--socket-timeout", "30",
 		"--write-info-json",

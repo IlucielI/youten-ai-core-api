@@ -3,32 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verify Your Email</title>
+  <title>Verify Your Email - Youten AI</title>
   <style>
-    body { margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f1f5f9; }
-    .wrapper { max-width: 580px; margin: 40px auto; background: #13192b; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
-    .header { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 36px 32px; text-align: center; }
-    .brand-title { font-size: 24px; font-weight: 800; color: #ffffff; margin: 0; }
-    .content { padding: 36px 32px; background: #0f1423; }
-    h2 { font-size: 20px; font-weight: 700; color: #f8fafc; margin-top: 0; margin-bottom: 16px; }
-    p { font-size: 15px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
-    .code-box { background: #182033; border: 1px solid rgba(99,102,241,0.4); border-radius: 12px; padding: 20px; text-align: center; margin: 28px 0; }
-    .code-label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: #818cf8; letter-spacing: 1px; margin-bottom: 8px; }
-    .code-val { font-family: monospace; font-size: 34px; font-weight: 800; color: #38bdf8; letter-spacing: 6px; }
-    .btn-wrap { text-align: center; margin: 32px 0; }
-    .btn { display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 10px; }
-    .notice { font-size: 13px; color: #64748b; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; margin-top: 28px; }
+    body { margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155; -webkit-font-smoothing: antialiased; }
+    .wrapper { max-width: 540px; margin: 40px auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 24px -2px rgba(15, 23, 42, 0.06); }
+    .top-accent { height: 4px; background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 50%, #3b82f6 100%); width: 100%; }
+    .header { padding: 32px 32px 18px 32px; text-align: center; }
+    .brand-logo { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; }
+    .brand-text { font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
+    .brand-pill { display: inline-block; padding: 4px 12px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 9999px; font-size: 11px; font-weight: 600; color: #6d28d9; letter-spacing: 0.02em; }
+    .content { padding: 0 32px 32px 32px; }
+    h1 { font-size: 20px; font-weight: 700; color: #0f172a; margin: 16px 0 10px 0; letter-spacing: -0.01em; text-align: center; }
+    p { font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 16px 0; }
+    .greeting { font-size: 15px; color: #1e293b; margin-bottom: 12px; }
+    .code-box { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 14px; padding: 22px; text-align: center; margin: 24px 0; }
+    .code-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #7c3aed; letter-spacing: 0.08em; margin-bottom: 6px; }
+    .code-val { font-family: 'SF Mono', Menlo, Consolas, Monaco, monospace; font-size: 32px; font-weight: 800; color: #1e1b4b; letter-spacing: 6px; }
+    .btn-wrap { text-align: center; margin: 26px 0; }
+    .btn { display: inline-block; background: #4f46e5; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 28px; border-radius: 10px; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25); }
+    .notice { font-size: 12px; color: #64748b; line-height: 1.5; border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 24px; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px 32px; text-align: center; font-size: 12px; color: #94a3b8; }
   </style>
 </head>
 <body>
   <div class="wrapper">
+    <div class="top-accent"></div>
     <div class="header">
-      <div class="brand-title">Youten AI</div>
+      <div class="brand-logo">
+        <span class="brand-text">Youten AI</span>
+      </div>
+      <div>
+        <span class="brand-pill">AI Voice &amp; Conversation Intelligence</span>
+      </div>
     </div>
     <div class="content">
-      <h2>Verify Your Email Address</h2>
-      <p>Hello <strong>{{.FullName}}</strong>,</p>
-      <p>Thank you for signing up with Youten AI. Please use the verification code below to confirm your account:</p>
+      <h1>Verify Your Email Address</h1>
+      <p class="greeting">Hello <strong>{{.FullName}}</strong>,</p>
+      <p>Here is your verification code to confirm your Youten AI account:</p>
       <div class="code-box">
         <div class="code-label">Verification Code (OTP)</div>
         <div class="code-val">{{.Code}}</div>
@@ -36,7 +47,10 @@
       <div class="btn-wrap">
         <a href="{{.VerifyURL}}" class="btn">Verify My Email</a>
       </div>
-      <p class="notice">This code and link are valid for 24 hours. If you did not sign up for Youten AI, please ignore this email.</p>
+      <p class="notice">This code and link expire in 24 hours. If you did not create a Youten AI account, you can safely ignore this email.</p>
+    </div>
+    <div class="footer">
+      &copy; 2026 Youten AI &bull; Intelligent Speech &amp; Meeting Synthesis
     </div>
   </div>
 </body>

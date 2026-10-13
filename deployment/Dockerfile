@@ -19,10 +19,10 @@ ENV GIT_HASH=${GIT_HASH}
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata ffmpeg wget python3 quickjs \
+RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community ca-certificates tzdata ffmpeg wget python3 nodejs \
     && wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp \
     && chmod a+rx /usr/local/bin/yt-dlp \
-    && echo '--js-runtimes quickjs:qjs' > /etc/yt-dlp.conf \
+    && printf '%s\n' '--js-runtimes node:node' '--remote-components ejs:github' > /etc/yt-dlp.conf \
     && addgroup -S app \
     && adduser -S app -G app
 

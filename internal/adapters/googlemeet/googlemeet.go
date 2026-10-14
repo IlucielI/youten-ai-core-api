@@ -15,6 +15,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/apperror"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/services"
 )
 
@@ -117,14 +118,16 @@ func (a *Adapter) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (
 	a.mu.Unlock()
 
 	if a.cfg.Publisher != nil {
-		eventPayload := map[string]interface{}{
-			"session_id":          params.SessionID,
-			"external_session_id": externalID,
-			"recording_id":        params.RecordingID,
-			"meeting_url":         params.MeetingURL,
-			"dispatched_at":       now,
+		eventPayload := queue.BotDispatchPayload{
+			SessionID:         params.SessionID,
+			RecordingID:       params.RecordingID,
+			Provider:          constants.BotProviderGoogleMeet,
+			MeetingURL:        params.MeetingURL,
+			ExternalSessionID: externalID,
+			DispatchedAt:      now,
+			ScheduledAt:       params.ScheduledAt,
 		}
-		_ = a.cfg.Publisher.Publish(ctx, "bot.google_meet.dispatch", eventPayload)
+		_ = a.cfg.Publisher.Publish(ctx, constants.TopicBotGoogleMeetDispatch, eventPayload)
 	}
 
 	return externalID, nil

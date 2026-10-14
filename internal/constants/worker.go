@@ -23,5 +23,7 @@ const (
 	QueueRecordingDLQ    = "recording.dlq"
 	TopicPipelineUnknown = "pipeline.unknown"
 	QueuePipelineUnknown = "pipeline.unknown"
-)
 
+	// Meeting voice bot orchestration topics
+	TopicBotGoogleMeetDispatch = "bot.google_meet.dispatch"
+)

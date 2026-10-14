@@ -34,5 +34,6 @@ tmp/
 # Bot runner session state & cookies
 deployment/bot-runner/node_modules/
 deployment/bot-runner/session/*.json
+deployment/bot-runner/session/chrome-auth-profile/
 !deployment/bot-runner/session/.gitkeep
 

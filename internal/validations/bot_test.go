@@ -55,6 +55,22 @@ func TestValidateDispatchBotRequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid google meet request with non-google-meet host",
+			req: dtos.DispatchBotRequest{
+				Provider:   constants.BotProviderGoogleMeet,
+				MeetingURL: "https://zoom.us/j/123456",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid google meet request with bad code pattern",
+			req: dtos.DispatchBotRequest{
+				Provider:   constants.BotProviderGoogleMeet,
+				MeetingURL: "https://meet.google.com/not-proper-code",
+			},
+			wantErr: true,
+		},
+		{
 			name: "unsupported provider",
 			req: dtos.DispatchBotRequest{
 				Provider: "unknown_provider",
@@ -243,5 +259,3 @@ func TestValidateZoomWebhookRequest(t *testing.T) {
 		})
 	}
 }
-
-

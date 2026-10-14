@@ -26,4 +26,5 @@ const (
 
 	// Meeting voice bot orchestration topics
 	TopicBotGoogleMeetDispatch = "bot.google_meet.dispatch"
+	TopicBotGoogleMeetStop     = "bot.google_meet.stop"
 )

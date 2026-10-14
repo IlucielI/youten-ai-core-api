@@ -32,7 +32,28 @@ async function startDaemon() {
   const concurrency = parseInt(process.env.RUNNER_CONCURRENCY || '2', 10);
   await channel.prefetch(concurrency);
 
-  console.log(`[DAEMON READY] Listening on queue "${QUEUE_NAME}" for key "${ROUTING_KEY}" (concurrency: ${concurrency})...`);
+  const STOP_ROUTING_KEY = 'bot.google_meet.stop';
+  const stopQueue = await channel.assertQueue('', { exclusive: true });
+  await channel.bindQueue(stopQueue.queue, EXCHANGE_NAME, STOP_ROUTING_KEY);
+
+  channel.consume(stopQueue.queue, (msg) => {
+    if (!msg) return;
+    try {
+      const payload = JSON.parse(msg.content.toString());
+      const extId = payload.external_session_id;
+      if (extId && activeSessions.has(extId)) {
+        console.log(`[DAEMON] Received STOP signal for active session ${extId}. Initiating graceful exit...`);
+        const token = activeSessions.get(extId);
+        token.cancelled = true;
+      }
+    } catch (e) {
+      console.error('[DAEMON ERROR] Failed to parse stop message:', e.message);
+    } finally {
+      channel.ack(msg);
+    }
+  });
+
+  console.log(`[DAEMON READY] Listening on "${QUEUE_NAME}" (${ROUTING_KEY}) and stop broadcast (${STOP_ROUTING_KEY})...`);
 
   channel.consume(QUEUE_NAME, async (msg) => {
     if (!msg) return;

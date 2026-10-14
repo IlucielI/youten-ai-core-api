@@ -3,6 +3,7 @@ package googlemeet
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -127,7 +128,11 @@ func (a *Adapter) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (
 			DispatchedAt:      now,
 			ScheduledAt:       params.ScheduledAt,
 		}
-		_ = a.cfg.Publisher.Publish(ctx, constants.TopicBotGoogleMeetDispatch, eventPayload)
+		if err := a.cfg.Publisher.Publish(ctx, constants.TopicBotGoogleMeetDispatch, eventPayload); err != nil {
+			log.Printf("[GOOGLE_MEET] Error publishing bot dispatch event for %s: %v", externalID, err)
+			return "", fmt.Errorf("failed to publish bot dispatch event to queue: %w", err)
+		}
+		log.Printf("[GOOGLE_MEET] Successfully published bot dispatch event for %s to %s", externalID, constants.TopicBotGoogleMeetDispatch)
 	}
 
 	return externalID, nil

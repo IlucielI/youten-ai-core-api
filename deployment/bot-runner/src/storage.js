@@ -5,7 +5,10 @@ const fs = require('fs');
  * Initializes S3/MinIO client from environment variables.
  */
 function createS3Client() {
-  const endpoint = process.env.S3_ENDPOINT || process.env.MINIO_ENDPOINT || 'http://localhost:9000';
+  let endpoint = process.env.S3_ENDPOINT || process.env.MINIO_ENDPOINT || 'http://localhost:9000';
+  if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+    endpoint = `http://${endpoint}`;
+  }
   const region = process.env.S3_REGION || 'us-east-1';
   const accessKeyId = process.env.S3_ACCESS_KEY || process.env.MINIO_ROOT_USER || 'minioadmin';
   const secretAccessKey = process.env.S3_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || 'minioadmin';

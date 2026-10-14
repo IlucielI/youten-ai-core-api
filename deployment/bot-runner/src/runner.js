@@ -200,10 +200,35 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
     // 6. Wait for Admission or Denial
     const admissionStart = Date.now();
     let isAdmitted = false;
+    let lastLogged = 0;
 
     while (Date.now() - admissionStart < admitTimeoutSec * 1000) {
       if (cancellationToken.cancelled) {
         throw new Error('Bot session cancelled by user');
+      }
+
+      await page.screenshot({ path: '/tmp/latest_meet.png' }).catch(() => {});
+
+      if (Date.now() - lastLogged > 8000) {
+        lastLogged = Date.now();
+        const snippet = await page.evaluate(() => document.body ? document.body.innerText.replace(/\s+/g, ' ').trim().slice(0, 400) : '').catch(() => '');
+        console.log(`[RUNNER LOBBY STATE] "${snippet}"`);
+      }
+
+      // Check and dismiss "Login dengan Akun Google Anda / Daripada menunggu izin masuk" prompt by clicking "Oke"
+      const okButton = page.locator('button:has-text("Oke"), button:has-text("OK"), div[role="button"]:has-text("Oke"), div[role="button"]:has-text("OK")').first();
+      if (await okButton.isVisible().catch(() => false)) {
+        console.log('[RUNNER] Dismissing "Login with Google" notice by clicking "Oke"...');
+        await okButton.click().catch(() => {});
+        await page.waitForTimeout(1000);
+
+        // If join button is still visible, click it
+        const retryJoin = page.locator('button:has-text("Minta bergabung"), button:has-text("Ask to join")').first();
+        if (await retryJoin.isVisible().catch(() => false)) {
+          console.log('[RUNNER] Clicking "Minta bergabung" again after dismiss...');
+          await retryJoin.click().catch(() => {});
+          await page.waitForTimeout(1000);
+        }
       }
 
       // Check if admitted: Meeting call controls appear

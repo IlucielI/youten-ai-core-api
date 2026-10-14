@@ -54,12 +54,22 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
       ],
     });
 
-    const context = await browser.newContext({
+    const storageStatePath = process.env.GOOGLE_STORAGE_STATE_PATH || path.join(__dirname, '../session/storage_state.json');
+    const contextOptions = {
       permissions: ['microphone', 'camera'],
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
       locale: 'id-ID',
       timezoneId: 'Asia/Jakarta',
-    });
+    };
+
+    if (fs.existsSync(storageStatePath)) {
+      console.log(`[RUNNER] Loading authenticated Google session from ${storageStatePath}`);
+      contextOptions.storageState = storageStatePath;
+    } else {
+      console.log('[RUNNER NOTICE] No Google session file found; attempting entry as guest.');
+    }
+
+    const context = await browser.newContext(contextOptions);
 
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -238,10 +248,25 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
         break;
       }
 
-      // Check if denied by host
-      const deniedMessage = page.locator('text="You can\'t join this call", text="Someone denied your request to join", text="Permintaan Anda untuk bergabung ditolak"').first();
-      if (await deniedMessage.isVisible().catch(() => false)) {
-        throw new Error('Bot admission denied by meeting host');
+      // Check if redirected away from meeting room or kicked to landing screen
+      const currentLoopUrl = page.url();
+      const meetingCode = meetingUrl.split('/').pop().split('?')[0];
+      if (!currentLoopUrl.includes(meetingCode) || currentLoopUrl.includes('workspace.google.com')) {
+        throw new Error(`Bot was redirected away from meeting room (${currentLoopUrl})`);
+      }
+
+      // Check if denied by host or blocked by room security
+      const deniedSelectors = [
+        'text="Anda tidak dapat bergabung"',
+        'text="You can\'t join"',
+        'text="Someone denied your request"',
+        'text="Permintaan Anda untuk bergabung ditolak"',
+        'text="Penyelenggara menolak"',
+      ];
+      for (const dSel of deniedSelectors) {
+        if (await page.locator(dSel).first().isVisible().catch(() => false)) {
+          throw new Error(`Bot admission rejected by Google Meet security policy: ${dSel}`);
+        }
       }
 
       await page.waitForTimeout(2000);

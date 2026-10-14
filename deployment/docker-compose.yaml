@@ -108,6 +108,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./bot-runner/src:/app/src:ro
+      - ./bot-runner/session:/app/session
     restart: unless-stopped
 
 volumes:

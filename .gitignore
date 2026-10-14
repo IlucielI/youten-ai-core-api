@@ -30,3 +30,9 @@ coverage.html
 .tmp/
 tmp/
 *.log
+
+# Bot runner session state & cookies
+deployment/bot-runner/node_modules/
+deployment/bot-runner/session/*.json
+!deployment/bot-runner/session/.gitkeep
+

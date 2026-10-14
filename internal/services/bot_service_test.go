@@ -313,7 +313,7 @@ func TestService_HandleGoogleMeetWebhook(t *testing.T) {
 	})
 
 	t.Run("completed with audio url", func(t *testing.T) {
-		svc, mock, _, _ := setupRecordingTestService(t)
+		svc, mock, _, publisher := setupRecordingTestService(t)
 		sessID := uuid.New()
 		recID := uuid.New()
 		audioURL := "s3://recordings/meet-123.wav"
@@ -344,6 +344,11 @@ func TestService_HandleGoogleMeetWebhook(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
+		// Lookup recording for pipeline parameters
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "selected_template", "output_language"}).AddRow(recID, "MOM", "id"))
+
 		err := svc.HandleGoogleMeetWebhook(ctx, dtos.GoogleMeetWebhookRequest{
 			ExternalSessionID: "meet-123",
 			Event:             "completed",
@@ -352,6 +357,9 @@ func TestService_HandleGoogleMeetWebhook(t *testing.T) {
 		}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(publisher.publishedTopics) == 0 || publisher.publishedTopics[len(publisher.publishedTopics)-1] != constants.TopicRecordingTranscribe {
+			t.Errorf("expected TopicRecordingTranscribe published, got %v", publisher.publishedTopics)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
 			t.Errorf("unfulfilled mock expectations: %v", err)
@@ -877,5 +885,3 @@ func TestService_HandleZoomWebhook(t *testing.T) {
 		}
 	})
 }
-
-

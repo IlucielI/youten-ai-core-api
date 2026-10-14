@@ -4,11 +4,13 @@
 
 # Go binaries & build outputs
 bin/
+**/bin/
+deployment/bin/
 dist/
 *.exe
 *.out
 
-# Dependencies (Docker uses go.mod/go.sum cache inside Dockerfile.base)
+# Dependencies (Docker uses go.mod/go.sum cache inside Dockerfile.builder-base)
 vendor/
 
 # Environment files

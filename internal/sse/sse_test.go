@@ -108,6 +108,7 @@ func TestSSE_MapStatusToProgress(t *testing.T) {
 		{models.RecordingStatusQueued, "QUEUED", 5},
 		{models.RecordingStatusValidating, "VALIDATING", 15},
 		{models.RecordingStatusExtracting, "EXTRACTING", 30},
+		{models.RecordingStatusRecording, "RECORDING", 30},
 		{models.RecordingStatusTranscribing, "TRANSCRIBING", 55},
 		{models.RecordingStatusSummarizing, "SUMMARIZING", 75},
 		{models.RecordingStatusIndexing, "INDEXING", 90},
@@ -433,4 +434,3 @@ func TestSSE_Writer(t *testing.T) {
 		}
 	})
 }
-

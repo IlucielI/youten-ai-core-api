@@ -128,6 +128,8 @@ func (s *Service) DispatchMeetingBot(ctx context.Context, req dtos.DispatchBotRe
 		return nil, err
 	}
 
+	s.publishProgress(recordingID, models.RecordingStatusRecording, nil, nil)
+
 	return &dtos.DispatchBotResponse{
 		SessionID:      sessionID,
 		RecordingID:    recordingID,
@@ -286,6 +288,11 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 		return apperror.New(http.StatusBadRequest, constants.ErrCodeInvalidEvent, "unrecognized webhook event")
 	}
 
+	// Idempotency: Ignore duplicate completed events to prevent re-triggering transcription pipeline
+	if session.Status == constants.BotSessionStatusCompleted && mappedStatus == constants.BotSessionStatusCompleted {
+		return nil
+	}
+
 	now := time.Now().UTC()
 	var startedAt, endedAt *time.Time
 	var errMsg *string
@@ -316,6 +323,8 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 			return err
 		}
 
+		s.publishProgress(session.RecordingID, models.RecordingStatusTranscribing, nil, nil)
+
 		template := constants.DefaultTemplateKey
 		language := "id"
 		if rec, err := s.repo.FindRecordingByID(ctx, session.RecordingID); err == nil && rec != nil {
@@ -339,6 +348,7 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 
 	if mappedStatus == constants.BotSessionStatusFailed {
 		errCode := constants.ErrCodeBotSessionFailed
+		s.publishProgress(session.RecordingID, models.RecordingStatusFailed, &errCode, payload.ErrorMessage)
 		return s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, payload.ErrorMessage)
 	}
 

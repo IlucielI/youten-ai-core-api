@@ -56,43 +56,146 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
 
     const context = await browser.newContext({
       permissions: ['microphone', 'camera'],
-      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+      locale: 'id-ID',
+      timezoneId: 'Asia/Jakarta',
+    });
+
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      window.chrome = { runtime: {} };
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+      Object.defineProperty(navigator, 'languages', { get: () => ['id-ID', 'id', 'en-US', 'en'] });
     });
 
     const page = await context.newPage();
     page.setDefaultTimeout(30000);
 
     console.log(`[RUNNER] Navigating to ${meetingUrl}...`);
-    await page.goto(meetingUrl, { waitUntil: 'networkidle' });
+    await page.goto(meetingUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForTimeout(4000);
+
+    const currentUrl = page.url();
+    const pageTitle = await page.title().catch(() => '');
+    console.log(`[RUNNER] Loaded page: ${currentUrl} | Title: "${pageTitle}"`);
+
+    // Check if redirected to Google Accounts login
+    if (currentUrl.includes('accounts.google.com')) {
+      throw new Error(`Google Meet redirected to sign-in page (${currentUrl}). This meeting requires a signed-in Google account.`);
+    }
+
+    // Dismiss common Google dialogs (cookie consent, notifications, "Got it")
+    const dismissSelectors = [
+      'button:has-text("Accept all")',
+      'button:has-text("Setuju semua")',
+      'button:has-text("I agree")',
+      'button:has-text("Saya setuju")',
+      'button:has-text("Got it")',
+      'button:has-text("Mengerti")',
+      'button:has-text("Dismiss")',
+      'button:has-text("Tutup")',
+      'div[role="button"]:has-text("Got it")',
+      'div[role="button"]:has-text("Mengerti")',
+    ];
+    for (const sel of dismissSelectors) {
+      try {
+        const el = page.locator(sel).first();
+        if (await el.isVisible({ timeout: 1000 })) {
+          console.log(`[RUNNER] Dismissing dialog with selector: ${sel}`);
+          await el.click().catch(() => {});
+          await page.waitForTimeout(1000);
+        }
+      } catch (_) {}
+    }
 
     // 3. Mute microphone and turn off camera before joining
-    await page.waitForTimeout(2000);
     try {
       await page.keyboard.press('Control+d'); // Toggle microphone off
       await page.keyboard.press('Control+e'); // Toggle camera off
     } catch (e) {
       console.warn('[RUNNER] Keyboard shortcuts mute warning:', e.message);
     }
+    await page.waitForTimeout(1500);
 
     // 4. Input bot guest name if prompt is present
-    try {
-      const nameInput = page.locator('input[type="text"], input[aria-label*="name" i], #c11').first();
-      if (await nameInput.isVisible({ timeout: 4000 })) {
-        await nameInput.fill(botName);
-        console.log(`[RUNNER] Filled bot name: ${botName}`);
-      }
-    } catch (e) {
-      console.log('[RUNNER] Name input step skipped or already signed in.');
+    const nameSelectors = [
+      'input[placeholder*="name" i]',
+      'input[placeholder*="nama" i]',
+      'input[aria-label*="name" i]',
+      'input[aria-label*="nama" i]',
+      'input[type="text"]',
+    ];
+    let nameFilled = false;
+    for (const sel of nameSelectors) {
+      try {
+        const input = page.locator(sel).first();
+        if (await input.isVisible({ timeout: 2000 })) {
+          await input.click();
+          await input.fill(botName);
+          console.log(`[RUNNER] Filled bot name (${botName}) using selector: ${sel}`);
+          nameFilled = true;
+          await page.waitForTimeout(1500);
+          break;
+        }
+      } catch (_) {}
+    }
+    if (!nameFilled) {
+      console.log('[RUNNER] Name input not required or already filled.');
     }
 
-    // 5. Click "Ask to join" or "Join now"
-    const joinButton = page.locator(
-      'button:has-text("Ask to join"), button:has-text("Join now"), button:has-text("Minta bergabung"), button:has-text("Gabung sekarang"), [aria-label*="Join" i]'
-    ).first();
+    // 5. Locate and click "Ask to join" or "Join now"
+    const joinSelectors = [
+      'button:has-text("Ask to join")',
+      'button:has-text("Join now")',
+      'button:has-text("Minta bergabung")',
+      'button:has-text("Gabung sekarang")',
+      'div[role="button"]:has-text("Ask to join")',
+      'div[role="button"]:has-text("Join now")',
+      'div[role="button"]:has-text("Minta bergabung")',
+      'div[role="button"]:has-text("Gabung sekarang")',
+      'span:has-text("Ask to join")',
+      'span:has-text("Join now")',
+      'span:has-text("Minta bergabung")',
+      'span:has-text("Gabung sekarang")',
+      '[aria-label*="Ask to join" i]',
+      '[aria-label*="Join now" i]',
+      '[aria-label*="Minta bergabung" i]',
+      '[aria-label*="Gabung sekarang" i]',
+    ];
 
-    await joinButton.waitFor({ state: 'visible', timeout: 10000 });
-    await joinButton.click();
-    console.log('[RUNNER] Clicked Join / Ask to join button.');
+    let clicked = false;
+    const findJoinDeadline = Date.now() + 15000;
+    while (Date.now() < findJoinDeadline && !clicked) {
+      for (const sel of joinSelectors) {
+        try {
+          const btn = page.locator(sel).first();
+          if (await btn.isVisible({ timeout: 1000 })) {
+            console.log(`[RUNNER] Found join button with selector: ${sel}. Clicking...`);
+            await btn.click({ timeout: 5000 });
+            clicked = true;
+            break;
+          }
+        } catch (_) {}
+      }
+      if (!clicked) {
+        await page.waitForTimeout(1500);
+      }
+    }
+
+    if (!clicked) {
+      // Diagnostic dump before failing
+      const visibleTexts = await page.evaluate(() => {
+        return {
+          buttons: Array.from(document.querySelectorAll('button, div[role="button"]')).map(b => b.innerText.trim()).filter(Boolean).slice(0, 15),
+          inputs: Array.from(document.querySelectorAll('input')).map(i => i.placeholder || i.getAttribute('aria-label') || i.name).slice(0, 10),
+          bodySnippet: document.body ? document.body.innerText.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+        };
+      }).catch(() => ({}));
+      console.error('[RUNNER DIAGNOSTIC] Page UI elements:', JSON.stringify(visibleTexts));
+      throw new Error(`Could not find Join or Ask to Join button on Google Meet preview page. UI State: ${JSON.stringify(visibleTexts)}`);
+    }
+
+    console.log('[RUNNER] Successfully clicked Join / Ask to join button. Waiting for host admission...');
 
     // 6. Wait for Admission or Denial
     const admissionStart = Date.now();

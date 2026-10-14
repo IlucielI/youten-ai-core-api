@@ -478,6 +478,10 @@ func TestService_InitiateRecordingChatStream_Success_ShareToken_WithExplicitSess
 		WillReturnRows(sqlmock.NewRows([]string{"id", "is_share_enabled", "share_token"}).
 			AddRow(recID, true, &shareToken))
 
+	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE recording_id = \$1 AND session_id = \$2 ORDER BY created_at ASC`).
+		WithArgs(recID, sessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "session_id"}))
+
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))

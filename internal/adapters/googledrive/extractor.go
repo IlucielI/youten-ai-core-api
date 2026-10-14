@@ -300,10 +300,12 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 			return nil, err
 		}
 		if isAccessDeniedResponse(resp) {
+			resp.Body.Close()
 			return nil, services.ErrMediaAccessDenied
 		}
 		contentType = strings.ToLower(resp.Header.Get("Content-Type"))
 		if strings.Contains(contentType, "text/html") {
+			resp.Body.Close()
 			return nil, services.ErrMediaAccessDenied
 		}
 	}
@@ -454,7 +456,7 @@ func isAccessDeniedResponse(resp *http.Response) bool {
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 		return true
 	}
-	if resp.Request != nil && strings.Contains(strings.ToLower(resp.Request.URL.Hostname()), "accounts.google.com") {
+	if resp.Request != nil && resp.Request.URL != nil && strings.Contains(strings.ToLower(resp.Request.URL.Hostname()), "accounts.google.com") {
 		return true
 	}
 	return false

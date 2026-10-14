@@ -49,7 +49,10 @@ func (s *Service) InitiateRecordingChatStream(
 	if req.SessionID != nil && *req.SessionID != uuid.Nil {
 		sessionID = *req.SessionID
 		// Prevent share visitors from appending to sessions owned by another user or recording owner
-		existingMsgs, _ := s.repo.ListChatMessagesBySession(ctx, rec.ID, sessionID)
+		existingMsgs, err := s.repo.ListChatMessagesBySession(ctx, rec.ID, sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check session access: %w", err)
+		}
 		if !s.isSessionAccessibleByCaller(ctx, rec, ownershipToken, existingMsgs) {
 			return nil, constants.ErrForbidden
 		}

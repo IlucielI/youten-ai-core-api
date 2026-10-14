@@ -118,14 +118,43 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
       } catch (_) {}
     }
 
-    // 3. Mute microphone and turn off camera before joining
+    // 3. Mute microphone and turn off camera before joining (without toggling back)
     try {
-      await page.keyboard.press('Control+d'); // Toggle microphone off
-      await page.keyboard.press('Control+e'); // Toggle camera off
+      // Toggle off microphone if currently enabled
+      const micSelectors = [
+        '[aria-label*="turn off microphone" i]',
+        '[aria-label*="matikan mikrofon" i]',
+        'button[data-is-muted="false"][aria-label*="mic" i]',
+        'div[role="button"][data-is-muted="false"][aria-label*="mic" i]',
+      ];
+      for (const sel of micSelectors) {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 800 }).catch(() => false)) {
+          console.log(`[RUNNER] Muting microphone before joining via selector: ${sel}`);
+          await btn.click().catch(() => {});
+          break;
+        }
+      }
+
+      // Toggle off camera if currently enabled
+      const camSelectors = [
+        '[aria-label*="turn off camera" i]',
+        '[aria-label*="matikan kamera" i]',
+        'button[data-is-muted="false"][aria-label*="camera" i]',
+        'div[role="button"][data-is-muted="false"][aria-label*="camera" i]',
+      ];
+      for (const sel of camSelectors) {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 800 }).catch(() => false)) {
+          console.log(`[RUNNER] Turning off camera before joining via selector: ${sel}`);
+          await btn.click().catch(() => {});
+          break;
+        }
+      }
     } catch (e) {
-      console.warn('[RUNNER] Keyboard shortcuts mute warning:', e.message);
+      console.warn('[RUNNER] Pre-join media mute warning:', e.message);
     }
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1000);
 
     // 4. Input bot guest name if prompt is present
     const nameSelectors = [
@@ -153,25 +182,62 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
       console.log('[RUNNER] Name input not required or already filled.');
     }
 
-    // 5. Locate and click "Ask to join" or "Join now"
+    // 5. Locate and click "Ask to join", "Join now", "Join here too", or "Switch here"
     const joinSelectors = [
       'button:has-text("Ask to join")',
       'button:has-text("Join now")',
+      'button:has-text("Join here too")',
+      'button:has-text("Switch here")',
       'button:has-text("Minta bergabung")',
       'button:has-text("Gabung sekarang")',
+      'button:has-text("Gabung di sini juga")',
+      'button:has-text("Beralih ke sini")',
       'div[role="button"]:has-text("Ask to join")',
       'div[role="button"]:has-text("Join now")',
+      'div[role="button"]:has-text("Join here too")',
+      'div[role="button"]:has-text("Switch here")',
       'div[role="button"]:has-text("Minta bergabung")',
       'div[role="button"]:has-text("Gabung sekarang")',
+      'div[role="button"]:has-text("Gabung di sini juga")',
+      'div[role="button"]:has-text("Beralih ke sini")',
       'span:has-text("Ask to join")',
       'span:has-text("Join now")',
+      'span:has-text("Join here too")',
+      'span:has-text("Switch here")',
       'span:has-text("Minta bergabung")',
       'span:has-text("Gabung sekarang")',
+      'span:has-text("Gabung di sini juga")',
+      'span:has-text("Beralih ke sini")',
+      'button.UywwFc-LgbsSe',
       '[aria-label*="Ask to join" i]',
       '[aria-label*="Join now" i]',
+      '[aria-label*="Join here too" i]',
+      '[aria-label*="Switch here" i]',
       '[aria-label*="Minta bergabung" i]',
       '[aria-label*="Gabung sekarang" i]',
+      '[aria-label*="Gabung di sini juga" i]',
+      '[aria-label*="Beralih ke sini" i]',
     ];
+
+    // Dismiss any preview overlays (e.g., camera permission or upgrade prompts)
+    const previewDismissSelectors = [
+      'button:has-text("Dismiss")',
+      'button:has-text("Tutup")',
+      'div[role="button"]:has-text("Dismiss")',
+      'div[role="button"]:has-text("Tutup")',
+      '[aria-label*="close" i]',
+      '[aria-label*="tutup" i]',
+    ];
+    for (const dSel of previewDismissSelectors) {
+      try {
+        const el = page.locator(dSel).first();
+        if (await el.isVisible({ timeout: 500 }).catch(() => false)) {
+          console.log(`[RUNNER] Dismissing preview dialog via: ${dSel}`);
+          await el.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(500);
+        }
+      } catch (_) {}
+    }
 
     let clicked = false;
     const findJoinDeadline = Date.now() + 15000;
@@ -181,13 +247,49 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
           const btn = page.locator(sel).first();
           if (await btn.isVisible({ timeout: 1000 })) {
             console.log(`[RUNNER] Found join button with selector: ${sel}. Clicking...`);
-            await btn.click({ timeout: 5000 });
+            try {
+              await btn.click({ timeout: 3000, force: true });
+            } catch (clickErr) {
+              console.warn('[RUNNER] Normal click failed, falling back to DOM click:', clickErr.message);
+              await btn.evaluate(el => el.click());
+            }
             clicked = true;
             break;
           }
-        } catch (_) {}
+        } catch (e) {
+          console.warn(`[RUNNER] Error checking selector ${sel}:`, e.message);
+        }
       }
+
       if (!clicked) {
+        // Direct DOM evaluation fallback to find and click any join/switch button
+        const clickedText = await page.evaluate(() => {
+          const candidates = Array.from(document.querySelectorAll('button, div[role="button"], a[role="button"]'));
+          for (const btn of candidates) {
+            const txt = (btn.innerText || '').toLowerCase();
+            if (
+              txt.includes('join now') ||
+              txt.includes('join here') ||
+              txt.includes('gabung sekarang') ||
+              txt.includes('gabung di sini') ||
+              txt.includes('switch here') ||
+              txt.includes('beralih ke sini') ||
+              txt.includes('ask to join') ||
+              txt.includes('minta bergabung')
+            ) {
+              btn.click();
+              return btn.innerText.trim();
+            }
+          }
+          return null;
+        }).catch(() => null);
+
+        if (clickedText) {
+          console.log(`[RUNNER] Found and clicked join button via in-DOM fallback: "${clickedText}"`);
+          clicked = true;
+          break;
+        }
+
         await page.waitForTimeout(1500);
       }
     }
@@ -225,26 +327,59 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
         console.log(`[RUNNER LOBBY STATE] "${snippet}"`);
       }
 
-      // Check and dismiss "Login dengan Akun Google Anda / Daripada menunggu izin masuk" prompt by clicking "Oke"
-      const okButton = page.locator('button:has-text("Oke"), button:has-text("OK"), div[role="button"]:has-text("Oke"), div[role="button"]:has-text("OK")').first();
-      if (await okButton.isVisible().catch(() => false)) {
-        console.log('[RUNNER] Dismissing "Login with Google" notice by clicking "Oke"...');
-        await okButton.click().catch(() => {});
-        await page.waitForTimeout(1000);
-
-        // If join button is still visible, click it
-        const retryJoin = page.locator('button:has-text("Minta bergabung"), button:has-text("Ask to join")').first();
-        if (await retryJoin.isVisible().catch(() => false)) {
-          console.log('[RUNNER] Clicking "Minta bergabung" again after dismiss...');
-          await retryJoin.click().catch(() => {});
-          await page.waitForTimeout(1000);
+      // Check and dismiss any overlay dialogs in lobby (e.g., "Meet has been blocked", "Login with Google", "Got it")
+      const lobbyOverlayDismiss = [
+        'button:has-text("Got it")',
+        'button:has-text("Mengerti")',
+        'button:has-text("Oke")',
+        'button:has-text("OK")',
+        'button:has-text("Dismiss")',
+        'button:has-text("Tutup")',
+        'div[role="button"][aria-label*="close" i]',
+        'button[aria-label*="close" i]',
+      ];
+      for (const oSel of lobbyOverlayDismiss) {
+        const oBtn = page.locator(oSel).first();
+        if (await oBtn.isVisible({ timeout: 300 }).catch(() => false)) {
+          console.log(`[RUNNER] Dismissing dialog via: ${oSel}`);
+          await oBtn.click({ force: true }).catch(() => {});
+          await page.keyboard.press('Escape').catch(() => {});
+          await page.waitForTimeout(400);
         }
       }
 
-      // Check if admitted: Meeting call controls appear
-      const inCallControl = page.locator('[aria-label*="Leave call" i], [aria-label*="Keluar dari panggilan" i], button[aria-label*="call" i]').first();
-      if (await inCallControl.isVisible().catch(() => false)) {
+      // If Join / Ask to join button is still visible on preview, re-click it via DOM click
+      const pendingJoin = page.locator('button:has-text("Join now"), button:has-text("Join here too"), button:has-text("Gabung sekarang"), button:has-text("Gabung di sini juga"), button:has-text("Ask to join"), button:has-text("Minta bergabung")').first();
+      if (await pendingJoin.isVisible({ timeout: 500 }).catch(() => false)) {
+        console.log('[RUNNER] Join button still visible on page, triggering DOM click...');
+        await page.keyboard.press('Escape').catch(() => {});
+        await pendingJoin.evaluate(el => el.click()).catch(() => {});
+        await page.waitForTimeout(1000);
+      }
+
+      // Check if admitted: Meeting call controls appear or in-call elements exist
+      const inCallDetected = await page.evaluate(() => {
+        const text = (document.body ? document.body.innerText : '').toLowerCase();
+        const hasCallControls = !!document.querySelector(
+          '[aria-label*="Leave" i], [aria-label*="Keluar" i], [aria-label*="reaction" i], [aria-label*="Raise hand" i], [aria-label*="Share screen" i], button[data-call-ended]'
+        );
+        const hasInCallText = (text.includes('turn on microphone') || text.includes('turn off microphone')) &&
+                              (text.includes('turn on camera') || text.includes('turn off camera'));
+        return hasCallControls || hasInCallText;
+      }).catch(() => false);
+
+      if (inCallDetected) {
+        console.log('[RUNNER] In-call controls detected! Admitted to meeting.');
         isAdmitted = true;
+        // Dismiss any intro popups (e.g., "Others may see your video differently")
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.evaluate(() => {
+          const gotIt = Array.from(document.querySelectorAll('button')).find(b => {
+            const t = (b.innerText || '').toLowerCase();
+            return t.includes('got it') || t.includes('mengerti');
+          });
+          if (gotIt) gotIt.click();
+        }).catch(() => {});
         break;
       }
 
@@ -278,6 +413,20 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
 
     console.log('[RUNNER] Successfully admitted into Google Meet!');
     startTime = Date.now();
+
+    // Verify and ensure microphone and camera are muted inside the call
+    try {
+      const inCallMic = page.locator('[aria-label*="turn off microphone" i], [aria-label*="matikan mikrofon" i]').first();
+      if (await inCallMic.isVisible({ timeout: 1500 }).catch(() => false)) {
+        console.log('[RUNNER] In-call microphone active. Muting...');
+        await inCallMic.click().catch(() => {});
+      }
+      const inCallCam = page.locator('[aria-label*="turn off camera" i], [aria-label*="matikan kamera" i]').first();
+      if (await inCallCam.isVisible({ timeout: 1500 }).catch(() => false)) {
+        console.log('[RUNNER] In-call camera active. Turning off...');
+        await inCallCam.click().catch(() => {});
+      }
+    } catch (_) {}
 
     // 7. Notify API: Joined
     await sendWebhook(apiEndpoint, webhookSecret, {
@@ -328,6 +477,31 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
     }
 
     // 10. Conclude Recording and Upload
+    // Explicitly click "Leave call" button to exit meeting immediately
+    try {
+      console.log('[RUNNER] Clicking "Leave call" button to disconnect bot from room...');
+      const leaveBtn = page.locator('[aria-label*="Leave call" i], [aria-label*="Keluar dari panggilan" i], button[aria-label*="call" i]').first();
+      if (await leaveBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await leaveBtn.click().catch(() => {});
+        await page.waitForTimeout(400);
+      }
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button, div[role="button"]'));
+        const leave = btns.find(b => {
+          const l = (b.getAttribute('aria-label') || '').toLowerCase();
+          return l.includes('leave') || l.includes('keluar') || l.includes('end call');
+        });
+        if (leave) leave.click();
+      }).catch(() => {});
+    } catch (_) {}
+
+    // Close browser right away so bot disappears from meeting instantly
+    if (browser) {
+      console.log('[RUNNER] Closing browser immediately...');
+      await browser.close().catch(() => {});
+      browser = null;
+    }
+
     const durationSeconds = Math.max(1, Math.round((Date.now() - startTime) / 1000));
     await stopAudioRecording(ffmpegProcess, tempAudioPath);
 
@@ -360,7 +534,7 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
       await browser.close().catch(() => {});
     }
     if (fs.existsSync(tempAudioPath)) {
-      fs.unlinkSync(tempAudioPath);
+      try { fs.unlinkSync(tempAudioPath); } catch (_) {}
     }
   }
 }
@@ -369,6 +543,11 @@ async function runBotSession(params, cancellationToken = { cancelled: false }) {
  * Spawns ffmpeg to record audio from PulseAudio monitor or generates a standard audio wav file.
  */
 function startAudioRecording(outputPath) {
+  try {
+    const { execSync } = require('child_process');
+    execSync('pulseaudio --check || pulseaudio -D --exit-idle-time=-1', { stdio: 'ignore' });
+  } catch (_) {}
+
   // Try PulseAudio first, fallback to generating standard WAV header with silence/sine if no audio sink
   const isPulseAvailable = fs.existsSync('/var/run/pulse') || process.env.PULSE_SERVER;
 
@@ -384,9 +563,10 @@ function startAudioRecording(outputPath) {
     ], { stdio: 'ignore' });
   }
 
-  // Local dev / test fallback: Record virtual audio device or dummy loopback
+  // Local dev / test fallback: Record virtual audio device or dummy loopback (with -re for real-time pacing)
   return spawn('ffmpeg', [
     '-y',
+    '-re',
     '-f', 'lavfi',
     '-i', 'sine=frequency=1000:sample_rate=16000:beep_factor=4',
     '-c:a', 'pcm_s16le',

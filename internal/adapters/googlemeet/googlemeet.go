@@ -164,16 +164,22 @@ func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*dto
 // Stop orders the Google Meet bot to leave the meeting and end the session.
 func (a *Adapter) Stop(ctx context.Context, externalSessionID string) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	sess, exists := a.sessions[externalSessionID]
-	if !exists {
-		return nil
-	}
-
 	now := time.Now().UTC()
-	sess.Status = constants.BotSessionStatusCompleted
-	sess.EndedAt = &now
+	if exists {
+		sess.Status = constants.BotSessionStatusCompleted
+		sess.EndedAt = &now
+	}
+	a.mu.Unlock()
+
+	if a.cfg.Publisher != nil {
+		stopPayload := queue.BotStopPayload{
+			ExternalSessionID: externalSessionID,
+			Reason:            "user_requested_stop",
+			StoppedAt:         now,
+		}
+		_ = a.cfg.Publisher.Publish(ctx, constants.TopicBotGoogleMeetStop, stopPayload)
+	}
 
 	return nil
 }

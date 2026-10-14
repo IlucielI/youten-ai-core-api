@@ -160,6 +160,15 @@ func TestGoogleMeetAdapter(t *testing.T) {
 		if err := adapter.Stop(ctx, extID); err != nil {
 			t.Fatalf("unexpected stop error: %v", err)
 		}
+		if pub.publishCalls != 2 {
+			t.Errorf("expected 2 publish calls after stop, got %d", pub.publishCalls)
+		}
+		if pub.publishedTopic != constants.TopicBotGoogleMeetStop {
+			t.Errorf("expected topic %s, got %s", constants.TopicBotGoogleMeetStop, pub.publishedTopic)
+		}
+		if _, ok := pub.publishedBody.(queue.BotStopPayload); !ok {
+			t.Errorf("expected payload to be queue.BotStopPayload, got %T", pub.publishedBody)
+		}
 
 		status, err = adapter.GetStatus(ctx, extID)
 		if err != nil {

@@ -176,6 +176,11 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 		}
 	}
 
+	if fullContent.Len() == 0 {
+		_ = sse.WriteChatError(ctx.Writer, "AI model failed to generate a response. Please try again.")
+		return
+	}
+
 	saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

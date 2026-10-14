@@ -330,3 +330,84 @@ func TestOmniRouteLLM_GenerateStructured_SSEStreamResponse(t *testing.T) {
 	}
 }
 
+func TestOmniRouteLLM_StreamRetryOnEmptyResponse(t *testing.T) {
+	var attempt int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt++
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		if attempt == 1 {
+			// First attempt returns empty stream
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+			return
+		}
+
+		// Second attempt succeeds
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"Recovered tokens!\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{LLMBaseURL: server.URL}
+	adapter := llm.NewOmniRoute(cfg)
+
+	ch, err := adapter.StreamChatResponse(context.Background(), "System", []dtos.ChatMessageInput{
+		{Role: "user", Content: "Hello"},
+	}, dtos.ChatOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var sb strings.Builder
+	for chunk := range ch {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected chunk error: %v", chunk.Err)
+		}
+		sb.WriteString(chunk.Content)
+	}
+
+	if sb.String() != "Recovered tokens!" {
+		t.Errorf("expected 'Recovered tokens!', got %q", sb.String())
+	}
+	if attempt != 2 {
+		t.Errorf("expected exactly 2 attempts, got %d", attempt)
+	}
+}
+
+func TestOmniRouteLLM_StreamExhaustedEmptyResponse(t *testing.T) {
+	var attempt int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt++
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{LLMBaseURL: server.URL}
+	adapter := llm.NewOmniRoute(cfg)
+
+	ch, err := adapter.StreamChatResponse(context.Background(), "System", []dtos.ChatMessageInput{
+		{Role: "user", Content: "Hello"},
+	}, dtos.ChatOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var hasErr bool
+	for chunk := range ch {
+		if chunk.Err != nil {
+			hasErr = true
+		}
+	}
+
+	if !hasErr {
+		t.Error("expected error chunk after exhausted empty responses, got none")
+	}
+	if attempt != 3 {
+		t.Errorf("expected 3 attempts before failure, got %d", attempt)
+	}
+}
+
+

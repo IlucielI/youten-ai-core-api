@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -209,6 +210,8 @@ func (o *OmniRouteLLM) GenerateChatResponse(ctx context.Context, systemPrompt st
 }
 
 // StreamChatResponse streams completion chunks using Server-Sent Events (SSE).
+// If upstream terminates with 0 tokens (e.g. reasoning phase drop or premature EOF),
+// it automatically retries up to maxAttempts times before returning an error.
 func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
 	var chatMessages []openAIChatMessage
 	if systemPrompt != "" {
@@ -238,10 +241,64 @@ func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt stri
 		return nil, fmt.Errorf("failed to marshal streaming request: %w", err)
 	}
 
+	outChan := make(chan dtos.StreamChunk, 20)
+
+	go func() {
+		defer close(outChan)
+
+		const maxAttempts = 3
+		var lastErr error
+
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			select {
+			case <-ctx.Done():
+				outChan <- dtos.StreamChunk{Err: ctx.Err()}
+				return
+			default:
+			}
+
+			tokensEmitted, streamErr := o.streamAttempt(ctx, bodyBytes, outChan)
+			if streamErr == nil && tokensEmitted > 0 {
+				return
+			}
+
+			// If tokens were already emitted, we cannot transparently retry from scratch,
+			// so emit any stream error (if present) and terminate.
+			if tokensEmitted > 0 {
+				if streamErr != nil {
+					outChan <- dtos.StreamChunk{Err: streamErr}
+				}
+				return
+			}
+
+			lastErr = streamErr
+			if lastErr == nil {
+				lastErr = errors.New("empty response from upstream AI model")
+			}
+
+			// If 0 tokens were emitted and retry attempts remain, wait backoff and retry transparently.
+			if attempt < maxAttempts {
+				if waitErr := waitStreamBackoff(ctx, attempt); waitErr != nil {
+					outChan <- dtos.StreamChunk{Err: waitErr}
+					return
+				}
+				continue
+			}
+
+			// All attempts exhausted with 0 tokens emitted
+			outChan <- dtos.StreamChunk{Err: fmt.Errorf("llm stream failed after %d attempts: %w", maxAttempts, lastErr)}
+			return
+		}
+	}()
+
+	return outChan, nil
+}
+
+func (o *OmniRouteLLM) streamAttempt(ctx context.Context, bodyBytes []byte, outChan chan<- dtos.StreamChunk) (int, error) {
 	url := fmt.Sprintf("%s/chat/completions", o.baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create http request: %w", err)
+		return 0, fmt.Errorf("failed to create http request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -252,73 +309,75 @@ func (o *OmniRouteLLM) StreamChatResponse(ctx context.Context, systemPrompt stri
 
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("llm stream request error: %w", err)
+		return 0, fmt.Errorf("llm stream request error: %w", err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
 		errBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("llm stream returned status %d: %s", resp.StatusCode, string(errBytes))
+		return 0, fmt.Errorf("llm stream returned status %d: %s", resp.StatusCode, string(errBytes))
 	}
 
-	outChan := make(chan dtos.StreamChunk, 20)
+	reader := bufio.NewReader(resp.Body)
+	tokensEmitted := 0
 
-	go func() {
-		defer resp.Body.Close()
-		defer close(outChan)
+	for {
+		select {
+		case <-ctx.Done():
+			return tokensEmitted, ctx.Err()
+		default:
+		}
 
-		reader := bufio.NewReader(resp.Body)
-
-		for {
-			select {
-			case <-ctx.Done():
-				outChan <- dtos.StreamChunk{Err: ctx.Err()}
-				return
-			default:
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err != io.EOF {
+				return tokensEmitted, fmt.Errorf("error reading stream line: %w", err)
 			}
+			return tokensEmitted, nil
+		}
 
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				if err != io.EOF {
-					outChan <- dtos.StreamChunk{Err: fmt.Errorf("error reading stream line: %w", err)}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || !strings.HasPrefix(trimmed, "data: ") {
+			continue
+		}
+
+		payload := strings.TrimPrefix(trimmed, "data: ")
+		if payload == "[DONE]" {
+			return tokensEmitted, nil
+		}
+
+		var chunk openAIStreamChunk
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			return tokensEmitted, fmt.Errorf("failed to parse stream chunk json: %w", err)
+		}
+
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta
+			finishReason := chunk.Choices[0].FinishReason
+			if delta.Content != "" || finishReason != "" {
+				if delta.Content != "" {
+					tokensEmitted++
 				}
-				return
-			}
-
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" {
-				continue
-			}
-
-			if !strings.HasPrefix(trimmed, "data: ") {
-				continue
-			}
-
-			payload := strings.TrimPrefix(trimmed, "data: ")
-			if payload == "[DONE]" {
-				return
-			}
-
-			var chunk openAIStreamChunk
-			if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-				outChan <- dtos.StreamChunk{Err: fmt.Errorf("failed to parse stream chunk json: %w", err)}
-				return
-			}
-
-			if len(chunk.Choices) > 0 {
-				delta := chunk.Choices[0].Delta
-				finishReason := chunk.Choices[0].FinishReason
-				if delta.Content != "" || finishReason != "" {
-					outChan <- dtos.StreamChunk{
-						Content:      delta.Content,
-						FinishReason: finishReason,
-					}
+				select {
+				case <-ctx.Done():
+					return tokensEmitted, ctx.Err()
+				case outChan <- dtos.StreamChunk{
+					Content:      delta.Content,
+					FinishReason: finishReason,
+				}:
 				}
 			}
 		}
-	}()
+	}
+}
 
-	return outChan, nil
+func waitStreamBackoff(ctx context.Context, attempt int) error {
+	select {
+	case <-time.After(time.Duration(attempt*300) * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAIChatRequest) (*openAIChatResponse, error) {

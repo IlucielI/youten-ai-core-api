@@ -799,6 +799,56 @@ func TestControllers_StreamRecordingChat_StreamError(t *testing.T) {
 	}
 }
 
+func TestControllers_StreamRecordingChat_EmptyResponse(t *testing.T) {
+	ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	guestToken := "guest-ownership-token"
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+	req := httptest.NewRequest(http.MethodPost, "/v1/recordings/"+recID.String()+"/chat", strings.NewReader(`{"message":"Tell me about the goals"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Ownership-Token", guestToken)
+	c.Request = req
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	// User message is saved
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	// Stream returns 0 tokens
+	mockLLM := &mockControllerLLM{
+		streamFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+			out := make(chan dtos.StreamChunk)
+			close(out)
+			return out, nil
+		},
+	}
+	ctrls.svc.SetLLM(mockLLM)
+
+	ctrls.StreamRecordingChat(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: error") {
+		t.Errorf("expected body to contain error event, got: %s", body)
+	}
+	if !strings.Contains(body, "AI model failed to generate a response. Please try again.") {
+		t.Errorf("expected empty response error message, got: %s", body)
+	}
+}
+
 func TestControllers_AskWorkspaceMemory_InvalidJSON(t *testing.T) {
 	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
 	defer cleanup()

@@ -24,17 +24,25 @@ async function startDaemon() {
   }
 
   const channel = await connection.createChannel();
-  await channel.assertExchange(EXCHANGE_NAME, 'topic', { durable: true });
+  const exchanges = [process.env.RABBITMQ_EXCHANGE || 'app.events', 'amq.topic'];
   await channel.assertQueue(QUEUE_NAME, { durable: true });
-  await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, ROUTING_KEY);
+
+  const STOP_ROUTING_KEY = 'bot.google_meet.stop';
+  const stopQueue = await channel.assertQueue('', { exclusive: true });
+
+  for (const ex of exchanges) {
+    try {
+      await channel.assertExchange(ex, 'topic', { durable: true });
+      await channel.bindQueue(QUEUE_NAME, ex, ROUTING_KEY);
+      await channel.bindQueue(stopQueue.queue, ex, STOP_ROUTING_KEY);
+    } catch (err) {
+      console.warn(`[DAEMON] Notice: failed to assert/bind to exchange "${ex}": ${err.message}`);
+    }
+  }
 
   // Prefetch 2 concurrent bot sessions per runner container
   const concurrency = parseInt(process.env.RUNNER_CONCURRENCY || '2', 10);
   await channel.prefetch(concurrency);
-
-  const STOP_ROUTING_KEY = 'bot.google_meet.stop';
-  const stopQueue = await channel.assertQueue('', { exclusive: true });
-  await channel.bindQueue(stopQueue.queue, EXCHANGE_NAME, STOP_ROUTING_KEY);
 
   channel.consume(stopQueue.queue, (msg) => {
     if (!msg) return;

@@ -48,6 +48,11 @@ func (s *Service) InitiateRecordingChatStream(
 	var sessionID uuid.UUID
 	if req.SessionID != nil && *req.SessionID != uuid.Nil {
 		sessionID = *req.SessionID
+		// Prevent share visitors from appending to sessions owned by another user or recording owner
+		existingMsgs, _ := s.repo.ListChatMessagesBySession(ctx, rec.ID, sessionID)
+		if !s.isSessionAccessibleByCaller(ctx, rec, ownershipToken, existingMsgs) {
+			return nil, constants.ErrForbidden
+		}
 	} else {
 		sessionID = uuid.New()
 	}
@@ -187,9 +192,41 @@ func (s *Service) ListRecordingChatHistory(
 	if err != nil {
 		return nil, fmt.Errorf("failed to list chat messages: %w", err)
 	}
+	if !s.isSessionAccessibleByCaller(ctx, rec, ownershipToken, messages) {
+		return nil, constants.ErrForbidden
+	}
 	if messages == nil {
 		messages = []models.ChatMessage{}
 	}
 	return messages, nil
+}
+
+// isSessionAccessibleByCaller enforces strict cross-user and owner-share boundary isolation on chat sessions.
+func (s *Service) isSessionAccessibleByCaller(ctx context.Context, rec *models.Recording, ownershipToken string, messages []models.ChatMessage) bool {
+	if len(messages) == 0 {
+		return true
+	}
+
+	// Owner (authenticated user or matching guest ownership token) has full access
+	if s.authorizeRecordingAccess(ctx, rec, ownershipToken, dtos.RecordingAccessPolicy{AllowShareToken: false}) {
+		return true
+	}
+
+	callerUserID, hasCallerUser := ctxmeta.GetAuthUserID(ctx)
+	for _, msg := range messages {
+		if msg.UserID == nil {
+			continue
+		}
+		// Prevent share visitors from accessing sessions created by the recording owner
+		if rec.UserID != nil && *msg.UserID == *rec.UserID {
+			return false
+		}
+		// Prevent cross-user session access among logged-in share viewers
+		if !hasCallerUser || *msg.UserID != callerUserID {
+			return false
+		}
+	}
+
+	return true
 }
 

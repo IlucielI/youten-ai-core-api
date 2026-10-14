@@ -530,3 +530,86 @@ func TestService_ListRecordingChatHistory_Success_ShareToken(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(msgs))
 	}
 }
+
+func TestService_ListRecordingChatHistory_Forbidden_ShareVisitorCannotAccessOwnerSession(t *testing.T) {
+	svc, mock, _, _ := setupChatTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	shareToken := "valid-share-token-xyz"
+	ownerSessionID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "is_share_enabled", "share_token"}).
+			AddRow(recID, &ownerID, true, &shareToken))
+
+	// The session messages in DB have user_id = ownerID
+	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE recording_id = \$1 AND session_id = \$2 ORDER BY created_at ASC`).
+		WithArgs(recID, ownerSessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "session_id", "user_id", "content", "sender_role"}).
+			AddRow(uuid.New(), recID, ownerSessionID, &ownerID, "Private question from owner", "user"))
+
+	_, err := svc.ListRecordingChatHistory(ctx, recID, ownerSessionID, "", shareToken)
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden when share visitor attempts to access owner session, got %v", err)
+	}
+}
+
+func TestService_ListRecordingChatHistory_Forbidden_CrossUserShareSession(t *testing.T) {
+	svc, mock, _, _ := setupChatTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	userB := uuid.New()
+	userC := uuid.New()
+	shareToken := "valid-share-token-xyz"
+	userBSessionID := uuid.New()
+	// User C is calling
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userC})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "is_share_enabled", "share_token"}).
+			AddRow(recID, &ownerID, true, &shareToken))
+
+	// Session messages belong to User B
+	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE recording_id = \$1 AND session_id = \$2 ORDER BY created_at ASC`).
+		WithArgs(recID, userBSessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "session_id", "user_id", "content", "sender_role"}).
+			AddRow(uuid.New(), recID, userBSessionID, &userB, "Question from user B", "user"))
+
+	_, err := svc.ListRecordingChatHistory(ctx, recID, userBSessionID, "", shareToken)
+	if !errors.Is(err, constants.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden when user C attempts to access user B's session, got %v", err)
+	}
+}
+
+func TestService_ListRecordingChatHistory_Success_LoggedInShareVisitorOwnSession(t *testing.T) {
+	svc, mock, _, _ := setupChatTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	userB := uuid.New()
+	shareToken := "valid-share-token-xyz"
+	userBSessionID := uuid.New()
+	// User B is calling
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userB})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "is_share_enabled", "share_token"}).
+			AddRow(recID, &ownerID, true, &shareToken))
+
+	// Session messages belong to User B
+	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE recording_id = \$1 AND session_id = \$2 ORDER BY created_at ASC`).
+		WithArgs(recID, userBSessionID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "session_id", "user_id", "content", "sender_role"}).
+			AddRow(uuid.New(), recID, userBSessionID, &userB, "Question from user B", "user"))
+
+	msgs, err := svc.ListRecordingChatHistory(ctx, recID, userBSessionID, "", shareToken)
+	if err != nil {
+		t.Fatalf("unexpected error when user B accesses their own share session: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+}

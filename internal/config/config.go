@@ -137,6 +137,35 @@ type Config struct {
 	YouTubeProxyURL string
 }
 
+// LoadEnv loads environment variables from .env files if present, without overwriting existing environment variables.
+func LoadEnv(filenames ...string) {
+	if len(filenames) == 0 {
+		filenames = []string{".env"}
+	}
+	for _, filename := range filenames {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			k := strings.TrimSpace(parts[0])
+			v := strings.TrimSpace(parts[1])
+			v = strings.Trim(v, `"'`)
+			if _, exists := os.LookupEnv(k); !exists {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}
+}
+
 func Load() Config {
 	return Config{
 		AppName:  getEnv("APP_NAME", "code-base-golang"),

@@ -34,6 +34,9 @@ import (
 )
 
 func main() {
+	// Load environment variables from .env if present
+	config.LoadEnv()
+
 	// Dispatch CLI migration commands if invoked as: go run cmd/api/main.go migrate <cmd>
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		cfg := config.Load()

@@ -10,13 +10,15 @@ import (
 // ChatMessage represents a conversation entry with grounded citations from RAG retrieval.
 type ChatMessage struct {
 	ID                uuid.UUID       `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
-	RecordingID       uuid.UUID       `gorm:"type:uuid;not null;index:idx_chat_messages_recording,priority:1" json:"recording_id"`
+	RecordingID       uuid.UUID       `gorm:"type:uuid;not null;index:idx_chat_messages_recording,priority:1;index:idx_chat_messages_session,priority:1" json:"recording_id"`
 	Recording         *Recording      `gorm:"foreignKey:RecordingID;constraint:OnDelete:CASCADE" json:"recording,omitempty"`
+	SessionID         *uuid.UUID      `gorm:"type:uuid;index:idx_chat_messages_session,priority:2" json:"session_id,omitempty"`
+	UserID            *uuid.UUID      `gorm:"type:uuid;index:idx_chat_messages_user" json:"user_id,omitempty"`
 	SenderRole        string          `gorm:"type:varchar(20);not null" json:"sender_role"` // 'user' | 'assistant'
 	Content           string          `gorm:"type:text;not null" json:"content"`
 	Citations         json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"citations"`
 	RetrievedChunkIDs json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"retrieved_chunk_ids"`
-	CreatedAt         time.Time       `gorm:"not null;default:now();index:idx_chat_messages_recording,priority:2,sort:asc" json:"created_at"`
+	CreatedAt         time.Time       `gorm:"not null;default:now();index:idx_chat_messages_recording,priority:2,sort:asc;index:idx_chat_messages_session,priority:3,sort:asc" json:"created_at"`
 }
 
 func (ChatMessage) TableName() string {

@@ -206,6 +206,7 @@ func (s *Service) GetSharedRecording(ctx context.Context, shareToken string) (*d
 		ActiveSummary:    summaryDTO,
 		Chapters:         chapterDTOs,
 		Highlights:       highlightDTOs,
+		AnalyticsData:    rec.AnalyticsData,
 		CreatedAt:        rec.CreatedAt,
 	}, nil
 }

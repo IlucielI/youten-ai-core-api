@@ -36,8 +36,14 @@ type ChatTokenEvent struct {
 	Token string `json:"token"`
 }
 
+// ChatSessionEvent defines the payload establishing the chat session ID.
+type ChatSessionEvent struct {
+	SessionID string `json:"session_id"`
+}
+
 // ChatDoneEvent defines the completion payload with extracted citations and retrieved chunk IDs.
 type ChatDoneEvent struct {
+	SessionID         string   `json:"session_id,omitempty"`
 	MessageID         string   `json:"message_id"`
 	Content           string   `json:"content"`
 	Citations         []string `json:"citations"`

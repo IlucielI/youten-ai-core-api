@@ -232,6 +232,10 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.Med
 	}
 	defer resp.Body.Close()
 
+	if isAccessDeniedResponse(resp) {
+		return nil, services.ErrMediaAccessDenied
+	}
+
 	title := parseFilenameFromHeader(resp.Header.Get("Content-Disposition"))
 	if title == "" {
 		title = fmt.Sprintf("Google Drive (%s)", id)
@@ -278,12 +282,16 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 	}
 	defer resp.Body.Close()
 
+	if isAccessDeniedResponse(resp) {
+		return nil, services.ErrMediaAccessDenied
+	}
+
 	// Check if Google Drive returned a virus scan confirmation page for large files
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(contentType, "text/html") {
 		confirmedURL, confirmErr := e.handleConfirmToken(resp, id)
 		if confirmErr != nil {
-			return nil, fmt.Errorf("failed to resolve virus scan warning: %w", confirmErr)
+			return nil, confirmErr
 		}
 
 		resp.Body.Close()
@@ -291,7 +299,15 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 		if err != nil {
 			return nil, err
 		}
+		if isAccessDeniedResponse(resp) {
+			resp.Body.Close()
+			return nil, services.ErrMediaAccessDenied
+		}
 		contentType = strings.ToLower(resp.Header.Get("Content-Type"))
+		if strings.Contains(contentType, "text/html") {
+			resp.Body.Close()
+			return nil, services.ErrMediaAccessDenied
+		}
 	}
 
 	filename := parseFilenameFromHeader(resp.Header.Get("Content-Disposition"))
@@ -402,6 +418,10 @@ func (e *Extractor) handleConfirmToken(resp *http.Response, fileID string) (stri
 	}
 
 	bodyStr := string(bodyBytes)
+	if containsAccessDeniedKeywords(bodyStr) {
+		return "", services.ErrMediaAccessDenied
+	}
+
 	matches := confirmTokenRegex.FindStringSubmatch(bodyStr)
 	var token string
 	if len(matches) > 1 && matches[1] != "" {
@@ -411,7 +431,9 @@ func (e *Extractor) handleConfirmToken(resp *http.Response, fileID string) (stri
 	}
 
 	if token == "" {
-		token = "t"
+		// If neither confirm token nor download warning token is present,
+		// and it is an HTML page, this is an inaccessible or private file.
+		return "", services.ErrMediaAccessDenied
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/uc", e.baseURL))
@@ -425,6 +447,31 @@ func (e *Extractor) handleConfirmToken(resp *http.Response, fileID string) (stri
 	u.RawQuery = q.Encode()
 
 	return u.String(), nil
+}
+
+func isAccessDeniedResponse(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		return true
+	}
+	if resp.Request != nil && resp.Request.URL != nil && strings.Contains(strings.ToLower(resp.Request.URL.Hostname()), "accounts.google.com") {
+		return true
+	}
+	return false
+}
+
+func containsAccessDeniedKeywords(bodyStr string) bool {
+	lowerBody := strings.ToLower(bodyStr)
+	return strings.Contains(lowerBody, "accounts.google.com") ||
+		strings.Contains(lowerBody, "you need permission") ||
+		strings.Contains(lowerBody, "you need access") ||
+		strings.Contains(lowerBody, "access denied") ||
+		strings.Contains(lowerBody, "request access") ||
+		strings.Contains(lowerBody, "servicelogin") ||
+		strings.Contains(lowerBody, "sign in - google accounts") ||
+		strings.Contains(lowerBody, "sign in to continue")
 }
 
 func parseFilenameFromHeader(contentDisposition string) string {

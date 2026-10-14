@@ -293,6 +293,7 @@ type SharedRecordingResponse struct {
 	ActiveSummary    *SummaryDTO            `json:"active_summary,omitempty"`
 	Chapters         []ChapterDTO           `json:"chapters"`
 	Highlights       []HighlightDTO         `json:"highlights"`
+	AnalyticsData    map[string]interface{} `json:"analytics_data,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
 }
 
@@ -374,8 +375,9 @@ type CommentResponse struct {
 	UpdatedAt    time.Time         `json:"updated_at,omitempty"`
 }
 
-// RecordingChatStreamResult carries the stream channel and retrieved context chunk IDs.
+// RecordingChatStreamResult carries the stream channel, session ID, and retrieved context chunk IDs.
 type RecordingChatStreamResult struct {
+	SessionID         uuid.UUID          `json:"session_id"`
 	StreamChannel     <-chan StreamChunk `json:"-"`
 	RetrievedChunkIDs []string           `json:"retrieved_chunk_ids,omitempty"`
 }

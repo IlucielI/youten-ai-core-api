@@ -260,6 +260,7 @@ func TestRouter_RoutesRegistration(t *testing.T) {
 		{"GET", "/v1/recordings/shared/:token"},
 		{"GET", "/v1/recordings/:id/progress"},
 		{"POST", "/v1/recordings/:id/retry"},
+		{"GET", "/v1/recordings/:id/chat"},
 		{"POST", "/v1/recordings/:id/chat"},
 		{"PUT", "/v1/recordings/:id/speakers"},
 		{"POST", "/v1/recordings/:id/regenerate"},

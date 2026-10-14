@@ -1,6 +1,8 @@
 package dtos
 
-import ()
+import (
+	"github.com/google/uuid"
+)
 
 // LLMUsage captures token consumption metrics for an LLM call.
 type LLMUsage struct {
@@ -45,7 +47,9 @@ type StreamChunk struct {
 
 // RecordingChatRequest represents the request payload for interactive RAG chat over a recording.
 type RecordingChatRequest struct {
+	SessionID           *uuid.UUID         `json:"session_id,omitempty"`
 	Message             string             `json:"message"`
 	ConversationHistory []ChatMessageInput `json:"conversation_history,omitempty"`
 	OwnershipToken      string             `json:"ownership_token,omitempty"`
+	ShareToken          string             `json:"share_token,omitempty"`
 }

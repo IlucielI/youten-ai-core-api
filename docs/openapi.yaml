@@ -893,6 +893,34 @@ paths:
                 $ref: '#/components/schemas/BaseResponse'
 
   /v1/recordings/{id}/chat:
+    get:
+      tags: [Intelligence & Search]
+      summary: Get Recording Chat History for Session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: session_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: share_token
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chat history for session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryResponse'
     post:
       tags: [Intelligence & Search]
       summary: Grounded RAG AI Chat (SSE Stream)
@@ -2524,6 +2552,46 @@ components:
       properties:
         message:
           type: string
+        session_id:
+          type: string
+          format: uuid
+        share_token:
+          type: string
+
+    ChatHistoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChatMessageItem'
+
+    ChatMessageItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        recording_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        referenced_chunk_ids:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
 
     RenameSpeakersRequest:
       type: object

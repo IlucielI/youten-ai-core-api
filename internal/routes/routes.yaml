@@ -205,6 +205,12 @@ routes:
     handler: RetryRecording
     auth: true
 
+  # Retrieve conversation turns for a recording chat session.
+  - method: GET
+    path: /v1/recordings/:id/chat
+    handler: GetRecordingChatHistory
+    auth: true
+
   # Interactive grounded RAG AI chat with SSE typewriter streaming.
   - method: POST
     path: /v1/recordings/:id/chat

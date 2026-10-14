@@ -118,6 +118,13 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 	}
 
 	ownershipToken := c.extractOwnershipToken(ctx, req.OwnershipToken)
+	if req.ShareToken == "" {
+		if st := strings.TrimSpace(ctx.GetHeader("X-Share-Token")); st != "" {
+			req.ShareToken = st
+		} else if st := strings.TrimSpace(ctx.Query("share_token")); st != "" {
+			req.ShareToken = st
+		}
+	}
 
 	result, err := c.svc.InitiateRecordingChatStream(ctx.Request.Context(), id, ownershipToken, req)
 	if err != nil {
@@ -133,6 +140,9 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 	ctx.Writer.Header().Set("X-Accel-Buffering", "no")
 	ctx.Writer.WriteHeader(http.StatusOK)
 	ctx.Writer.Flush()
+
+	// Write initial session handshake event
+	_ = sse.WriteChatSession(ctx.Writer, result.SessionID.String())
 
 	pingTicker := time.NewTicker(15 * time.Second)
 	defer pingTicker.Stop()
@@ -169,7 +179,7 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 	saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	asstMsg, citations, err := c.svc.SaveAssistantChatMessage(saveCtx, id, fullContent.String(), result.RetrievedChunkIDs)
+	asstMsg, citations, err := c.svc.SaveAssistantChatMessage(saveCtx, id, result.SessionID, fullContent.String(), result.RetrievedChunkIDs)
 	if err != nil {
 		_ = sse.WriteChatError(ctx.Writer, "failed to persist assistant message")
 		return
@@ -181,11 +191,47 @@ func (c *Controllers) StreamRecordingChat(ctx *gin.Context) {
 	}
 
 	_ = sse.WriteChatDone(ctx.Writer, sse.ChatDoneEvent{
+		SessionID:         result.SessionID.String(),
 		MessageID:         asstMsg.ID.String(),
 		Content:           fullContent.String(),
 		Citations:         citations,
 		RetrievedChunkIDs: chunkIDs,
 	})
+}
+
+// GetRecordingChatHistory retrieves past conversation turns for a specific recording chat session.
+func (c *Controllers) GetRecordingChatHistory(ctx *gin.Context) {
+	idParam := ctx.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	sessionIDParam := strings.TrimSpace(ctx.Query("session_id"))
+	if sessionIDParam == "" {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("session_id query parameter is required"))
+		return
+	}
+	sessionID, err := uuid.Parse(sessionIDParam)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid session_id format"))
+		return
+	}
+
+	ownershipToken := c.extractOwnershipToken(ctx, "")
+	shareToken := strings.TrimSpace(ctx.Query("share_token"))
+	if shareToken == "" {
+		shareToken = strings.TrimSpace(ctx.GetHeader("X-Share-Token"))
+	}
+
+	messages, err := c.svc.ListRecordingChatHistory(ctx.Request.Context(), id, sessionID, ownershipToken, shareToken)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "chat history retrieved successfully", messages)
 }
 
 // AskWorkspaceMemory handles cross-meeting AI chat questions with meeting citations.

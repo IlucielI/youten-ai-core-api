@@ -25,3 +25,16 @@ func (r *Repositories) ListChatMessagesByRecordingID(ctx context.Context, record
 	}
 	return messages, nil
 }
+
+// ListChatMessagesBySession retrieves the conversation history for a specific recording chat session.
+func (r *Repositories) ListChatMessagesBySession(ctx context.Context, recordingID uuid.UUID, sessionID uuid.UUID) ([]models.ChatMessage, error) {
+	var messages []models.ChatMessage
+	err := r.db.WithContext(ctx).
+		Where("recording_id = ? AND session_id = ?", recordingID, sessionID).
+		Order("created_at ASC").
+		Find(&messages).Error
+	if err != nil {
+		return nil, err
+	}
+	return messages, nil
+}

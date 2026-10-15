@@ -388,9 +388,16 @@ func (s *Service) ForgotPassword(ctx context.Context, req *dtos.ForgotPasswordRe
 
 	// Dispatch transactional email if mailer is configured
 	if s.mailer != nil {
+		appURL := strings.TrimRight(s.cfg.AppURL, "/")
+		if appURL == "" {
+			appURL = "http://localhost:3000"
+		}
+		resetURL := fmt.Sprintf("%s/reset-password?token=%s", appURL, rawToken)
+
 		htmlBody, textBody, err := templates.RenderResetPasswordEmail(templates.ResetPasswordEmailData{
 			FullName: user.FullName,
 			Token:    rawToken,
+			ResetURL: resetURL,
 		})
 		if err != nil {
 			return s.wrapError(ctx, fmt.Errorf("render reset password email template: %w", err))

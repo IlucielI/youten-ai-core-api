@@ -60,11 +60,17 @@ func TestTemplates_RenderResetPasswordEmail(t *testing.T) {
 	if !strings.Contains(htmlBody, "reset-tok-999") {
 		t.Errorf("expected Token in HTML body, got: %s", htmlBody)
 	}
+	if !strings.Contains(htmlBody, "https://youten.ai/reset-password?token=reset-tok-999") {
+		t.Errorf("expected ResetURL in HTML body, got: %s", htmlBody)
+	}
 	if !strings.Contains(textBody, "Hello Alice Johnson") {
 		t.Errorf("expected greeting in text body, got: %s", textBody)
 	}
 	if !strings.Contains(textBody, "reset-tok-999") {
 		t.Errorf("expected Token in text body, got: %s", textBody)
+	}
+	if !strings.Contains(textBody, "https://youten.ai/reset-password?token=reset-tok-999") {
+		t.Errorf("expected ResetURL in text body, got: %s", textBody)
 	}
 }
 

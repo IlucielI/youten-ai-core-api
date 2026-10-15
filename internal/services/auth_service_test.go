@@ -866,6 +866,12 @@ func TestService_ForgotPassword_Success(t *testing.T) {
 	if !strings.Contains(sentMsg.TextBody, "Forgot User") {
 		t.Errorf("expected text body to contain user name 'Forgot User', got %s", sentMsg.TextBody)
 	}
+	if !strings.Contains(sentMsg.HTMLBody, "/reset-password?token=") {
+		t.Errorf("expected HTML body to contain reset link '/reset-password?token=', got %s", sentMsg.HTMLBody)
+	}
+	if !strings.Contains(sentMsg.TextBody, "/reset-password?token=") {
+		t.Errorf("expected text body to contain reset link '/reset-password?token=', got %s", sentMsg.TextBody)
+	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)

@@ -1184,6 +1184,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/BaseResponse'
 
+  /v1/feedback:
+    post:
+      tags: [Feedback]
+      summary: Submit User Feedback
+      description: Submit user feedback, bug report, feature request, or suggestion with idempotency support.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          required: false
+          description: Optional idempotency key to prevent double submission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '201':
+          description: Feedback submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /v1/feedback/presign-upload:
+    post:
+      tags: [Feedback]
+      summary: Generate Feedback Attachment Presigned Upload URL
+      description: Generates a direct-to-S3 presigned PUT URL for feedback attachment images (PNG, JPEG, WebP, GIF up to 10MB).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackPresignRequest'
+      responses:
+        '200':
+          description: Presigned upload URL generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackPresignResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /v1/admin/login:
     post:
       tags: [Admin Auth]
@@ -2685,6 +2734,179 @@ components:
           enum: [google_meet, zoom, microsoft_teams]
         company_size:
           type: string
+
+    FeedbackRequest:
+      type: object
+      required: [title, message]
+      properties:
+        title:
+          type: string
+          minLength: 4
+          maxLength: 255
+          example: Export feature failed
+        category:
+          type: string
+          enum: [bug, feature, improvement, praise, general]
+          default: general
+          example: bug
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 5
+          example: 4
+        message:
+          type: string
+          minLength: 10
+          maxLength: 5000
+          example: When clicking export as PDF, the loading spinner never stops.
+        user_name:
+          type: string
+          nullable: true
+          example: John Doe
+        user_email:
+          type: string
+          format: email
+          nullable: true
+          example: john@example.com
+        idempotency_key:
+          type: string
+          nullable: true
+          example: idem-12345
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedbackAttachment'
+        metadata:
+          type: object
+          additionalProperties: true
+
+    FeedbackAttachment:
+      type: object
+      required: [url, filename, content_type, file_size_bytes]
+      properties:
+        url:
+          type: string
+          example: https://minio.example.com/recordings/feedbacks/abc-123/screenshot.png
+        filename:
+          type: string
+          example: screenshot.png
+        content_type:
+          type: string
+          example: image/png
+        file_size_bytes:
+          type: integer
+          example: 102400
+
+    FeedbackResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        category:
+          type: string
+        rating:
+          type: integer
+        message:
+          type: string
+        status:
+          type: string
+        user_name:
+          type: string
+          nullable: true
+        user_email:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedbackAttachment'
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    FeedbackResponseEnvelope:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Feedback submitted successfully
+        data:
+          $ref: '#/components/schemas/FeedbackResponse'
+        timestamp:
+          type: string
+          format: date-time
+
+    FeedbackPresignRequest:
+      type: object
+      required: [filename, content_type]
+      properties:
+        filename:
+          type: string
+          example: screenshot.png
+        content_type:
+          type: string
+          enum: [image/png, image/jpeg, image/jpg, image/webp, image/gif]
+          example: image/png
+        file_size_bytes:
+          type: integer
+          maximum: 10485760
+          example: 204800
+
+    FeedbackPresignResponse:
+      type: object
+      properties:
+        upload_url:
+          type: string
+          example: https://minio.example.com/recordings/feedbacks/uuid/screenshot.png?X-Amz-Signature=...
+        object_key:
+          type: string
+          example: feedbacks/uuid/screenshot.png
+        download_url:
+          type: string
+          example: https://minio.example.com/recordings/feedbacks/uuid/screenshot.png
+        filename:
+          type: string
+          example: screenshot.png
+        content_type:
+          type: string
+          example: image/png
+        file_size_bytes:
+          type: integer
+          example: 204800
+
+    FeedbackPresignResponseEnvelope:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Presigned upload URL generated successfully
+        data:
+          $ref: '#/components/schemas/FeedbackPresignResponse'
+        timestamp:
+          type: string
+          format: date-time
 
     AdminUserListResponse:
       allOf:

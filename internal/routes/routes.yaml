@@ -277,6 +277,12 @@ routes:
     handler: JoinBotWaitlist
     auth: true
 
+  # Submit user feedback, bug reports, feature requests, or suggestions.
+  - method: POST
+    path: /v1/feedback
+    handler: SubmitFeedback
+    optional_auth: true
+
   # Dispatch a voice bot to join a meeting or voice channel.
   - method: POST
     path: /v1/recordings/meeting-bot

@@ -1184,6 +1184,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/BaseResponse'
 
+  /v1/feedback:
+    post:
+      tags: [Feedback]
+      summary: Submit User Feedback
+      description: Submit user feedback, bug report, feature request, or suggestion with idempotency support.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          required: false
+          description: Optional idempotency key to prevent double submission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '201':
+          description: Feedback submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /v1/admin/login:
     post:
       tags: [Admin Auth]
@@ -2685,6 +2713,98 @@ components:
           enum: [google_meet, zoom, microsoft_teams]
         company_size:
           type: string
+
+    FeedbackRequest:
+      type: object
+      required: [title, message]
+      properties:
+        title:
+          type: string
+          minLength: 4
+          maxLength: 255
+          example: Export feature failed
+        category:
+          type: string
+          enum: [bug, feature, improvement, praise, general]
+          default: general
+          example: bug
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 5
+          example: 4
+        message:
+          type: string
+          minLength: 10
+          maxLength: 5000
+          example: When clicking export as PDF, the loading spinner never stops.
+        user_name:
+          type: string
+          nullable: true
+          example: John Doe
+        user_email:
+          type: string
+          format: email
+          nullable: true
+          example: john@example.com
+        idempotency_key:
+          type: string
+          nullable: true
+          example: idem-12345
+        metadata:
+          type: object
+          additionalProperties: true
+
+    FeedbackResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        category:
+          type: string
+        rating:
+          type: integer
+        message:
+          type: string
+        status:
+          type: string
+        user_name:
+          type: string
+          nullable: true
+        user_email:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    FeedbackResponseEnvelope:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Feedback submitted successfully
+        data:
+          $ref: '#/components/schemas/FeedbackResponse'
+        timestamp:
+          type: string
+          format: date-time
 
     AdminUserListResponse:
       allOf:

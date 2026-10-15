@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS feedbacks (
     client_ip VARCHAR(45) DEFAULT NULL,
     user_agent TEXT DEFAULT NULL,
     idempotency_key VARCHAR(100) DEFAULT NULL,
+    attachments JSONB DEFAULT '[]'::jsonb,
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

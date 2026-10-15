@@ -39,3 +39,25 @@ func (c *Controllers) SubmitFeedback(ctx *gin.Context) {
 
 	c.respondCreated(ctx, "Feedback submitted successfully", resp)
 }
+
+// PresignFeedbackUpload handles generating a pre-signed S3 direct upload URL for feedback attachments.
+func (c *Controllers) PresignFeedbackUpload(ctx *gin.Context) {
+	var req dtos.FeedbackPresignRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateFeedbackPresignRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	resp, err := c.svc.GenerateFeedbackPresignUpload(ctx.Request.Context(), req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "Presigned upload URL generated successfully", resp)
+}

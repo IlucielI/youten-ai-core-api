@@ -2,7 +2,10 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,7 +15,34 @@ import (
 	"code-base-golang/internal/pkg/ctxmeta"
 )
 
-// SubmitFeedback handles submission of user feedback with idempotency and user identity propagation.
+// GenerateFeedbackPresignUpload generates a pre-signed S3 direct upload URL for feedback screenshots/attachments.
+func (s *Service) GenerateFeedbackPresignUpload(ctx context.Context, req dtos.FeedbackPresignRequest) (*dtos.FeedbackPresignResponse, error) {
+	safeFilename := filepath.Base(req.Filename)
+	if safeFilename == "." || safeFilename == "/" || safeFilename == "" {
+		return nil, constants.ErrBadRequest
+	}
+
+	attID := uuid.New()
+	objectKey := fmt.Sprintf("feedbacks/%s/%s", attID.String(), safeFilename)
+
+	uploadURL, err := s.storage.PresignPutObject(ctx, s.cfg.S3BucketName, objectKey, 15*time.Minute)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate presigned upload url: %w", err)
+	}
+
+	downloadURL, _ := s.storage.PresignGetObject(ctx, s.cfg.S3BucketName, objectKey, 24*time.Hour)
+
+	return &dtos.FeedbackPresignResponse{
+		UploadURL:     uploadURL,
+		ObjectKey:     objectKey,
+		DownloadURL:   downloadURL,
+		Filename:      safeFilename,
+		ContentType:   req.ContentType,
+		FileSizeBytes: req.FileSizeBytes,
+	}, nil
+}
+
+// SubmitFeedback handles submission of user feedback with idempotency, attachments, and user identity propagation.
 func (s *Service) SubmitFeedback(ctx context.Context, req dtos.FeedbackRequest) (*dtos.FeedbackResponse, error) {
 	req.SetDefaults()
 
@@ -66,6 +96,16 @@ func (s *Service) SubmitFeedback(ctx context.Context, req dtos.FeedbackRequest) 
 		metadata[k] = v
 	}
 
+	attachments := make(models.FeedbackAttachments, len(req.Attachments))
+	for i, att := range req.Attachments {
+		attachments[i] = models.FeedbackAttachment{
+			URL:           att.URL,
+			Filename:      att.Filename,
+			ContentType:   att.ContentType,
+			FileSizeBytes: att.FileSizeBytes,
+		}
+	}
+
 	feedback := &models.Feedback{
 		UserID:         userID,
 		UserName:       userName,
@@ -78,6 +118,7 @@ func (s *Service) SubmitFeedback(ctx context.Context, req dtos.FeedbackRequest) 
 		ClientIP:       ptrClientIP,
 		UserAgent:      ptrUserAgent,
 		IdempotencyKey: req.IdempotencyKey,
+		Attachments:    attachments,
 		Metadata:       metadata,
 	}
 
@@ -102,6 +143,16 @@ func mapFeedbackToResponse(f *models.Feedback) *dtos.FeedbackResponse {
 		metadata = f.Metadata
 	}
 
+	attachments := make([]dtos.FeedbackAttachment, len(f.Attachments))
+	for i, att := range f.Attachments {
+		attachments[i] = dtos.FeedbackAttachment{
+			URL:           att.URL,
+			Filename:      att.Filename,
+			ContentType:   att.ContentType,
+			FileSizeBytes: att.FileSizeBytes,
+		}
+	}
+
 	return &dtos.FeedbackResponse{
 		ID:             f.ID,
 		Title:          f.Title,
@@ -112,6 +163,7 @@ func mapFeedbackToResponse(f *models.Feedback) *dtos.FeedbackResponse {
 		UserName:       f.UserName,
 		UserEmail:      f.UserEmail,
 		IdempotencyKey: f.IdempotencyKey,
+		Attachments:    attachments,
 		Metadata:       metadata,
 		CreatedAt:      f.CreatedAt,
 	}

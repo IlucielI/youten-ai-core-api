@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,5 +166,89 @@ func TestService_SubmitFeedback_DatabaseError(t *testing.T) {
 	}
 	if resp != nil {
 		t.Errorf("expected nil response on error, got %+v", resp)
+	}
+}
+
+func TestService_SubmitFeedback_WithAttachments(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+
+	feedbackID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "feedbacks"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(feedbackID, now, now))
+	mock.ExpectCommit()
+
+	req := dtos.FeedbackRequest{
+		Title:   "Visual bug on waveform",
+		Message: "See attached screenshot of visual glitch.",
+		Attachments: []dtos.FeedbackAttachment{
+			{
+				URL:           "https://mock.storage/feedbacks/uuid/screen.png",
+				Filename:      "screen.png",
+				ContentType:   "image/png",
+				FileSizeBytes: 54321,
+			},
+		},
+	}
+
+	resp, err := svc.SubmitFeedback(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if len(resp.Attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(resp.Attachments))
+	}
+	if resp.Attachments[0].Filename != "screen.png" {
+		t.Errorf("expected attachment filename screen.png, got %s", resp.Attachments[0].Filename)
+	}
+}
+
+func TestService_GenerateFeedbackPresignUpload(t *testing.T) {
+	svc, _, storage, _ := setupRecordingTestService(t)
+
+	// 1. Success case
+	req := dtos.FeedbackPresignRequest{
+		Filename:      "bug_screenshot.png",
+		ContentType:   "image/png",
+		FileSizeBytes: 102400,
+	}
+
+	resp, err := svc.GenerateFeedbackPresignUpload(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if resp.UploadURL == "" {
+		t.Error("expected non-empty upload url")
+	}
+	if resp.ObjectKey == "" || !strings.Contains(resp.ObjectKey, "feedbacks/") {
+		t.Errorf("expected feedbacks object key, got %s", resp.ObjectKey)
+	}
+	if resp.Filename != "bug_screenshot.png" {
+		t.Errorf("expected filename bug_screenshot.png, got %s", resp.Filename)
+	}
+
+	// 2. Invalid filename
+	badReq := dtos.FeedbackPresignRequest{
+		Filename:    "",
+		ContentType: "image/png",
+	}
+	_, err = svc.GenerateFeedbackPresignUpload(context.Background(), badReq)
+	if err == nil {
+		t.Error("expected error for empty filename, got nil")
+	}
+
+	// 3. Storage error
+	storage.presignErr = errors.New("s3 connection timeout")
+	_, err = svc.GenerateFeedbackPresignUpload(context.Background(), req)
+	if err == nil {
+		t.Error("expected error when storage fails, got nil")
 	}
 }

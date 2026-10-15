@@ -235,4 +235,73 @@ func TestUserRole_PermissionsList(t *testing.T) {
 	}
 }
 
+func TestFeedbackAttachments_ValueAndScan(t *testing.T) {
+	// 1. Nil value serialization
+	var nilAttachments FeedbackAttachments
+	val, err := nilAttachments.Value()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "[]" {
+		t.Errorf("expected '[]', got %v", val)
+	}
+
+	// 2. Value serialization with items
+	attachments := FeedbackAttachments{
+		{
+			URL:           "https://s3.example.com/feedbacks/img1.png",
+			Filename:      "screenshot1.png",
+			ContentType:   "image/png",
+			FileSizeBytes: 10240,
+		},
+	}
+	val, err = attachments.Value()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	valStr, ok := val.(string)
+	if !ok || valStr == "" {
+		t.Fatalf("expected non-empty string, got %v", val)
+	}
+
+	// 3. Scan nil
+	var scanned FeedbackAttachments
+	if err := scanned.Scan(nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(scanned) != 0 {
+		t.Errorf("expected 0 attachments, got %d", len(scanned))
+	}
+
+	// 4. Scan valid bytes
+	if err := scanned.Scan([]byte(valStr)); err != nil {
+		t.Fatalf("unexpected error scanning bytes: %v", err)
+	}
+	if len(scanned) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(scanned))
+	}
+	if scanned[0].Filename != "screenshot1.png" || scanned[0].ContentType != "image/png" {
+		t.Errorf("unexpected attachment content: %+v", scanned[0])
+	}
+
+	// 5. Scan valid string
+	var scannedStr FeedbackAttachments
+	if err := scannedStr.Scan(valStr); err != nil {
+		t.Fatalf("unexpected error scanning string: %v", err)
+	}
+	if len(scannedStr) != 1 || scannedStr[0].FileSizeBytes != 10240 {
+		t.Errorf("unexpected scanned string: %+v", scannedStr)
+	}
+
+	// 6. Scan invalid type
+	if err := scanned.Scan(12345); err == nil {
+		t.Error("expected error scanning invalid type, got nil")
+	}
+
+	// 7. Scan malformed json
+	if err := scanned.Scan([]byte(`not-json`)); err == nil {
+		t.Error("expected error scanning malformed JSON, got nil")
+	}
+}
+
 

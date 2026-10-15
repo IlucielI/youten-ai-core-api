@@ -158,3 +158,98 @@ func TestControllers_SubmitFeedback_ServiceError(t *testing.T) {
 		t.Fatalf("expected 500 on db error, got %d", w.Code)
 	}
 }
+
+func TestControllers_PresignFeedbackUpload_InvalidJSON(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/feedback/presign-upload", bytes.NewBufferString(`invalid json`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.PresignFeedbackUpload(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid JSON, got %d", w.Code)
+	}
+}
+
+func TestControllers_PresignFeedbackUpload_ValidationErrors(t *testing.T) {
+	ctrls, _, cleanup := setupTestControllers(t)
+	defer cleanup()
+
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "empty filename",
+			payload: `{"filename":"","content_type":"image/png"}`,
+		},
+		{
+			name:    "unsupported content type",
+			payload: `{"filename":"malicious.exe","content_type":"application/octet-stream"}`,
+		},
+		{
+			name:    "file size exceeding max limit",
+			payload: `{"filename":"screen.png","content_type":"image/png","file_size_bytes":20000000}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(w)
+			req := httptest.NewRequest(http.MethodPost, "/v1/feedback/presign-upload", bytes.NewBufferString(tt.payload))
+			req.Header.Set("Content-Type", "application/json")
+			ctx.Request = req
+
+			ctrls.PresignFeedbackUpload(ctx)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 on validation failure, got %d (body: %s)", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestControllers_PresignFeedbackUpload_Success(t *testing.T) {
+	ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+	defer cleanup()
+
+	payload := dtos.FeedbackPresignRequest{
+		Filename:      "glitch_proof.png",
+		ContentType:   "image/png",
+		FileSizeBytes: 10240,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/feedback/presign-upload", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.PresignFeedbackUpload(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Status string                        `json:"status"`
+		Data   *dtos.FeedbackPresignResponse `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Data == nil || resp.Data.UploadURL == "" {
+		t.Fatalf("expected upload_url in response data, got %+v", resp.Data)
+	}
+	if resp.Data.Filename != "glitch_proof.png" {
+		t.Errorf("expected filename glitch_proof.png, got %s", resp.Data.Filename)
+	}
+}

@@ -283,6 +283,12 @@ routes:
     handler: SubmitFeedback
     optional_auth: true
 
+  # Generate a pre-signed S3 upload URL for feedback attachments (screenshots, logs).
+  - method: POST
+    path: /v1/feedback/presign-upload
+    handler: PresignFeedbackUpload
+    optional_auth: true
+
   # Dispatch a voice bot to join a meeting or voice channel.
   - method: POST
     path: /v1/recordings/meeting-bot

@@ -13,3 +13,8 @@ const (
 	FeedbackStatusReviewed = "reviewed"
 	FeedbackStatusResolved = "resolved"
 )
+
+const (
+	MaxFeedbackAttachmentSizeBytes = 10 * 1024 * 1024 // 10MB
+	MaxFeedbackAttachmentsCount    = 5
+)

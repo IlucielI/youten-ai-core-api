@@ -24,10 +24,12 @@ type UserResponse struct {
 	RoleCode           string     `json:"role_code,omitempty"`
 	RoleName           string     `json:"role_name,omitempty"`
 	Permissions        []string   `json:"permissions,omitempty"`
-	DailyQuota         int        `json:"daily_quota"`
-	DailyQuotaOverride *int       `json:"daily_quota_override,omitempty"`
-	EmailVerified      bool       `json:"email_verified"`
-	CreatedAt          time.Time  `json:"created_at"`
+	DailyQuota            int        `json:"daily_quota"`
+	DailyQuotaOverride    *int       `json:"daily_quota_override,omitempty"`
+	MaxFileSizeMB         int        `json:"max_file_size_mb"`
+	MaxFileSizeMBOverride *int       `json:"max_file_size_mb_override,omitempty"`
+	EmailVerified         bool       `json:"email_verified"`
+	CreatedAt             time.Time  `json:"created_at"`
 }
 
 // UserProfileResponse represents the detailed authenticated user profile with live daily quota calculations.
@@ -43,6 +45,7 @@ type UserProfileResponse struct {
 	DailyQuota     int        `json:"daily_quota"`
 	QuotaUsedToday int        `json:"quota_used_today"`
 	QuotaRemaining int        `json:"quota_remaining"`
+	MaxFileSizeMB  int        `json:"max_file_size_mb"`
 	EmailVerified  bool       `json:"email_verified"`
 	CreatedAt      time.Time  `json:"created_at"`
 }

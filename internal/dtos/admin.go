@@ -72,6 +72,7 @@ type AdminUserListItem struct {
 	Status         string    `json:"status"`
 	DailyQuota     int       `json:"daily_quota"`
 	QuotaUsedToday int       `json:"quota_used_today"`
+	MaxFileSizeMB  int       `json:"max_file_size_mb"`
 	EmailVerified  bool      `json:"email_verified"`
 	CreatedAt      time.Time `json:"created_at"`
 }
@@ -93,6 +94,18 @@ type AdminUserQuotaResponse struct {
 	UserID             uuid.UUID `json:"user_id"`
 	DailyQuotaOverride *int      `json:"daily_quota_override"`
 	EffectiveQuota     int       `json:"effective_quota"`
+}
+
+// AdminUserMaxFileSizeRequest defines the payload for setting or resetting a user's max file size override in MB.
+type AdminUserMaxFileSizeRequest struct {
+	MaxFileSizeMB *int `json:"max_file_size_mb"`
+}
+
+// AdminUserMaxFileSizeResponse represents the result of a user max file size override mutation.
+type AdminUserMaxFileSizeResponse struct {
+	UserID                 uuid.UUID `json:"user_id"`
+	MaxFileSizeMB          *int      `json:"max_file_size_mb"`
+	EffectiveMaxFileSizeMB int       `json:"effective_max_file_size_mb"`
 }
 
 // AdminRevokeUserSessionsResponse represents the outcome of terminating a user's active sessions.

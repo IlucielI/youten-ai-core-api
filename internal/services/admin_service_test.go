@@ -260,6 +260,131 @@ func TestService_AdminOverrideUserQuota(t *testing.T) {
 	})
 }
 
+func TestService_AdminOverrideUserMaxFileSize(t *testing.T) {
+	t.Run("success override to positive value", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+		newSize := 1024
+
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "max_file_size_mb"}).
+				AddRow(userID, "user@example.com", "Test User", "active", nil))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "users" SET "max_file_size_mb"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+			WithArgs(newSize, sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminOverrideUserMaxFileSize(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserMaxFileSizeRequest{
+			MaxFileSizeMB: &newSize,
+		})
+
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected non-nil response")
+		}
+		if resp.UserID != userID {
+			t.Errorf("expected user ID %v, got %v", userID, resp.UserID)
+		}
+		if resp.MaxFileSizeMB == nil || *resp.MaxFileSizeMB != 1024 {
+			t.Errorf("expected max file size override 1024, got %v", resp.MaxFileSizeMB)
+		}
+		if resp.EffectiveMaxFileSizeMB != 1024 {
+			t.Errorf("expected effective size 1024, got %d", resp.EffectiveMaxFileSizeMB)
+		}
+	})
+
+	t.Run("success reset override to nil", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+		oldSize := 2048
+
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "max_file_size_mb"}).
+				AddRow(userID, "user@example.com", "Test User", "active", oldSize))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "users" SET "max_file_size_mb"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+			WithArgs(nil, sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "admin_audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+		mock.ExpectCommit()
+
+		resp, err := svc.AdminOverrideUserMaxFileSize(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserMaxFileSizeRequest{
+			MaxFileSizeMB: nil,
+		})
+
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if resp.MaxFileSizeMB != nil {
+			t.Errorf("expected nil override, got %v", resp.MaxFileSizeMB)
+		}
+		// Fallback size is 500
+		if resp.EffectiveMaxFileSizeMB != 500 {
+			t.Errorf("expected fallback 500, got %d", resp.EffectiveMaxFileSizeMB)
+		}
+	})
+
+	t.Run("user not found returns error", func(t *testing.T) {
+		svc, mock, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+		size := 500
+
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+			WithArgs(userID, 1).
+			WillReturnError(gorm.ErrRecordNotFound)
+
+		_, err := svc.AdminOverrideUserMaxFileSize(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserMaxFileSizeRequest{
+			MaxFileSizeMB: &size,
+		})
+
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("validation failure on negative size", func(t *testing.T) {
+		svc, _, cleanup := setupAdminServiceMock(t)
+		defer cleanup()
+
+		adminID := uuid.New()
+		userID := uuid.New()
+		negSize := -10
+
+		_, err := svc.AdminOverrideUserMaxFileSize(context.Background(), dtos.AdminActionMeta{AdminID: adminID}, userID, dtos.AdminUserMaxFileSizeRequest{
+			MaxFileSizeMB: &negSize,
+		})
+
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+	})
+}
+
 func TestService_AdminRevokeUserSessions(t *testing.T) {
 	t.Run("success revokes tokens and logs audit", func(t *testing.T) {
 		svc, mock, cleanup := setupAdminServiceMock(t)

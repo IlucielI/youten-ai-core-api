@@ -41,6 +41,8 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 			countToday = 0
 		}
 
+		maxFileSizeMB := resolveMaxFileSizeMB(&u, s.cfg.DefaultMaxFileSizeMB)
+
 		items = append(items, dtos.AdminUserListItem{
 			ID:             u.ID,
 			Email:          u.Email,
@@ -48,6 +50,7 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 			Status:         string(u.Status),
 			DailyQuota:     dailyQuota,
 			QuotaUsedToday: int(countToday),
+			MaxFileSizeMB:  maxFileSizeMB,
 			EmailVerified:  u.EmailVerified,
 			CreatedAt:      u.CreatedAt,
 		})
@@ -101,6 +104,51 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminAct
 		UserID:             userID,
 		DailyQuotaOverride: req.DailyQuotaOverride,
 		EffectiveQuota:     effectiveQuota,
+	}, nil
+}
+
+// AdminOverrideUserMaxFileSize sets or resets a user's max file size override and records an administrative audit log.
+func (s *Service) AdminOverrideUserMaxFileSize(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID, req dtos.AdminUserMaxFileSizeRequest) (*dtos.AdminUserMaxFileSizeResponse, error) {
+	if err := validations.ValidateAdminUserMaxFileSizeRequest(&req); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	prevOverride := user.MaxFileSizeMB
+
+	if err := s.repo.UpdateUserMaxFileSizeMB(ctx, userID, req.MaxFileSizeMB); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	user.MaxFileSizeMB = req.MaxFileSizeMB
+	effectiveSize := ResolveMaxFileSizeMB(user, s.cfg.DefaultMaxFileSizeMB)
+
+	entityIDStr := userID.String()
+	auditLog := queue.AdminAuditPayload{
+		AdminID:  meta.AdminIDPtr(),
+		Action:   constants.AuditActionUserMaxFileSizeOverride,
+		Entity:   constants.AuditEntityUser,
+		EntityID: &entityIDStr,
+		Payload: map[string]any{
+			"previous_override": prevOverride,
+			"new_override":      req.MaxFileSizeMB,
+		},
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
+	}
+	s.emitAdminAuditLog(ctx, auditLog)
+
+	return &dtos.AdminUserMaxFileSizeResponse{
+		UserID:                 userID,
+		MaxFileSizeMB:          req.MaxFileSizeMB,
+		EffectiveMaxFileSizeMB: effectiveSize,
 	}, nil
 }
 

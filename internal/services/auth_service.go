@@ -33,6 +33,24 @@ func resolveDailyQuota(user *models.User) int {
 	return constants.DefaultUserDailyQuota
 }
 
+// ResolveMaxFileSizeMB returns the effective max file size in MB for a user, honoring overrides and role tiers.
+func ResolveMaxFileSizeMB(user *models.User, fallbackMB int) int {
+	if user != nil && user.MaxFileSizeMB != nil && *user.MaxFileSizeMB > 0 {
+		return *user.MaxFileSizeMB
+	}
+	if user != nil && user.Role != nil && user.Role.MaxFileSizeMB != nil && *user.Role.MaxFileSizeMB > 0 {
+		return *user.Role.MaxFileSizeMB
+	}
+	if fallbackMB > 0 {
+		return fallbackMB
+	}
+	return constants.DefaultMaxFileSizeMB
+}
+
+func resolveMaxFileSizeMB(user *models.User, fallbackMB int) int {
+	return ResolveMaxFileSizeMB(user, fallbackMB)
+}
+
 // newUserResponse maps a user model into its public response representation.
 func newUserResponse(user *models.User) dtos.UserResponse {
 	var roleCode string
@@ -44,18 +62,20 @@ func newUserResponse(user *models.User) dtos.UserResponse {
 		permissions = user.Role.PermissionsList()
 	}
 	return dtos.UserResponse{
-		ID:                 user.ID,
-		Email:              user.Email,
-		FullName:           user.FullName,
-		Status:             string(user.Status),
-		RoleID:             user.RoleID,
-		RoleCode:           roleCode,
-		RoleName:           roleName,
-		Permissions:        permissions,
-		DailyQuota:         resolveDailyQuota(user),
-		DailyQuotaOverride: user.DailyQuotaOverride,
-		EmailVerified:      user.EmailVerified,
-		CreatedAt:          user.CreatedAt,
+		ID:                    user.ID,
+		Email:                 user.Email,
+		FullName:              user.FullName,
+		Status:                string(user.Status),
+		RoleID:                user.RoleID,
+		RoleCode:              roleCode,
+		RoleName:              roleName,
+		Permissions:           permissions,
+		DailyQuota:            resolveDailyQuota(user),
+		DailyQuotaOverride:    user.DailyQuotaOverride,
+		MaxFileSizeMB:         resolveMaxFileSizeMB(user, constants.DefaultMaxFileSizeMB),
+		MaxFileSizeMBOverride: user.MaxFileSizeMB,
+		EmailVerified:         user.EmailVerified,
+		CreatedAt:             user.CreatedAt,
 	}
 }
 
@@ -603,6 +623,8 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 		quotaRemaining = 0
 	}
 
+	maxFileSizeMB := resolveMaxFileSizeMB(user, s.cfg.DefaultMaxFileSizeMB)
+
 	return &dtos.UserProfileResponse{
 		ID:             user.ID,
 		Email:          user.Email,
@@ -615,6 +637,7 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 		DailyQuota:     dailyQuota,
 		QuotaUsedToday: quotaUsedToday,
 		QuotaRemaining: quotaRemaining,
+		MaxFileSizeMB:  maxFileSizeMB,
 		EmailVerified:  user.EmailVerified,
 		CreatedAt:      user.CreatedAt,
 	}, nil

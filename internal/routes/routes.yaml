@@ -366,6 +366,13 @@ routes:
     admin_auth: true
     permission: "users:write"
 
+  # Admin override user max file size in MB (CMS).
+  - method: PATCH
+    path: /v1/admin/users/:id/max-file-size
+    handler: AdminOverrideUserMaxFileSize
+    admin_auth: true
+    permission: "users:write"
+
   # Admin revoke all active sessions for a user (CMS).
   - method: POST
     path: /v1/admin/users/:id/revoke-sessions

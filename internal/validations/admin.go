@@ -17,6 +17,13 @@ func ValidateAdminUserQuotaOverrideRequest(r *dtos.AdminUserQuotaOverrideRequest
 	)
 }
 
+// ValidateAdminUserMaxFileSizeRequest normalizes and validates user max file size override parameters.
+func ValidateAdminUserMaxFileSizeRequest(r *dtos.AdminUserMaxFileSizeRequest) error {
+	return validation.ValidateStruct(r,
+		validation.Field(&r.MaxFileSizeMB, validation.Min(1), validation.Max(50000)),
+	)
+}
+
 // ValidateAdminCreateRoleRequest normalizes and validates administrative role creation payloads.
 func ValidateAdminCreateRoleRequest(r *dtos.AdminCreateRoleRequest) error {
 	r.Name = strings.TrimSpace(r.Name)

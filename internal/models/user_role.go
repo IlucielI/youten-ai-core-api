@@ -15,6 +15,7 @@ type UserRole struct {
 	Description string          `gorm:"type:text" json:"description"`
 	Permissions json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"permissions"`
 	DailyQuota  int             `gorm:"not null;default:5" json:"daily_quota"`
+	MaxFileSizeMB *int          `gorm:"default:null" json:"max_file_size_mb,omitempty"`
 	IsDefault   bool            `gorm:"not null;default:false" json:"is_default"`
 	CreatedAt   time.Time       `gorm:"not null;default:now()" json:"created_at"`
 	UpdatedAt   time.Time       `gorm:"not null;default:now()" json:"updated_at"`

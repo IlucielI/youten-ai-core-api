@@ -80,8 +80,29 @@ func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePa
 		return errors.New(errMsg)
 	}
 
+	fallbackMB := s.cfg.DefaultMaxFileSizeMB
+	if fallbackMB <= 0 {
+		fallbackMB = constants.DefaultMaxFileSizeMB
+	}
+	var effectiveMaxBytes int64
+	if recording.UserID != nil {
+		user, uErr := s.repo.FindUserByIDWithRole(ctx, *recording.UserID)
+		if uErr != nil {
+			user, _ = s.repo.FindUserByID(ctx, *recording.UserID)
+		}
+		effMB := resolveMaxFileSizeMB(user, fallbackMB)
+		effectiveMaxBytes = int64(effMB) * 1024 * 1024
+	} else {
+		guestMB := s.cfg.DefaultGuestMaxFileSizeMB
+		if guestMB <= 0 {
+			guestMB = fallbackMB
+		}
+		effectiveMaxBytes = int64(guestMB) * 1024 * 1024
+	}
+
 	importCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
+	importCtx = WithMaxAudioSizeBytes(importCtx, effectiveMaxBytes)
 
 	extracted, err := s.mediaLinkExtractor.ExtractAudio(importCtx, targetURL)
 	if err != nil {
@@ -101,8 +122,8 @@ func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePa
 	}
 	defer extracted.Close()
 
-	if extracted.SizeBytes > MaxImportAudioSizeBytes {
-		errMsg := fmt.Sprintf("extracted audio exceeds maximum allowed size (%d bytes)", MaxImportAudioSizeBytes)
+	if extracted.SizeBytes > effectiveMaxBytes {
+		errMsg := fmt.Sprintf("extracted audio exceeds maximum allowed size (%d bytes)", effectiveMaxBytes)
 		s.failAndLog(ctx, recording.ID, models.ErrCodeImportFetchFailed, errMsg)
 		return errors.New(errMsg)
 	}

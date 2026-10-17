@@ -105,6 +105,11 @@ func (s *Service) UploadRecording(
 		}
 	}
 
+	maxBytes, err := s.resolveEffectiveMaxFileSizeBytes(ctx)
+	if err == nil && maxBytes > 0 && fileSizeBytes > maxBytes {
+		return nil, constants.ErrPayloadTooLarge
+	}
+
 	rec := models.Recording{
 		BaseModel: models.BaseModel{
 			ID:        recordingID,
@@ -582,6 +587,36 @@ func (s *Service) checkDailyQuota(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// resolveEffectiveMaxFileSizeBytes returns the maximum allowed file size in bytes for the caller in context.
+func (s *Service) resolveEffectiveMaxFileSizeBytes(ctx context.Context) (int64, error) {
+	fallbackMB := s.cfg.DefaultMaxFileSizeMB
+	if fallbackMB <= 0 {
+		fallbackMB = constants.DefaultMaxFileSizeMB
+	}
+
+	guestFallbackMB := s.cfg.DefaultGuestMaxFileSizeMB
+	if guestFallbackMB <= 0 {
+		guestFallbackMB = fallbackMB
+	}
+
+	isAuth := ctxmeta.IsAuthenticated(ctx)
+	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
+
+	if isAuth && hasUserID {
+		user, err := s.repo.FindUserByIDWithRole(ctx, userID)
+		if err != nil {
+			user, err = s.repo.FindUserByID(ctx, userID)
+			if err != nil {
+				return int64(fallbackMB) * 1024 * 1024, nil
+			}
+		}
+		effMB := resolveMaxFileSizeMB(user, fallbackMB)
+		return int64(effMB) * 1024 * 1024, nil
+	}
+
+	return int64(guestFallbackMB) * 1024 * 1024, nil
 }
 
 // resolveOwnershipToken extracts anonymous session ID as ownership anchor if present,

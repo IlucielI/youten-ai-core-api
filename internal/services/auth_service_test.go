@@ -15,6 +15,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/hasher"
 	"code-base-golang/internal/pkg/jwt"
 	"code-base-golang/internal/repositories"
@@ -2149,5 +2150,54 @@ func TestService_ResendVerificationEmail_AlreadyVerified(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error for already verified user: %v", err)
 	}
+}
+
+func TestResolveMaxFileSizeMB(t *testing.T) {
+	t.Run("user override takes highest precedence", func(t *testing.T) {
+		userOverride := 1024
+		roleLimit := 250
+		user := &models.User{
+			MaxFileSizeMB: &userOverride,
+			Role: &models.UserRole{
+				MaxFileSizeMB: &roleLimit,
+			},
+		}
+		res := services.ResolveMaxFileSizeMB(user, 500)
+		if res != 1024 {
+			t.Errorf("expected 1024, got %d", res)
+		}
+	})
+
+	t.Run("role limit used when user override is nil", func(t *testing.T) {
+		roleLimit := 300
+		user := &models.User{
+			MaxFileSizeMB: nil,
+			Role: &models.UserRole{
+				MaxFileSizeMB: &roleLimit,
+			},
+		}
+		res := services.ResolveMaxFileSizeMB(user, 500)
+		if res != 300 {
+			t.Errorf("expected 300, got %d", res)
+		}
+	})
+
+	t.Run("fallback used when both user override and role are nil", func(t *testing.T) {
+		user := &models.User{
+			MaxFileSizeMB: nil,
+			Role:          nil,
+		}
+		res := services.ResolveMaxFileSizeMB(user, 750)
+		if res != 750 {
+			t.Errorf("expected 750, got %d", res)
+		}
+	})
+
+	t.Run("default constant used when fallback <= 0", func(t *testing.T) {
+		res := services.ResolveMaxFileSizeMB(nil, 0)
+		if res != constants.DefaultMaxFileSizeMB {
+			t.Errorf("expected %d, got %d", constants.DefaultMaxFileSizeMB, res)
+		}
+	})
 }
 

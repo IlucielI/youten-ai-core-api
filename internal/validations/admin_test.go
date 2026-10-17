@@ -42,6 +42,45 @@ func TestValidateAdminUserQuotaOverrideRequest(t *testing.T) {
 
 }
 
+func TestValidateAdminUserMaxFileSizeRequest(t *testing.T) {
+	t.Run("nil override is valid (reset)", func(t *testing.T) {
+		req := dtos.AdminUserMaxFileSizeRequest{MaxFileSizeMB: nil}
+		if err := ValidateAdminUserMaxFileSizeRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("positive override is valid", func(t *testing.T) {
+		v := 1024
+		req := dtos.AdminUserMaxFileSizeRequest{MaxFileSizeMB: &v}
+		if err := ValidateAdminUserMaxFileSizeRequest(&req); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("zero or negative override returns error", func(t *testing.T) {
+		v := 0
+		req := dtos.AdminUserMaxFileSizeRequest{MaxFileSizeMB: &v}
+		if err := ValidateAdminUserMaxFileSizeRequest(&req); err == nil {
+			t.Fatal("expected error for zero override, got nil")
+		}
+
+		vNeg := -10
+		reqNeg := dtos.AdminUserMaxFileSizeRequest{MaxFileSizeMB: &vNeg}
+		if err := ValidateAdminUserMaxFileSizeRequest(&reqNeg); err == nil {
+			t.Fatal("expected error for negative override, got nil")
+		}
+	})
+
+	t.Run("exceeding max size returns error", func(t *testing.T) {
+		v := 50001
+		req := dtos.AdminUserMaxFileSizeRequest{MaxFileSizeMB: &v}
+		if err := ValidateAdminUserMaxFileSizeRequest(&req); err == nil {
+			t.Fatal("expected error for size exceeding 50000, got nil")
+		}
+	})
+}
+
 func TestValidateAdminCreateRoleRequest(t *testing.T) {
 	t.Run("valid request", func(t *testing.T) {
 		req := dtos.AdminCreateRoleRequest{

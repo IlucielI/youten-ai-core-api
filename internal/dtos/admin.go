@@ -96,6 +96,18 @@ type AdminUserQuotaResponse struct {
 	EffectiveQuota     int       `json:"effective_quota"`
 }
 
+// AdminUserMaxFileSizeRequest defines the payload for setting or resetting a user's max file size override in MB.
+type AdminUserMaxFileSizeRequest struct {
+	MaxFileSizeMB *int `json:"max_file_size_mb"`
+}
+
+// AdminUserMaxFileSizeResponse represents the result of a user max file size override mutation.
+type AdminUserMaxFileSizeResponse struct {
+	UserID                 uuid.UUID `json:"user_id"`
+	MaxFileSizeMB          *int      `json:"max_file_size_mb"`
+	EffectiveMaxFileSizeMB int       `json:"effective_max_file_size_mb"`
+}
+
 // AdminRevokeUserSessionsResponse represents the outcome of terminating a user's active sessions.
 type AdminRevokeUserSessionsResponse struct {
 	UserID  uuid.UUID `json:"user_id"`

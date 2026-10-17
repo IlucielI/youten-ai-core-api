@@ -1424,6 +1424,38 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/admin/users/{id}/max-file-size:
+    patch:
+      tags: [Admin Users]
+      summary: Admin Override User Max File Size
+      security:
+        - AdminAuth: []
+      description: Overrides or resets a user's maximum allowed upload file size in MB (requires users:write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOverrideMaxFileSizeRequest'
+      responses:
+        '200':
+          description: Max file size updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /v1/admin/users/{id}/revoke-sessions:
     post:
       tags: [Admin Users]
@@ -2939,6 +2971,16 @@ components:
         daily_quota_minutes:
           type: integer
           minimum: 0
+
+    AdminOverrideMaxFileSizeRequest:
+      type: object
+      properties:
+        max_file_size_mb:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 50000
+          example: 1024
 
     AdminRoleListResponse:
       allOf:

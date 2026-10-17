@@ -107,6 +107,51 @@ func (s *Service) AdminOverrideUserQuota(ctx context.Context, meta dtos.AdminAct
 	}, nil
 }
 
+// AdminOverrideUserMaxFileSize sets or resets a user's max file size override and records an administrative audit log.
+func (s *Service) AdminOverrideUserMaxFileSize(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID, req dtos.AdminUserMaxFileSizeRequest) (*dtos.AdminUserMaxFileSizeResponse, error) {
+	if err := validations.ValidateAdminUserMaxFileSizeRequest(&req); err != nil {
+		return nil, constants.ErrBadRequest.WithMessage(err.Error())
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrNotFound.WithMessage("user not found")
+		}
+		return nil, s.wrapError(ctx, err)
+	}
+
+	prevOverride := user.MaxFileSizeMB
+
+	if err := s.repo.UpdateUserMaxFileSizeMB(ctx, userID, req.MaxFileSizeMB); err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	user.MaxFileSizeMB = req.MaxFileSizeMB
+	effectiveSize := ResolveMaxFileSizeMB(user, s.cfg.DefaultMaxFileSizeMB)
+
+	entityIDStr := userID.String()
+	auditLog := queue.AdminAuditPayload{
+		AdminID:  meta.AdminIDPtr(),
+		Action:   constants.AuditActionUserMaxFileSizeOverride,
+		Entity:   constants.AuditEntityUser,
+		EntityID: &entityIDStr,
+		Payload: map[string]any{
+			"previous_override": prevOverride,
+			"new_override":      req.MaxFileSizeMB,
+		},
+		IPAddress: meta.IPPtr(),
+		UserAgent: meta.UAPtr(),
+	}
+	s.emitAdminAuditLog(ctx, auditLog)
+
+	return &dtos.AdminUserMaxFileSizeResponse{
+		UserID:                 userID,
+		MaxFileSizeMB:          req.MaxFileSizeMB,
+		EffectiveMaxFileSizeMB: effectiveSize,
+	}, nil
+}
+
 // AdminRevokeUserSessions revokes all active auth and session tokens for a target user and creates an audit trail.
 func (s *Service) AdminRevokeUserSessions(ctx context.Context, meta dtos.AdminActionMeta, userID uuid.UUID) (*dtos.AdminRevokeUserSessionsResponse, error) {
 	user, err := s.repo.FindUserByID(ctx, userID)

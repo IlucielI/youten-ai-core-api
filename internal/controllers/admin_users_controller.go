@@ -62,6 +62,40 @@ func (c *Controllers) AdminOverrideUserQuota(ctx *gin.Context) {
 	c.respondOK(ctx, "User quota updated successfully", resp)
 }
 
+// AdminOverrideUserMaxFileSize handles PATCH /v1/admin/users/:id/max-file-size.
+func (c *Controllers) AdminOverrideUserMaxFileSize(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid user ID"))
+		return
+	}
+
+	var req dtos.AdminUserMaxFileSizeRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid request payload"))
+		return
+	}
+
+	if err := validations.ValidateAdminUserMaxFileSizeRequest(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	meta, ok := c.getAdminActionMeta(ctx)
+	if !ok {
+		return
+	}
+
+	resp, err := c.svc.AdminOverrideUserMaxFileSize(ctx.Request.Context(), meta, userID, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "User max file size updated successfully", resp)
+}
+
 // AdminRevokeUserSessions handles POST /v1/admin/users/:id/revoke-sessions.
 func (c *Controllers) AdminRevokeUserSessions(ctx *gin.Context) {
 	idStr := ctx.Param("id")

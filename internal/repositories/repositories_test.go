@@ -793,6 +793,19 @@ func TestRepositories_UserRole(t *testing.T) {
 		}
 	})
 
+	t.Run("UpdateUserMaxFileSizeMB success", func(t *testing.T) {
+		maxSize := 1024
+		mock.ExpectBegin()
+		mock.ExpectExec(`UPDATE "users" SET "max_file_size_mb"=\$1,"updated_at"=\$2 WHERE id = \$3 AND "users"\."deleted_at" IS NULL`).
+			WithArgs(maxSize, sqlmock.AnyArg(), userID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		if err := repo.UpdateUserMaxFileSizeMB(context.Background(), userID, &maxSize); err != nil {
+			t.Fatalf("unexpected error updating user max file size: %v", err)
+		}
+	})
+
 	t.Run("FindUserRoleByName success", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"id", "name", "code", "daily_quota", "is_default"}).
 			AddRow(roleID, "Free Member", "FREE", 5, true)

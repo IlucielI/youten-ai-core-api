@@ -71,6 +71,18 @@ func (r *Repositories) UpdateUserDailyQuotaOverride(ctx context.Context, id uuid
 	return nil
 }
 
+// UpdateUserMaxFileSizeMB sets or clears the custom max file size override for a user in MB.
+func (r *Repositories) UpdateUserMaxFileSizeMB(ctx context.Context, id uuid.UUID, maxFileSizeMB *int) error {
+	res := r.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", id).Update("max_file_size_mb", maxFileSizeMB)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // UpdateUserPassword updates the password hash for a specific user ID.
 func (r *Repositories) UpdateUserPassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
 	res := r.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", id).Update("password_hash", passwordHash)

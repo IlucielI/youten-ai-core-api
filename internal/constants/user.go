@@ -9,6 +9,10 @@ const (
 	// Default daily quota allocations
 	DefaultUserDailyQuota  = 5
 	DefaultGuestDailyQuota = 1
+
+	// Default max file size allocations (in MB)
+	DefaultMaxFileSizeMB      = 500
+	DefaultGuestMaxFileSizeMB = 500
 )
 
 // AuthTokenType defines valid token types stored in the database auth_tokens table.

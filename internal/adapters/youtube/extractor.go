@@ -379,12 +379,13 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 		}
 	}()
 
+	maxAudioSize := services.GetMaxAudioSizeBytes(execCtx, e.maxAudioSizeBytes)
 	outputTemplate := filepath.Join(jobDir, "audio.%(ext)s")
 	args := []string{
 		"-f", "ba[ext=m4a]/ba[ext=webm]/ba",
 		"--no-playlist",
 		"--no-warnings",
-		"--max-filesize", fmt.Sprintf("%d", e.maxAudioSizeBytes),
+		"--max-filesize", fmt.Sprintf("%d", maxAudioSize),
 		"--socket-timeout", "30",
 		"--write-info-json",
 		"-o", outputTemplate,

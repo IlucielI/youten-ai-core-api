@@ -244,6 +244,26 @@ func TestService_UploadRecording_AuthSuccess(t *testing.T) {
 	}
 }
 
+func TestService_UploadRecording_ExceedsMaxFileSize(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	ctx := ctxmeta.WithClientMeta(context.Background(), "127.0.0.1", "Agent")
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	// 600MB file exceeds 500MB fallback
+	_, err := svc.UploadRecording(ctx, dtos.UploadRecordingRequest{
+		Filename:      "huge_video.mp4",
+		FileSizeBytes: 600 * 1024 * 1024,
+	})
+	if err == nil {
+		t.Fatal("expected ErrPayloadTooLarge, got nil error")
+	}
+	if !errors.Is(err, constants.ErrPayloadTooLarge) {
+		t.Errorf("expected ErrPayloadTooLarge, got %v", err)
+	}
+}
+
 func TestService_UploadRecording_PublisherError(t *testing.T) {
 	svc, mock, _, pub := setupRecordingTestService(t)
 	pub.publishErr = errors.New("rabbitmq broker down")

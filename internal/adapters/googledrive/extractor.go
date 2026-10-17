@@ -327,16 +327,17 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 		_ = os.Remove(tempFilePath)
 	}
 
-	limitedReader := io.LimitReader(resp.Body, e.cfg.MaxAudioSizeBytes+1)
+	maxAudioSize := services.GetMaxAudioSizeBytes(dlCtx, e.cfg.MaxAudioSizeBytes)
+	limitedReader := io.LimitReader(resp.Body, maxAudioSize+1)
 	written, copyErr := io.Copy(tempFile, limitedReader)
 	if copyErr != nil {
 		cleanup()
 		return nil, fmt.Errorf("failed during streaming download: %w", copyErr)
 	}
 
-	if written > e.cfg.MaxAudioSizeBytes {
+	if written > maxAudioSize {
 		cleanup()
-		return nil, fmt.Errorf("downloaded file exceeds maximum allowed size of %d bytes", e.cfg.MaxAudioSizeBytes)
+		return nil, fmt.Errorf("downloaded file exceeds maximum allowed size of %d bytes", maxAudioSize)
 	}
 
 	if written == 0 {

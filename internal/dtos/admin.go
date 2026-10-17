@@ -72,6 +72,7 @@ type AdminUserListItem struct {
 	Status         string    `json:"status"`
 	DailyQuota     int       `json:"daily_quota"`
 	QuotaUsedToday int       `json:"quota_used_today"`
+	MaxFileSizeMB  int       `json:"max_file_size_mb"`
 	EmailVerified  bool      `json:"email_verified"`
 	CreatedAt      time.Time `json:"created_at"`
 }

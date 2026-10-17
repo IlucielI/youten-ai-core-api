@@ -38,3 +38,26 @@ type MediaLinkExtractor interface {
 
 // YouTubeExtractor aliases MediaLinkExtractor for backwards compatibility.
 type YouTubeExtractor = MediaLinkExtractor
+
+type mediaContextKey string
+
+const maxAudioSizeCtxKey mediaContextKey = "services:max_audio_size_bytes"
+
+// WithMaxAudioSizeBytes injects a custom max audio size ceiling into the context.
+func WithMaxAudioSizeBytes(ctx context.Context, maxBytes int64) context.Context {
+	if maxBytes <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, maxAudioSizeCtxKey, maxBytes)
+}
+
+// GetMaxAudioSizeBytes retrieves custom max audio size ceiling from context or returns fallback.
+func GetMaxAudioSizeBytes(ctx context.Context, fallback int64) int64 {
+	if ctx == nil {
+		return fallback
+	}
+	if v, ok := ctx.Value(maxAudioSizeCtxKey).(int64); ok && v > 0 {
+		return v
+	}
+	return fallback
+}

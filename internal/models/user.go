@@ -23,6 +23,7 @@ type User struct {
 	RoleID             *uuid.UUID `gorm:"type:uuid;index:idx_users_role_id" json:"role_id,omitempty"`
 	Role               *UserRole  `gorm:"foreignKey:RoleID" json:"role,omitempty"`
 	DailyQuotaOverride *int       `gorm:"default:null" json:"daily_quota_override,omitempty"`
+	MaxFileSizeMB      *int       `gorm:"default:null" json:"max_file_size_mb,omitempty"`
 	EmailVerified      bool       `gorm:"not null;default:false" json:"email_verified"`
 }
 

@@ -41,6 +41,8 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 			countToday = 0
 		}
 
+		maxFileSizeMB := resolveMaxFileSizeMB(&u, s.cfg.DefaultMaxFileSizeMB)
+
 		items = append(items, dtos.AdminUserListItem{
 			ID:             u.ID,
 			Email:          u.Email,
@@ -48,6 +50,7 @@ func (s *Service) AdminListUsers(ctx context.Context, q dtos.AdminUserListQuery)
 			Status:         string(u.Status),
 			DailyQuota:     dailyQuota,
 			QuotaUsedToday: int(countToday),
+			MaxFileSizeMB:  maxFileSizeMB,
 			EmailVerified:  u.EmailVerified,
 			CreatedAt:      u.CreatedAt,
 		})

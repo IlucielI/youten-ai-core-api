@@ -436,8 +436,103 @@ func TestService_RefreshToken_Success(t *testing.T) {
 		t.Errorf("expected email %s, got %s", email, resp.User.Email)
 	}
 
+	newClaims, err := jwt.ValidateToken(cfg, resp.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to validate refreshed access token: %v", err)
+	}
+	if !newClaims.HasPermission("recordings:create") {
+		t.Errorf("expected refreshed access token to have recordings:create permission")
+	}
+
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestService_RefreshToken_PreservesRolePermissions(t *testing.T) {
+	svc, mock, cleanup := setupAuthServiceMock(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	email := "pro-refresh@example.com"
+	roleID := uuid.New()
+	now := time.Now()
+
+	cfg := config.Config{
+		AppName:              "youten-test",
+		JWTSecret:            "test-jwt-secret-key-1234567890",
+		JWTAccessExpiration:  15 * time.Minute,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+
+	tokenPair, err := jwt.GenerateTokenPair(cfg, userID, email, "session-old")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+
+	tokenHash := hasher.HashToken(tokenPair.RefreshToken)
+	tokenID := uuid.New()
+
+	// 1. FindAuthTokenByHashAndType
+	mock.ExpectQuery(`SELECT \* FROM "auth_tokens" WHERE token_hash = \$1 AND type = \$2 AND revoked_at IS NULL AND expires_at > \$3 ORDER BY "auth_tokens"\."id" LIMIT \$4`).
+		WithArgs(tokenHash, constants.AuthTokenTypeRefresh, sqlmock.AnyArg(), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "token_hash", "expires_at", "created_at", "updated_at"}).
+			AddRow(tokenID, userID, constants.AuthTokenTypeRefresh, tokenHash, now.Add(24*time.Hour), now, now))
+
+	// 2. FindUserByID
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name", "status", "role_id", "created_at"}).
+			AddRow(userID, email, "Pro Refresh User", constants.UserStatusActive, roleID, now))
+
+	// 3. FindUserRoleByID
+	mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE id = \$1 ORDER BY "user_roles"\."id" LIMIT \$2`).
+		WithArgs(roleID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "code", "permissions", "daily_quota"}).
+			AddRow(roleID, "Pro Member", "PRO", []byte(`["recordings:*", "workspace:search", "workspace:memory"]`), 25))
+
+	// 4. RotateAuthToken (Transaction: revoke old token + insert new token)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "auth_tokens"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), tokenID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`INSERT INTO "auth_tokens"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), now, now))
+	mock.ExpectCommit()
+
+	req := &dtos.RefreshTokenRequest{
+		RefreshToken: tokenPair.RefreshToken,
+	}
+
+	resp, err := svc.RefreshToken(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error refreshing token: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+
+	claims, err := jwt.ValidateToken(cfg, resp.AccessToken)
+	if err != nil {
+		t.Fatalf("failed to validate access token: %v", err)
+	}
+
+	if claims.RoleCode != "PRO" {
+		t.Errorf("expected role PRO, got %s", claims.RoleCode)
+	}
+	if !claims.HasPermission("recordings:create") {
+		t.Errorf("expected permission recordings:create to be granted by recordings:*")
+	}
+	if !claims.HasPermission("workspace:search") {
+		t.Errorf("expected permission workspace:search to be granted")
+	}
+	if claims.DailyQuota != 25 {
+		t.Errorf("expected daily quota 25, got %d", claims.DailyQuota)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled mock expectations: %s", err)
 	}
 }
 

@@ -51,6 +51,56 @@ func resolveMaxFileSizeMB(user *models.User, fallbackMB int) int {
 	return ResolveMaxFileSizeMB(user, fallbackMB)
 }
 
+// defaultMemberPermissions returns baseline permissions granted to Free Member tier.
+func defaultMemberPermissions() []string {
+	return []string{
+		string(constants.ScopeRecordingsCreate),
+		string(constants.ScopeRecordingsRead),
+		string(constants.ScopeRecordingsChat),
+		string(constants.ScopeRecordingsShare),
+		string(constants.ScopeProfileManage),
+	}
+}
+
+// resolveUserRoleClaims resolves role code, permissions list, and daily quota for a user.
+// It loads the user's role if available, falling back to Free Member baseline scopes
+// so that tokens and response payloads never lose critical execution scopes upon token refresh.
+func (s *Service) resolveUserRoleClaims(ctx context.Context, user *models.User) jwt.UserRoleClaims {
+	if user == nil {
+		return jwt.UserRoleClaims{
+			RoleCode:    "FREE",
+			Permissions: defaultMemberPermissions(),
+			DailyQuota:  constants.DefaultUserDailyQuota,
+		}
+	}
+
+	if user.Role == nil && user.RoleID != nil {
+		if r, err := s.repo.FindUserRoleByID(ctx, *user.RoleID); err == nil && r != nil {
+			user.Role = r
+		}
+	}
+
+	var roleCode string
+	var perms []string
+	if user.Role != nil {
+		roleCode = user.Role.Code
+		perms = user.Role.PermissionsList()
+	}
+
+	if len(perms) == 0 {
+		perms = defaultMemberPermissions()
+		if roleCode == "" {
+			roleCode = "FREE"
+		}
+	}
+
+	return jwt.UserRoleClaims{
+		RoleCode:    roleCode,
+		Permissions: perms,
+		DailyQuota:  resolveDailyQuota(user),
+	}
+}
+
 // newUserResponse maps a user model into its public response representation.
 func newUserResponse(user *models.User) dtos.UserResponse {
 	var roleCode string
@@ -206,32 +256,10 @@ func (s *Service) Login(ctx context.Context, req *dtos.LoginRequest) (*dtos.Auth
 	}
 
 	// Retrieve user role if available
-	var roleCode string
-	var perms []string
-	if user.RoleID != nil {
-		if user.Role != nil {
-			roleCode = user.Role.Code
-			perms = user.Role.PermissionsList()
-		} else {
-			r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID)
-			if rErr != nil {
-				return nil, s.wrapError(ctx, rErr)
-			}
-			if r != nil {
-				user.Role = r
-				roleCode = r.Code
-				perms = r.PermissionsList()
-			}
-		}
-	}
-	dailyQuota := resolveDailyQuota(user)
+	claims := s.resolveUserRoleClaims(ctx, user)
 
 	sessionID := uuid.New().String()
-	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID, jwt.UserRoleClaims{
-		RoleCode:    roleCode,
-		Permissions: perms,
-		DailyQuota:  dailyQuota,
-	})
+	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID, claims)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
@@ -304,9 +332,11 @@ func (s *Service) RefreshToken(ctx context.Context, req *dtos.RefreshTokenReques
 		return nil, constants.ErrInvalidToken
 	}
 
+	roleClaims := s.resolveUserRoleClaims(ctx, user)
+
 	// 4. Generate fresh token pair with a new session ID
 	sessionID := uuid.New().String()
-	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID)
+	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID, roleClaims)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}
@@ -588,29 +618,14 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*dtos.UserP
 		return nil, s.wrapError(ctx, err)
 	}
 
-	var roleCode string
-	var roleName string
-	var permissions []string
-	if user.RoleID != nil {
-		if user.Role != nil {
-			roleCode = user.Role.Code
-			roleName = user.Role.Name
-			permissions = user.Role.PermissionsList()
-		} else {
-			r, rErr := s.repo.FindUserRoleByID(ctx, *user.RoleID)
-			if rErr != nil {
-				return nil, s.wrapError(ctx, rErr)
-			}
-			if r != nil {
-				user.Role = r
-				roleCode = r.Code
-				roleName = r.Name
-				permissions = r.PermissionsList()
-			}
-		}
+	claims := s.resolveUserRoleClaims(ctx, user)
+	roleCode := claims.RoleCode
+	roleName := ""
+	if user.Role != nil {
+		roleName = user.Role.Name
 	}
-
-	dailyQuota := resolveDailyQuota(user)
+	permissions := claims.Permissions
+	dailyQuota := claims.DailyQuota
 
 	countToday, err := s.repo.CountUserRecordingsToday(ctx, user.ID)
 	if err != nil {
@@ -866,18 +881,10 @@ func (s *Service) VerifyEmail(ctx context.Context, req *dtos.VerifyEmailRequest)
 	_ = s.repo.RevokeAllAuthTokensByUserID(ctx, user.ID, constants.AuthTokenTypeEmailVerificationCode)
 
 	// Generate authenticated session token pair
+	claims := s.resolveUserRoleClaims(ctx, user)
 	sessionID := uuid.New().String()
-	var roleCode string
-	var perms []string
-	if user.Role != nil {
-		roleCode = user.Role.Code
-		perms = user.Role.PermissionsList()
-	}
 
-	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID, jwt.UserRoleClaims{
-		RoleCode:    roleCode,
-		Permissions: perms,
-	})
+	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user.ID, user.Email, sessionID, claims)
 	if err != nil {
 		return nil, s.wrapError(ctx, err)
 	}

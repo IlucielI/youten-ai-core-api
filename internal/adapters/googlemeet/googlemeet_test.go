@@ -9,6 +9,7 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/queue"
 )
 
 type mockPublisher struct {
@@ -122,8 +123,11 @@ func TestGoogleMeetAdapter(t *testing.T) {
 		if pub.publishCalls != 1 {
 			t.Errorf("expected 1 publish call, got %d", pub.publishCalls)
 		}
-		if pub.publishedTopic != "bot.google_meet.dispatch" {
-			t.Errorf("expected topic bot.google_meet.dispatch, got %s", pub.publishedTopic)
+		if pub.publishedTopic != constants.TopicBotGoogleMeetDispatch {
+			t.Errorf("expected topic %s, got %s", constants.TopicBotGoogleMeetDispatch, pub.publishedTopic)
+		}
+		if _, ok := pub.publishedBody.(queue.BotDispatchPayload); !ok {
+			t.Errorf("expected payload to be queue.BotDispatchPayload, got %T", pub.publishedBody)
 		}
 
 		// Verify GetStatus
@@ -155,6 +159,15 @@ func TestGoogleMeetAdapter(t *testing.T) {
 		// Stop session
 		if err := adapter.Stop(ctx, extID); err != nil {
 			t.Fatalf("unexpected stop error: %v", err)
+		}
+		if pub.publishCalls != 2 {
+			t.Errorf("expected 2 publish calls after stop, got %d", pub.publishCalls)
+		}
+		if pub.publishedTopic != constants.TopicBotGoogleMeetStop {
+			t.Errorf("expected topic %s, got %s", constants.TopicBotGoogleMeetStop, pub.publishedTopic)
+		}
+		if _, ok := pub.publishedBody.(queue.BotStopPayload); !ok {
+			t.Errorf("expected payload to be queue.BotStopPayload, got %T", pub.publishedBody)
 		}
 
 		status, err = adapter.GetStatus(ctx, extID)

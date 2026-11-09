@@ -189,3 +189,62 @@ func TestOmniRouteSTT_Transcribe_DiarizedText(t *testing.T) {
 	}
 }
 
+func TestOmniRouteSTT_Transcribe_ParallelDualModelDiarization(t *testing.T) {
+	primaryResponse := `{
+		"task": "transcribe",
+		"language": "id",
+		"duration": 20.0,
+		"text": "Kita mulai pembahasan arsitektur pipeline.",
+		"segments": [
+			{"id": 0, "start": 0.0, "end": 20.0, "text": "Kita mulai pembahasan arsitektur pipeline."}
+		]
+	}`
+
+	diarizeResponse := `{
+		"task": "transcribe",
+		"language": "id",
+		"duration": 20.0,
+		"text": "Kita mulai pembahasan arsitektur pipeline.",
+		"segments": [
+			{"id": 0, "start": 0.0, "end": 10.0, "text": "Kita mulai pembahasan arsitektur pipeline.", "speaker": 0},
+			{"id": 1, "start": 10.1, "end": 20.0, "text": "Siap, silakan share screen.", "speaker": 1}
+		]
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		err := r.ParseMultipartForm(10 << 20)
+		if err != nil {
+			t.Errorf("failed to parse multipart form: %v", err)
+		}
+		model := r.FormValue("model")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if model == "deepgram/nova-3" {
+			_, _ = w.Write([]byte(diarizeResponse))
+		} else {
+			_, _ = w.Write([]byte(primaryResponse))
+		}
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		LLMBaseURL:      server.URL,
+		LLMAPIKey:       "test-key",
+		STTModel:        "groq/whisper-large-v3",
+		STTDiarizeModel: "deepgram/nova-3",
+	}
+
+	adapter := stt.NewOmniRoute(cfg)
+	res, err := adapter.Transcribe(context.Background(), bytes.NewReader([]byte("audio-bytes")), "test.mp3", dtos.STTOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(res.DiarizedText, "Speaker 0 [0.00s - 10.00s]:") {
+		t.Errorf("expected DiarizedText to contain Speaker 0 timestamp, got: %s", res.DiarizedText)
+	}
+	if !strings.Contains(res.DiarizedText, "Speaker 1 [10.10s - 20.00s]:") {
+		t.Errorf("expected DiarizedText to contain Speaker 1 timestamp, got: %s", res.DiarizedText)
+	}
+}
+

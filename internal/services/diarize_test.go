@@ -499,6 +499,67 @@ func TestPruneGhostSpeakers_PreservesLegitimateTenthSpeaker(t *testing.T) {
 	}
 }
 
+func TestBuildContextualSTTPrompt(t *testing.T) {
+	prompt := buildContextualSTTPrompt("[TICS] Data Pipeline Discussion", "id")
+	if !strings.Contains(prompt, "Topik: [TICS] Data Pipeline Discussion.") {
+		t.Errorf("expected prompt to contain topic, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "ClickHouse") || !strings.Contains(prompt, "S3") || !strings.Contains(prompt, "front-end") {
+		t.Errorf("expected domain vocabulary in prompt, got: %s", prompt)
+	}
+
+	emptyPrompt := buildContextualSTTPrompt("", "id")
+	if strings.Contains(emptyPrompt, "Topik:") {
+		t.Errorf("expected no topic prefix when title is empty, got: %s", emptyPrompt)
+	}
+	if !strings.Contains(emptyPrompt, "GitLab") {
+		t.Errorf("expected default vocabulary even when title is empty")
+	}
+}
+
+func TestCleanLLMJSONResponse(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "plain json array",
+			input:    `[{"index": 0, "text": "Halo"}]`,
+			expected: `[{"index": 0, "text": "Halo"}]`,
+		},
+		{
+			name:     "markdown fenced json",
+			input:    "```json\n[{\"index\": 0, \"text\": \"Halo\"}]\n```",
+			expected: `[{"index": 0, "text": "Halo"}]`,
+		},
+		{
+			name:     "wrapped in think tags",
+			input:    "<think>Evaluating speech consensus...</think>\n```json\n[{\"index\": 0, \"text\": \"Halo\"}]\n```",
+			expected: `[{"index": 0, "text": "Halo"}]`,
+		},
+		{
+			name:     "wrapped in escape tags from thinking model",
+			input:    "<escape>[{\"index\": 0, \"text\": \"Halo\"}]</escape>",
+			expected: `[{"index": 0, "text": "Halo"}]`,
+		},
+		{
+			name:     "reasoning tags with brackets inside reasoning",
+			input:    "<reasoning>Speaker mapping: [Speaker 0 -> Speaker 1]</reasoning>[{\"index\": 0, \"text\": \"Halo\"}]",
+			expected: `[{"index": 0, "text": "Halo"}]`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := cleanLLMJSONResponse(tc.input)
+			if actual != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, actual)
+			}
+		})
+	}
+}
+
 
 
 

@@ -73,6 +73,8 @@ type openAIVerboseJSON struct {
 		AvgLogprob       float64 `json:"avg_logprob"`
 		CompressionRatio float64 `json:"compression_ratio"`
 		NoSpeechProb     float64 `json:"no_speech_prob"`
+		Speaker          *int    `json:"speaker,omitempty"`
+		SpeakerLabel     string  `json:"speaker_label,omitempty"`
 		Words            []struct {
 			Word        string  `json:"word"`
 			Start       float64 `json:"start"`
@@ -80,6 +82,12 @@ type openAIVerboseJSON struct {
 			Probability float64 `json:"probability,omitempty"`
 		} `json:"words"`
 	} `json:"segments"`
+	Words []struct {
+		Word        string  `json:"word"`
+		Start       float64 `json:"start"`
+		End         float64 `json:"end"`
+		Probability float64 `json:"probability,omitempty"`
+	} `json:"words,omitempty"`
 }
 
 // Transcribe streams audio to the transcription endpoint and decodes the verbose JSON response.
@@ -242,7 +250,11 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 
 		text := s.Text
 		speaker := ""
-		if match := speakerPrefixRegex.FindStringSubmatch(strings.TrimSpace(text)); len(match) == 3 {
+		if strings.TrimSpace(s.SpeakerLabel) != "" {
+			speaker = strings.TrimSpace(s.SpeakerLabel)
+		} else if s.Speaker != nil {
+			speaker = fmt.Sprintf("Speaker %d", *s.Speaker)
+		} else if match := speakerPrefixRegex.FindStringSubmatch(strings.TrimSpace(text)); len(match) == 3 {
 			speaker = strings.TrimSpace(match[1])
 			text = strings.TrimSpace(match[2])
 		}
@@ -291,11 +303,21 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 		lang = strutil.NormalizeLanguageCode(lang, "id")
 	}
 
+	var diarizedRefSb strings.Builder
+	for _, seg := range segments {
+		spk := seg.SpeakerLabel
+		if spk == "" {
+			spk = "Speaker 0"
+		}
+		diarizedRefSb.WriteString(fmt.Sprintf("%s [%.2fs - %.2fs]: %s\n", spk, seg.Start, seg.End, seg.Text))
+	}
+
 	return &dtos.TranscriptionResult{
-		Text:     parsed.Text,
-		Language: lang,
-		Duration: duration,
-		Segments: segments,
+		Text:         parsed.Text,
+		Language:     lang,
+		Duration:     duration,
+		Segments:     segments,
+		DiarizedText: strings.TrimSpace(diarizedRefSb.String()),
 	}, nil
 }
 

@@ -91,8 +91,11 @@ func TestConfig_LoadDefaults(t *testing.T) {
 	if cfg.LLMTimeout != 5*time.Minute {
 		t.Errorf("expected LLMTimeout 5m, got %v", cfg.LLMTimeout)
 	}
-	if cfg.STTModel != "whisper-1" {
-		t.Errorf("expected STTModel 'whisper-1', got %q", cfg.STTModel)
+	if cfg.STTModel != "deepgram/nova-3" {
+		t.Errorf("expected STTModel 'deepgram/nova-3', got %q", cfg.STTModel)
+	}
+	if cfg.STTDiarizeModel != "deepgram/nova-3" {
+		t.Errorf("expected STTDiarizeModel 'deepgram/nova-3', got %q", cfg.STTDiarizeModel)
 	}
 	if cfg.EmbeddingModel != "cf/@cf/baai/bge-m3" {
 		t.Errorf("expected EmbeddingModel 'cf/@cf/baai/bge-m3', got %q", cfg.EmbeddingModel)

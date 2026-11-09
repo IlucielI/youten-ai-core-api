@@ -223,6 +223,25 @@ func (s *Service) ProcessExtraction(ctx context.Context, p queue.RecordingPipeli
 	return s.publishEvent(ctx, constants.TopicRecordingTranscribe, nextPayload)
 }
 
+// defaultASRPromptVocabulary provides a curated technical, corporate, and software engineering lexicon
+// to prime the speech recognition engine's beam-search, preventing phonetic drifts and hallucinations.
+const defaultASRPromptVocabulary = "Rapat kerja teknologi, software engineering, product development, data pipeline, sprint checkpoint, deployment. " +
+	"Istilah: S3, AWS, MinIO, ClickHouse, Parquet, Kafka, PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes, ArgoCD, CronJob, GitLab, GitHub, " +
+	"PR, MR, Merge Request, Pull Request, SDK, API, endpoint, front-end, back-end, iOS, Android, GA4, Google Analytics, Firebase, BigQuery, " +
+	"JSON, HTTP, Notion, Jira, Slack, CI/CD, staging, production, Telkomsel, NBS, bug, issue, blocker, PIC."
+
+func buildContextualSTTPrompt(title string, lang string) string {
+	var sb strings.Builder
+	cleanTitle := strings.TrimSpace(title)
+	if cleanTitle != "" {
+		sb.WriteString("Topik: ")
+		sb.WriteString(cleanTitle)
+		sb.WriteString(". ")
+	}
+	sb.WriteString(defaultASRPromptVocabulary)
+	return sb.String()
+}
+
 // ProcessTranscription handles the speech-to-text diarization stage.
 func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPipelinePayload) error {
 	recording, err := s.repo.FindRecordingByID(ctx, p.RecordingID)
@@ -273,6 +292,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", dtos.STTOptions{
 		Language:      sttLang,
 		AudioDuration: recording.DurationSeconds,
+		Prompt:        buildContextualSTTPrompt(recording.Title, sttLang),
 	})
 	if err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("stt transcription failed: %v", err))
@@ -1201,13 +1221,7 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 		return defaultRosterFromSegments(segments, diarizedRef)
 	}
 
-	cleanJSON := strings.TrimSpace(chatRes.Content)
-	if idx := strings.Index(cleanJSON, "["); idx != -1 {
-		cleanJSON = cleanJSON[idx:]
-	}
-	if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
-		cleanJSON = cleanJSON[:idx+1]
-	}
+	cleanJSON := cleanLLMJSONResponse(chatRes.Content)
 
 	var items []dtos.SpeakerRosterItem
 	if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
@@ -1488,13 +1502,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			continue
 		}
 
-		cleanJSON := strings.TrimSpace(chatRes.Content)
-		if idx := strings.Index(cleanJSON, "["); idx != -1 {
-			cleanJSON = cleanJSON[idx:]
-		}
-		if idx := strings.LastIndex(cleanJSON, "]"); idx != -1 {
-			cleanJSON = cleanJSON[:idx+1]
-		}
+		cleanJSON := cleanLLMJSONResponse(chatRes.Content)
 
 		type correctedItem struct {
 			Index       int    `json:"index"`
@@ -1678,4 +1686,38 @@ func resolveSourceURL(rec *models.Recording) string {
 		}
 	}
 	return ""
+}
+
+var (
+	thinkTagRegex     = regexp.MustCompile(`(?s)<think>.*?</think>`)
+	reasoningTagRegex = regexp.MustCompile(`(?s)<reasoning>.*?</reasoning>`)
+	escapeTagRegex    = regexp.MustCompile(`(?s)</?escape>`)
+)
+
+// cleanLLMJSONResponse strips thinking tokens, reasoning envelopes, and markdown fences
+// before extracting the raw JSON array.
+func cleanLLMJSONResponse(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = thinkTagRegex.ReplaceAllString(s, "")
+	s = reasoningTagRegex.ReplaceAllString(s, "")
+	s = escapeTagRegex.ReplaceAllString(s, "")
+	s = strings.TrimSpace(s)
+
+	if strings.HasPrefix(s, "```") {
+		if firstNewline := strings.Index(s, "\n"); firstNewline != -1 {
+			s = s[firstNewline+1:]
+		}
+		if lastFence := strings.LastIndex(s, "```"); lastFence != -1 {
+			s = s[:lastFence]
+		}
+		s = strings.TrimSpace(s)
+	}
+
+	if idx := strings.Index(s, "["); idx != -1 {
+		s = s[idx:]
+	}
+	if idx := strings.LastIndex(s, "]"); idx != -1 {
+		s = s[:idx+1]
+	}
+	return strings.TrimSpace(s)
 }

@@ -358,7 +358,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 	}
 
 	// Merge consecutive segments from the same speaker to prevent sentence fragmentation
-	modelSegments = mergeConsecutiveSegments(modelSegments, 3.0, 45.0)
+	modelSegments = mergeConsecutiveSegments(modelSegments, 1.5, 20.0)
 
 	if err := s.repo.SaveTranscriptSegments(ctx, modelSegments); err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to save transcript segments: %v", err))
@@ -1537,8 +1537,10 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 				}
 
 				if targetIdx >= i && targetIdx < end {
-					if strings.TrimSpace(it.Speaker) != "" {
-						segments[targetIdx].SpeakerLabel = strings.TrimSpace(it.Speaker)
+					if segments[targetIdx].SpeakerLabel == "" || segments[targetIdx].SpeakerLabel == constants.DefaultSpeakerLabel {
+						if strings.TrimSpace(it.Speaker) != "" {
+							segments[targetIdx].SpeakerLabel = strings.TrimSpace(it.Speaker)
+						}
 					}
 					speakerName := strings.TrimSpace(it.SpeakerName)
 					if speakerName == "" {

@@ -74,10 +74,10 @@ func FindBestAcousticSpeaker(start, end float64, diarizedSegments []dtos.Segment
 
 	speakerDurations := make(map[string]float64)
 	for _, d := range diarizedSegments {
-		spk := NormalizeSpeakerLabel(d.SpeakerLabel)
-		if spk == "" {
+		if strings.TrimSpace(d.SpeakerLabel) == "" {
 			continue
 		}
+		spk := NormalizeSpeakerLabel(d.SpeakerLabel)
 		ov := CalculateOverlap(start, end, d.Start, d.End)
 		if ov > 0 {
 			speakerDurations[spk] += ov
@@ -102,10 +102,10 @@ func FindBestAcousticSpeaker(start, end float64, diarizedSegments []dtos.Segment
 	minDist := collar + 1.0
 	closestSpk := ""
 	for _, d := range diarizedSegments {
-		spk := NormalizeSpeakerLabel(d.SpeakerLabel)
-		if spk == "" {
+		if strings.TrimSpace(d.SpeakerLabel) == "" {
 			continue
 		}
+		spk := NormalizeSpeakerLabel(d.SpeakerLabel)
 		var dist float64
 		if d.End < start {
 			dist = start - d.End
@@ -248,7 +248,17 @@ func alignAndSplitByWords(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segme
 			normSpk := NormalizeSpeakerLabel(runs[0][0].speaker)
 			resSeg.SpeakerLabel = normSpk
 			resSeg.AcousticSpeaker = normSpk
-			resSeg.AcousticConfidence = 1.0
+
+			wordDuration := resSeg.End - resSeg.Start
+			if wordDuration > 0 {
+				overlapStart := math.Max(resSeg.Start, runs[0][0].word.Start)
+				overlapEnd := math.Min(resSeg.End, runs[0][len(runs[0])-1].word.End)
+				overlap := math.Max(0.0, overlapEnd-overlapStart)
+				resSeg.AcousticConfidence = math.Min(1.0, overlap/wordDuration)
+			} else {
+				resSeg.AcousticConfidence = 0.0
+			}
+
 			if resSeg.SpeakerName == "" {
 				resSeg.SpeakerName = normSpk
 			}
@@ -285,6 +295,17 @@ func alignAndSplitByWords(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segme
 			end = start + 0.1
 		}
 
+		confidence := 1.0
+		dur := end - start
+		if dur > 0 {
+			_, maxOv, _ := FindBestAcousticSpeaker(start, end, diarizedSegments)
+			if maxOv > 0 {
+				confidence = math.Min(1.0, maxOv/dur)
+			} else {
+				confidence = 0.85
+			}
+		}
+
 		result = append(result, dtos.SegmentResult{
 			Start:              start,
 			End:                end,
@@ -292,7 +313,7 @@ func alignAndSplitByWords(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segme
 			SpeakerLabel:       spk,
 			SpeakerName:        spk,
 			AcousticSpeaker:    spk,
-			AcousticConfidence: 1.0,
+			AcousticConfidence: confidence,
 			Words:              wordsList,
 		})
 	}
@@ -352,10 +373,21 @@ func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentRe
 
 	// Estimate transition time between earlySpk and lateSpk
 	transitionTime := wSeg.Start + (dur * 0.5)
-	for _, d := range diarizedSegments {
+	for i, d := range diarizedSegments {
 		norm := NormalizeSpeakerLabel(d.SpeakerLabel)
-		if norm == earlySpk && d.End > wSeg.Start && d.End < wSeg.End {
-			transitionTime = d.End
+		if norm != earlySpk || d.End <= wSeg.Start || d.End >= wSeg.End {
+			continue
+		}
+
+		for j := i + 1; j < len(diarizedSegments); j++ {
+			next := diarizedSegments[j]
+			nextSpk := NormalizeSpeakerLabel(next.SpeakerLabel)
+			if nextSpk == earlySpk {
+				continue
+			}
+			if nextSpk == lateSpk && next.Start <= wSeg.End && next.Start >= wSeg.Start {
+				transitionTime = d.End
+			}
 			break
 		}
 	}
@@ -707,20 +739,20 @@ func FilterHallucinationsAndNoise(segments []dtos.SegmentResult) []dtos.SegmentR
 
 // IsNonSpeechToken checks if the text represents music, applause, or non-speech noise.
 func IsNonSpeechToken(text string) bool {
-	clean := strings.ToLower(strings.Trim(text, "[]() \t\n\r"))
+	clean := strings.ToLower(strings.TrimSpace(text))
 	if clean == "" {
 		return true
 	}
-	if nonSpeechTokens[clean] {
+	bare := strings.Trim(clean, "[]() \t\n\r")
+	if bare == "" || nonSpeechTokens[bare] {
 		return true
 	}
-	// Check bracketed markers e.g. [musik piano], [applause], (tertawa)
+	// Check bracketed markers e.g. [musik piano], [applause], (tertawa), [tepuk tangan penonton]
 	if (strings.HasPrefix(clean, "[") && strings.HasSuffix(clean, "]")) ||
 		(strings.HasPrefix(clean, "(") && strings.HasSuffix(clean, ")")) {
-		inner := strings.Trim(clean, "[]()")
-		words := strings.Fields(inner)
-		for _, w := range words {
-			if nonSpeechTokens[w] {
+		inner := strings.Trim(clean[1:len(clean)-1], "[]() \t\n\r")
+		for token := range nonSpeechTokens {
+			if strings.Contains(inner, token) {
 				return true
 			}
 		}
@@ -854,16 +886,20 @@ func BuildSegmentsFromWords(words []dtos.WordResult, maxPauseSeconds float64, ma
 	}
 
 	for _, w := range words {
+		var wSpk string
+		if strings.TrimSpace(w.Speaker) != "" {
+			wSpk = NormalizeSpeakerLabel(w.Speaker)
+		}
+
 		if len(currentWords) == 0 {
 			currentWords = append(currentWords, w)
-			if w.Speaker != "" {
-				currentSpeaker = NormalizeSpeakerLabel(w.Speaker)
+			if wSpk != "" {
+				currentSpeaker = wSpk
 			}
 			continue
 		}
 
 		prev := currentWords[len(currentWords)-1]
-		wSpk := NormalizeSpeakerLabel(w.Speaker)
 		speakerChanged := wSpk != "" && currentSpeaker != "" && wSpk != currentSpeaker
 		pauseExceeded := (w.Start - prev.End) > maxPauseSeconds
 		durationExceeded := (w.End - currentWords[0].Start) > maxDurationSeconds

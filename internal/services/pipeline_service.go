@@ -329,14 +329,16 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 	// Pre-filter: remove pure music/non-speech/empty segments and stutter loops
 	sttResult.Segments = sttalign.FilterHallucinationsAndNoise(sttResult.Segments)
 
-	// Ensure acoustic alignment if structured diarized segments are present
+	// Ensure acoustic alignment if structured diarized segments are present.
+	// This is the primary acoustic alignment pass; do not re-align in LLM post-processing.
 	if len(sttResult.DiarizedSegments) > 0 {
 		sttResult.Segments = sttalign.AlignSegments(sttResult.Segments, sttResult.DiarizedSegments)
 	}
 
-	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors
+	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors.
+	// Diarized segments are passed as nil to prevent duplicate acoustic re-alignment.
 	if len(sttResult.Segments) > 0 && s.llm != nil {
-		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments)
+		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, nil)
 	}
 
 	var modelSegments []models.TranscriptSegment

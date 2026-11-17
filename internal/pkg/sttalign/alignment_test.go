@@ -448,4 +448,57 @@ func TestBuildSegmentsFromWords(t *testing.T) {
 	if len(segments[0].Words) != 3 || len(segments[1].Words) != 3 {
 		t.Errorf("expected 3 words per segment, got %d and %d", len(segments[0].Words), len(segments[1].Words))
 	}
+
+	// Test case: Word without speaker tag inherits current speaker instead of switching to "Speaker 0"
+	wordsWithEmpty := []dtos.WordResult{
+		{Word: "Selamat", Start: 0.0, End: 0.5, Speaker: "Speaker 1"},
+		{Word: "pagi", Start: 0.6, End: 1.0, Speaker: ""}, // unlabelled word
+		{Word: "semua.", Start: 1.1, End: 1.5, Speaker: "Speaker 1"},
+	}
+	segmentsEmpty := sttalign.BuildSegmentsFromWords(wordsWithEmpty, 1.2, 15.0)
+	if len(segmentsEmpty) != 1 {
+		t.Fatalf("expected 1 segment without spurious split, got %d", len(segmentsEmpty))
+	}
+	if segmentsEmpty[0].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected Speaker 1 to be maintained across unlabelled word, got %s", segmentsEmpty[0].SpeakerLabel)
+	}
+}
+
+func TestFindBestAcousticSpeaker_IgnoresEmptySpeakerLabels(t *testing.T) {
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 5.0, SpeakerLabel: ""}, // Empty speaker label should NOT be treated as Speaker 0
+		{Start: 1.0, End: 4.0, SpeakerLabel: "Speaker 1"},
+	}
+
+	spk, maxOv, totalOv := sttalign.FindBestAcousticSpeaker(0.5, 4.5, diarized)
+	if spk != "Speaker 1" {
+		t.Errorf("expected 'Speaker 1', got %q", spk)
+	}
+	if maxOv <= 0 {
+		t.Errorf("expected positive max overlap, got %f", maxOv)
+	}
+	if totalOv != maxOv {
+		t.Errorf("expected total overlap to equal max overlap for Speaker 1, got total=%f, max=%f", totalOv, maxOv)
+	}
+}
+
+func TestIsNonSpeechToken_BracketedMarkers(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected bool
+	}{
+		{"[musik piano]", true},
+		{"[applause]", true},
+		{"(tertawa)", true},
+		{"[tepuk tangan penonton]", true},
+		{"(suara batuk)", true},
+		{"Halo nama saya Budi", false},
+	}
+
+	for _, tc := range testCases {
+		res := sttalign.IsNonSpeechToken(tc.input)
+		if res != tc.expected {
+			t.Errorf("IsNonSpeechToken(%q) = %v, want %v", tc.input, res, tc.expected)
+		}
+	}
 }

@@ -79,7 +79,16 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 		Content: userPrompt,
 	})
 
-	chatResp, err := s.llm.GenerateChatResponse(ctx, systemPrompt, messages, dtos.ChatOptions{})
+	temp := 0.3
+	maxTokens := 2048
+	topP := 0.95
+	chatOpts := dtos.ChatOptions{
+		Temperature: &temp,
+		MaxTokens:   &maxTokens,
+		TopP:        &topP,
+	}
+
+	chatResp, err := s.llm.GenerateChatResponse(ctx, systemPrompt, messages, chatOpts)
 	if err != nil {
 		return nil, constants.ErrInternalServerError.Wrap(err)
 	}

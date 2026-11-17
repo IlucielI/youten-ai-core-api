@@ -16,10 +16,11 @@ import (
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/jsonutil"
+	"code-base-golang/internal/pkg/timeutil"
 )
 
 // InitiateRecordingChatStream validates access (owner, guest, or share token), retrieves relevant context chunks,
-// persists the user turn with session_id, and initiates an LLM response stream.
+// restores conversational session history, enriches with meeting intelligence metadata, and initiates an LLM response stream.
 func (s *Service) InitiateRecordingChatStream(
 	ctx context.Context,
 	recordingID uuid.UUID,
@@ -44,8 +45,9 @@ func (s *Service) InitiateRecordingChatStream(
 
 	trimmedMsg := strings.TrimSpace(req.Message)
 
-	// Resolve conversation session ID: use client-provided session ID, or generate a fresh unique UUID
+	// Resolve conversation session ID and restore session history
 	var sessionID uuid.UUID
+	var priorMessages []models.ChatMessage
 	if req.SessionID != nil && *req.SessionID != uuid.Nil {
 		sessionID = *req.SessionID
 		// Prevent share visitors from appending to sessions owned by another user or recording owner
@@ -56,6 +58,7 @@ func (s *Service) InitiateRecordingChatStream(
 		if !s.isSessionAccessibleByCaller(ctx, rec, ownershipToken, existingMsgs) {
 			return nil, constants.ErrForbidden
 		}
+		priorMessages = existingMsgs
 	} else {
 		sessionID = uuid.New()
 	}
@@ -81,6 +84,20 @@ func (s *Service) InitiateRecordingChatStream(
 		return nil, fmt.Errorf("failed to save user chat message: %w", err)
 	}
 
+	// Extract high-level meeting metadata from recording and active summary
+	meta := extractRecordingMetadata(rec)
+	if s.repo != nil {
+		if activeSum, sumErr := s.repo.FindActiveSummaryByRecordingID(ctx, rec.ID); sumErr == nil && activeSum != nil {
+			populateSummaryMetadata(meta, activeSum)
+		}
+	}
+	if req.SummaryOverview != "" && meta.SummaryOverview == "" {
+		meta.SummaryOverview = req.SummaryOverview
+	}
+	if len(req.ActionItems) > 0 && len(meta.ActionItems) == 0 {
+		meta.ActionItems = req.ActionItems
+	}
+
 	// Vector semantic search for top-k relevant chunks
 	var chunkData []dtos.TranscriptChunkData
 	var retrievedChunkIDs []string
@@ -103,19 +120,48 @@ func (s *Service) InitiateRecordingChatStream(
 		}
 	}
 
-	// Prompt generation with RAG templates (gracefully handles empty context)
-	systemPrompt, userPrompt := BuildRAGPrompt(trimmedMsg, chunkData)
+	// Prompt generation with RAG templates enriched with metadata
+	systemPrompt, userPrompt := BuildRAGPrompt(trimmedMsg, chunkData, meta)
 
 	var messages []dtos.ChatMessageInput
 	if len(req.ConversationHistory) > 0 {
 		messages = append(messages, req.ConversationHistory...)
+	} else if len(priorMessages) > 0 {
+		// Populate from persisted prior session turns (up to the last 8 messages)
+		startIdx := 0
+		if len(priorMessages) > 8 {
+			startIdx = len(priorMessages) - 8
+		}
+		for _, pm := range priorMessages[startIdx:] {
+			if strings.TrimSpace(pm.Content) == "" {
+				continue
+			}
+			role := pm.SenderRole
+			if role != constants.ChatRoleUser && role != constants.ChatRoleAssistant {
+				role = constants.ChatRoleUser
+			}
+			messages = append(messages, dtos.ChatMessageInput{
+				Role:    role,
+				Content: pm.Content,
+			})
+		}
 	}
+
 	messages = append(messages, dtos.ChatMessageInput{
 		Role:    constants.ChatRoleUser,
 		Content: userPrompt,
 	})
 
-	streamCh, err := s.llm.StreamChatResponse(ctx, systemPrompt, messages, dtos.ChatOptions{})
+	temp := 0.3
+	maxTokens := 2048
+	topP := 0.95
+	chatOpts := dtos.ChatOptions{
+		Temperature: &temp,
+		MaxTokens:   &maxTokens,
+		TopP:        &topP,
+	}
+
+	streamCh, err := s.llm.StreamChatResponse(ctx, systemPrompt, messages, chatOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stream chat completion: %w", err)
 	}
@@ -125,6 +171,84 @@ func (s *Service) InitiateRecordingChatStream(
 		StreamChannel:     streamCh,
 		RetrievedChunkIDs: retrievedChunkIDs,
 	}, nil
+}
+
+func extractRecordingMetadata(rec *models.Recording) *dtos.RecordingContextMetadata {
+	if rec == nil {
+		return nil
+	}
+
+	meta := &dtos.RecordingContextMetadata{
+		Title:             rec.Title,
+		DurationSeconds:   rec.DurationSeconds,
+		DurationFormatted: timeutil.FormatTimestamp(rec.DurationSeconds),
+		SelectedTemplate:  rec.SelectedTemplate,
+		OutputLanguage:    rec.OutputLanguage,
+	}
+	if rec.DetectedLanguage != nil {
+		meta.DetectedLanguage = *rec.DetectedLanguage
+	}
+
+	if rec.AnalyticsData != nil {
+		if spkRaw, ok := rec.AnalyticsData["speakers"]; ok {
+			meta.Speakers = parseSpeakersFromAnalytics(spkRaw)
+		}
+	}
+
+	return meta
+}
+
+func parseSpeakersFromAnalytics(raw interface{}) []string {
+	if raw == nil {
+		return nil
+	}
+
+	var speakers []string
+	seen := make(map[string]bool)
+
+	switch list := raw.(type) {
+	case []dtos.SpeakerAnalytics:
+		for _, spk := range list {
+			trimmed := strings.TrimSpace(spk.Name)
+			if trimmed != "" && !seen[trimmed] {
+				seen[trimmed] = true
+				speakers = append(speakers, trimmed)
+			}
+		}
+	case []interface{}:
+		for _, item := range list {
+			if m, ok := item.(map[string]interface{}); ok {
+				if name, ok := m["name"].(string); ok {
+					trimmed := strings.TrimSpace(name)
+					if trimmed != "" && !seen[trimmed] {
+						seen[trimmed] = true
+						speakers = append(speakers, trimmed)
+					}
+				}
+			}
+		}
+	}
+
+	return speakers
+}
+
+func populateSummaryMetadata(meta *dtos.RecordingContextMetadata, summary *models.Summary) {
+	if meta == nil || summary == nil {
+		return
+	}
+
+	formatted := formatSummaryContent(summary)
+	if formatted.Overview != "" {
+		meta.SummaryOverview = formatted.Overview
+	}
+	if len(formatted.ActionItems) > 0 {
+		meta.ActionItems = formatted.ActionItems
+	}
+	for _, sec := range formatted.Sections {
+		if strings.TrimSpace(sec.Heading) != "" {
+			meta.KeyTopics = append(meta.KeyTopics, sec.Heading)
+		}
+	}
 }
 
 // SaveAssistantChatMessage parses citations, maps the model entity, and persists the assistant response turn for the session.

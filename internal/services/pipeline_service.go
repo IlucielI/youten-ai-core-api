@@ -351,6 +351,8 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		speaker := seg.SpeakerLabel
 		if speaker == "" {
 			speaker = constants.DefaultSpeakerLabel
+		} else {
+			speaker = sttalign.NormalizeSpeakerLabel(speaker)
 		}
 		speakerName := seg.SpeakerName
 		if speakerName == "" {
@@ -1505,8 +1507,11 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 						val, ok = labelMap[relKey]
 					}
 					if ok && strings.TrimSpace(val) != "" {
-						segments[idx].SpeakerLabel = strings.TrimSpace(val)
-						segments[idx].SpeakerName = strings.TrimSpace(val)
+						lbl, name := sttalign.ResolveSpeakerLabelAndName(val, "", rosterMap)
+						if !sttalign.IsAcousticallyAnchored(segments[idx], lbl) {
+							segments[idx].SpeakerLabel = lbl
+							segments[idx].SpeakerName = name
+						}
 					}
 				}
 			}
@@ -1534,14 +1539,28 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 				if targetIdx >= i && targetIdx < end {
 					relIdx := targetIdx - i
-					if speaker := strings.TrimSpace(it.Speaker); speaker != "" {
-						proposed[relIdx].SpeakerLabel = speaker
+					lbl, name := sttalign.ResolveSpeakerLabelAndName(it.Speaker, it.SpeakerName, rosterMap)
+
+					// Acoustic anchor gate: reject LLM speaker changes if acoustic biometric confidence is high
+					if sttalign.IsAcousticallyAnchored(proposed[relIdx], lbl) {
+						acSpk := proposed[relIdx].AcousticSpeaker
+						if acSpk == "" {
+							acSpk = proposed[relIdx].SpeakerLabel
+						}
+						lbl = acSpk
+						if item, ok := rosterMap[lbl]; ok && !isGenericSpeakerLabel(item.Name) {
+							name = item.Name
+						} else {
+							name = lbl
+						}
 					}
-					speakerName := strings.TrimSpace(it.SpeakerName)
-					if speakerName == "" {
-						speakerName = proposed[relIdx].SpeakerLabel
+
+					if lbl != "" {
+						proposed[relIdx].SpeakerLabel = lbl
 					}
-					proposed[relIdx].SpeakerName = speakerName
+					if name != "" {
+						proposed[relIdx].SpeakerName = name
+					}
 					if strings.TrimSpace(it.Text) != "" {
 						proposed[relIdx].Text = strings.TrimSpace(it.Text)
 					}
@@ -1613,8 +1632,7 @@ func mergeConsecutiveSegments(segments []models.TranscriptSegment, maxGapSeconds
 
 	for i := 1; i < len(segments); i++ {
 		next := segments[i]
-		sameSpeaker := (current.SpeakerLabel != "" && current.SpeakerLabel == next.SpeakerLabel) ||
-			(current.SpeakerName != "" && current.SpeakerName == next.SpeakerName)
+		sameSpeaker := isSameSpeakerSegment(current, next)
 
 		gap := next.StartTime - current.EndTime
 		currDuration := current.EndTime - current.StartTime
@@ -1638,6 +1656,22 @@ func mergeConsecutiveSegments(segments []models.TranscriptSegment, maxGapSeconds
 		merged[i].SequenceOrder = i + 1
 	}
 	return merged
+}
+
+// isSameSpeakerSegment checks if two segments belong to the same speaker.
+// Segments with different non-empty SpeakerLabels are never considered the same speaker.
+func isSameSpeakerSegment(current, next models.TranscriptSegment) bool {
+	currLbl := strings.TrimSpace(current.SpeakerLabel)
+	nextLbl := strings.TrimSpace(next.SpeakerLabel)
+	if currLbl != "" && nextLbl != "" {
+		return strings.EqualFold(currLbl, nextLbl)
+	}
+	currName := strings.TrimSpace(current.SpeakerName)
+	nextName := strings.TrimSpace(next.SpeakerName)
+	if currName != "" && nextName != "" && !isGenericSpeakerLabel(currName) && !isGenericSpeakerLabel(nextName) {
+		return strings.EqualFold(currName, nextName)
+	}
+	return false
 }
 
 // mergeWordsJSON combines two JSON arrays of dtos.WordResult into one.

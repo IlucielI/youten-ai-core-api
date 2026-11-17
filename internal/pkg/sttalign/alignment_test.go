@@ -320,3 +320,132 @@ func TestIsNonSpeechToken(t *testing.T) {
 		}
 	}
 }
+
+func TestAlignSegments_ClauseSplittingWithDiscourseMarkers(t *testing.T) {
+	// A segment without punctuation where two speakers converse:
+	// "Selamat siang saya terima lamaran terima kasih Pak saya Putri"
+	// Early acoustic speaker is Speaker 0, late acoustic speaker is Speaker 1
+	wSeg := dtos.SegmentResult{
+		ID:    0,
+		Start: 0.0,
+		End:   8.0,
+		Text:  "Selamat siang saya terima lamaran terima kasih Pak saya Putri",
+	}
+
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 4.0, SpeakerLabel: "Speaker 0"},
+		{Start: 4.0, End: 8.0, SpeakerLabel: "Speaker 1"},
+	}
+
+	aligned := sttalign.AlignSegments([]dtos.SegmentResult{wSeg}, diarized)
+	if len(aligned) != 2 {
+		t.Fatalf("expected discourse marker splitting into 2 segments, got %d", len(aligned))
+	}
+	if aligned[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 0 to be Speaker 0, got %s", aligned[0].SpeakerLabel)
+	}
+	if aligned[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 1 to be Speaker 1, got %s", aligned[1].SpeakerLabel)
+	}
+	if !strings.Contains(aligned[0].Text, "Selamat siang") {
+		t.Errorf("unexpected segment 0 text: %q", aligned[0].Text)
+	}
+	if !strings.Contains(aligned[1].Text, "terima kasih") {
+		t.Errorf("unexpected segment 1 text: %q", aligned[1].Text)
+	}
+}
+
+func TestIsAcousticallyAnchored(t *testing.T) {
+	segHighConfidence := dtos.SegmentResult{
+		Start:              0.0,
+		End:                5.0,
+		Text:               "Baik, kita lanjutkan pembahasan arsitektur pipeline.",
+		AcousticSpeaker:    "Speaker 0",
+		AcousticConfidence: 0.90,
+	}
+
+	// Case 1: Proposed is different from high confidence acoustic speaker -> anchored!
+	if !sttalign.IsAcousticallyAnchored(segHighConfidence, "Speaker 1") {
+		t.Errorf("expected segment to be acoustically anchored against speaker swap")
+	}
+
+	// Case 2: Proposed is identical to acoustic speaker -> not anchored (no conflict)
+	if sttalign.IsAcousticallyAnchored(segHighConfidence, "Speaker 0") {
+		t.Errorf("expected same speaker not to trigger anchor violation")
+	}
+
+	// Case 3: Self-introduction exception allows name update
+	segSelfIntro := dtos.SegmentResult{
+		Start:              0.0,
+		End:                3.0,
+		Text:               "Halo selamat pagi nama saya Putri calon pelamar.",
+		AcousticSpeaker:    "Speaker 0",
+		AcousticConfidence: 0.85,
+	}
+	if sttalign.IsAcousticallyAnchored(segSelfIntro, "Speaker 1") {
+		t.Errorf("expected self-introduction text to bypass acoustic anchor")
+	}
+
+	// Case 4: Low acoustic confidence (< 0.70) does not anchor
+	segLowConf := dtos.SegmentResult{
+		Start:              0.0,
+		End:                2.0,
+		Text:               "Iya oke.",
+		AcousticSpeaker:    "Speaker 0",
+		AcousticConfidence: 0.45,
+	}
+	if sttalign.IsAcousticallyAnchored(segLowConf, "Speaker 1") {
+		t.Errorf("expected low confidence segment not to be anchored")
+	}
+}
+
+func TestResolveSpeakerLabelAndName(t *testing.T) {
+	roster := map[string]dtos.SpeakerRosterItem{
+		"Speaker 0": {Label: "Speaker 0", Name: "Pewawancara", Role: "Interviewer"},
+		"Speaker 1": {Label: "Speaker 1", Name: "Putri", Role: "Candidate"},
+	}
+
+	// Test 1: LLM outputs person's name as speaker -> resolves to canonical label "Speaker 1"
+	lbl1, name1 := sttalign.ResolveSpeakerLabelAndName("Putri", "", roster)
+	if lbl1 != "Speaker 1" || name1 != "Putri" {
+		t.Errorf("expected ('Speaker 1', 'Putri'), got (%q, %q)", lbl1, name1)
+	}
+
+	// Test 2: LLM outputs "speaker_0" -> resolves to "Speaker 0" with roster name "Pewawancara"
+	lbl2, name2 := sttalign.ResolveSpeakerLabelAndName("speaker_0", "", roster)
+	if lbl2 != "Speaker 0" || name2 != "Pewawancara" {
+		t.Errorf("expected ('Speaker 0', 'Pewawancara'), got (%q, %q)", lbl2, name2)
+	}
+
+	// Test 3: LLM outputs "0" -> resolves to "Speaker 0"
+	lbl3, name3 := sttalign.ResolveSpeakerLabelAndName("0", "", roster)
+	if lbl3 != "Speaker 0" || name3 != "Pewawancara" {
+		t.Errorf("expected ('Speaker 0', 'Pewawancara'), got (%q, %q)", lbl3, name3)
+	}
+}
+
+func TestBuildSegmentsFromWords(t *testing.T) {
+	words := []dtos.WordResult{
+		{Word: "Halo", Start: 0.0, End: 0.4, Speaker: "Speaker 0"},
+		{Word: "selamat", Start: 0.5, End: 0.9, Speaker: "Speaker 0"},
+		{Word: "siang.", Start: 1.0, End: 1.4, Speaker: "Speaker 0"},
+		{Word: "Selamat", Start: 2.0, End: 2.3, Speaker: "Speaker 1"},
+		{Word: "siang", Start: 2.4, End: 2.7, Speaker: "Speaker 1"},
+		{Word: "Pak.", Start: 2.8, End: 3.0, Speaker: "Speaker 1"},
+	}
+
+	segments := sttalign.BuildSegmentsFromWords(words, 1.2, 15.0)
+	if len(segments) != 2 {
+		t.Fatalf("expected 2 segments from word grouping, got %d", len(segments))
+	}
+
+	if segments[0].SpeakerLabel != "Speaker 0" || segments[0].Text != "Halo selamat siang." {
+		t.Errorf("unexpected segment 0: %+v", segments[0])
+	}
+	if segments[1].SpeakerLabel != "Speaker 1" || segments[1].Text != "Selamat siang Pak." {
+		t.Errorf("unexpected segment 1: %+v", segments[1])
+	}
+	if len(segments[0].Words) != 3 || len(segments[1].Words) != 3 {
+		t.Errorf("expected 3 words per segment, got %d and %d", len(segments[0].Words), len(segments[1].Words))
+	}
+}

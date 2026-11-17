@@ -10,10 +10,12 @@ type STTOptions struct {
 
 // WordResult represents word-level karaoke timing.
 type WordResult struct {
-	Word        string  `json:"word"`
-	Start       float64 `json:"start"`
-	End         float64 `json:"end"`
-	Probability float64 `json:"probability,omitempty"`
+	Word              string  `json:"word"`
+	Start             float64 `json:"start"`
+	End               float64 `json:"end"`
+	Probability       float64 `json:"probability,omitempty"`
+	Speaker           string  `json:"speaker,omitempty"`
+	SpeakerConfidence float64 `json:"speaker_confidence,omitempty"`
 }
 
 // SegmentResult represents an individual transcribed segment with timing and optional speaker.

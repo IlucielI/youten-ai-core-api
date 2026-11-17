@@ -254,3 +254,103 @@ func TestOmniRouteSTT_Transcribe_ParallelDualModelDiarization(t *testing.T) {
 	}
 }
 
+func TestOmniRouteSTT_Transcribe_RootWordsDistribution(t *testing.T) {
+	// Simulates OpenAI Whisper format: segments have empty words array, but root words array exists
+	openAIWhisperResponse := `{
+		"task": "transcribe",
+		"language": "id",
+		"duration": 5.0,
+		"text": "Kita mulai pembahasan arsitektur.",
+		"words": [
+			{"word": "Kita", "start": 0.0, "end": 0.5},
+			{"word": "mulai", "start": 0.6, "end": 1.2},
+			{"word": "pembahasan", "start": 1.3, "end": 2.2},
+			{"word": "arsitektur.", "start": 2.3, "end": 3.5}
+		],
+		"segments": [
+			{"id": 0, "start": 0.0, "end": 4.0, "text": "Kita mulai pembahasan arsitektur."}
+		]
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(openAIWhisperResponse))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		LLMBaseURL: server.URL,
+		STTModel:   "whisper-1",
+	}
+
+	adapter := stt.NewOmniRoute(cfg)
+	res, err := adapter.Transcribe(context.Background(), bytes.NewReader([]byte("audio")), "test.mp3", dtos.STTOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(res.Segments))
+	}
+	if len(res.Segments[0].Words) != 4 {
+		t.Errorf("expected 4 words distributed into segment, got %d", len(res.Segments[0].Words))
+	}
+	if res.Segments[0].Words[0].Word != "Kita" {
+		t.Errorf("expected first word to be 'Kita', got %s", res.Segments[0].Words[0].Word)
+	}
+}
+
+func TestOmniRouteSTT_Transcribe_BuildSegmentsFromWords(t *testing.T) {
+	// Simulates Deepgram format with no pre-packaged segments, but words with speaker labels
+	deepgramWordResponse := `{
+		"task": "transcribe",
+		"language": "id",
+		"duration": 6.0,
+		"text": "Selamat siang. Selamat siang juga Pak.",
+		"words": [
+			{"word": "Selamat", "start": 0.0, "end": 0.4, "speaker": 0},
+			{"word": "siang.", "start": 0.5, "end": 0.9, "speaker": 0},
+			{"word": "Selamat", "start": 2.0, "end": 2.4, "speaker": 1},
+			{"word": "siang", "start": 2.5, "end": 2.8, "speaker": 1},
+			{"word": "juga", "start": 2.9, "end": 3.2, "speaker": 1},
+			{"word": "Pak.", "start": 3.3, "end": 3.6, "speaker": 1}
+		],
+		"segments": []
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(deepgramWordResponse))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		LLMBaseURL: server.URL,
+		STTModel:   "deepgram/nova-3",
+	}
+
+	adapter := stt.NewOmniRoute(cfg)
+	res, err := adapter.Transcribe(context.Background(), bytes.NewReader([]byte("audio")), "test.mp3", dtos.STTOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.Segments) != 2 {
+		t.Fatalf("expected 2 segments constructed from words, got %d", len(res.Segments))
+	}
+	if res.Segments[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 0 to be Speaker 0, got %s", res.Segments[0].SpeakerLabel)
+	}
+	if res.Segments[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 1 to be Speaker 1, got %s", res.Segments[1].SpeakerLabel)
+	}
+	if res.Segments[0].Text != "Selamat siang." {
+		t.Errorf("unexpected segment 0 text: %s", res.Segments[0].Text)
+	}
+	if res.Segments[1].Text != "Selamat siang juga Pak." {
+		t.Errorf("unexpected segment 1 text: %s", res.Segments[1].Text)
+	}
+}
+

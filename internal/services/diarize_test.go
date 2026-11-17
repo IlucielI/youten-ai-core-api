@@ -748,6 +748,87 @@ func TestService_DiarizeAndCorrectSegments_InversionAutoCorrection(t *testing.T)
 	}
 }
 
+func TestService_Diarize_AcousticAnchorProtectsAgainstSpeakerSwap(t *testing.T) {
+	// Tests that when biometric acoustic confidence is high, LLM cannot swap Speaker 0 to Speaker 1
+	mockLLM := &dummyLLM{
+		generateChatFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+			userContent := messages[0].Content
+			if strings.Contains(userContent, "ROSTER PEMBICARA RESMI") {
+				// LLM attempts to swap turn 0 to Speaker 1
+				return &dtos.ChatResponse{
+					Content: `[
+						{"index": 0, "speaker": "Speaker 1", "speaker_name": "Speaker 1", "text": "Kita mulai sesi pembahasan arsitektur."}
+					]`,
+				}, nil
+			}
+			return &dtos.ChatResponse{
+				Content: `[{"label": "Speaker 0", "name": "Pewawancara"}, {"label": "Speaker 1", "name": "Putri"}]`,
+			}, nil
+		},
+	}
+
+	svc := &Service{llm: mockLLM}
+
+	whisperSegs := []dtos.SegmentResult{
+		{
+			ID:    0,
+			Start: 0.0,
+			End:   8.0,
+			Text:  "Kita mulai sesi pembahasan arsitektur.",
+		},
+	}
+
+	// Acoustic ground truth has 100% overlap with Speaker 0
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 8.0, SpeakerLabel: "Speaker 0", Text: "Kita mulai sesi pembahasan arsitektur."},
+	}
+
+	result := svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), whisperSegs, "", diarized)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(result))
+	}
+	// Acoustic anchor must reject LLM swap to Speaker 1 and keep Speaker 0!
+	if result[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected Speaker 0 to be protected by acoustic anchor, got %s", result[0].SpeakerLabel)
+	}
+}
+
+func TestMergeConsecutiveSegments_DifferentSpeakerLabelsNeverMerge(t *testing.T) {
+	// Two adjacent segments with different speaker labels but identical or empty names
+	// MUST NOT be merged together into a single segment!
+	input := []models.TranscriptSegment{
+		{
+			SpeakerLabel:  "Speaker 0",
+			SpeakerName:   "",
+			StartTime:     0.0,
+			EndTime:       3.0,
+			Text:          "Selamat siang.",
+			SequenceOrder: 1,
+		},
+		{
+			SpeakerLabel:  "Speaker 1",
+			SpeakerName:   "",
+			StartTime:     3.2,
+			EndTime:       6.0,
+			Text:          "Selamat siang Pak.",
+			SequenceOrder: 2,
+		},
+	}
+
+	merged := mergeConsecutiveSegments(input, 1.5, 20.0)
+
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 distinct segments for different speakers, got %d (they were erroneously merged!)", len(merged))
+	}
+	if merged[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 0 to have Speaker 0, got %s", merged[0].SpeakerLabel)
+	}
+	if merged[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 1 to have Speaker 1, got %s", merged[1].SpeakerLabel)
+	}
+}
+
 
 
 

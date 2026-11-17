@@ -299,11 +299,11 @@ func alignAndSplitByWords(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segme
 	return result
 }
 
-// trySplitByClause splits a Whisper segment without word timestamps at punctuation boundaries
-// if two distinct speakers each have significant overlap (> 25% duration).
+// trySplitByClause splits a Whisper segment without word timestamps at punctuation boundaries,
+// discourse markers, or word boundaries if two distinct speakers each have significant overlap.
 func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentResult) []dtos.SegmentResult {
 	dur := wSeg.End - wSeg.Start
-	if dur < 2.0 {
+	if dur < 1.2 {
 		return nil
 	}
 
@@ -336,8 +336,8 @@ func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentRe
 		return list[i].overlap > list[j].overlap
 	})
 
-	// Check if top 2 speakers both have >= 25% of duration
-	if list[0].overlap < 0.25*dur || list[1].overlap < 0.25*dur {
+	// Check if top 2 speakers both have >= 20% of duration
+	if list[0].overlap < 0.20*dur || list[1].overlap < 0.20*dur {
 		return nil
 	}
 
@@ -350,20 +350,25 @@ func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentRe
 		return nil
 	}
 
-	// Find split point in text (prefer sentence terminators '?', '.', '!')
-	text := strings.TrimSpace(wSeg.Text)
-	splitIdx := -1
-	for _, p := range []string{"? ", "! ", ". ", "?\n", "!\n", ".\n"} {
-		if idx := strings.Index(text, p); idx != -1 {
-			// Ensure split is not at the very edge (between 20% and 80% of text)
-			pct := float64(idx) / float64(len(text))
-			if pct >= 0.2 && pct <= 0.8 {
-				splitIdx = idx + len(p)
-				break
-			}
+	// Estimate transition time between earlySpk and lateSpk
+	transitionTime := wSeg.Start + (dur * 0.5)
+	for _, d := range diarizedSegments {
+		norm := NormalizeSpeakerLabel(d.SpeakerLabel)
+		if norm == earlySpk && d.End > wSeg.Start && d.End < wSeg.End {
+			transitionTime = d.End
+			break
 		}
 	}
 
+	targetRatio := (transitionTime - wSeg.Start) / dur
+	if targetRatio < 0.15 {
+		targetRatio = 0.15
+	} else if targetRatio > 0.85 {
+		targetRatio = 0.85
+	}
+
+	text := strings.TrimSpace(wSeg.Text)
+	splitIdx := findOptimalTextSplitPoint(text, targetRatio)
 	if splitIdx <= 0 {
 		return nil
 	}
@@ -374,7 +379,7 @@ func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentRe
 		return nil
 	}
 
-	splitRatio := float64(len(part1)) / float64(len(text))
+	splitRatio := float64(len([]rune(part1))) / float64(len([]rune(text)))
 	splitTime := wSeg.Start + splitRatio*dur
 
 	return []dtos.SegmentResult{
@@ -397,6 +402,92 @@ func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentRe
 			AcousticConfidence: 0.85,
 		},
 	}
+}
+
+// findOptimalTextSplitPoint identifies the best character index to split text
+// based on punctuation, discourse markers, or word boundaries closest to targetRatio.
+func findOptimalTextSplitPoint(text string, targetRatio float64) int {
+	textLen := len(text)
+	if textLen < 5 {
+		return -1
+	}
+
+	targetIdx := int(targetRatio * float64(textLen))
+
+	// Priority 1: Sentence boundaries (split after punctuation)
+	if idx := findClosestPatternMatch(text, []string{"? ", "! ", ". ", "?\n", "!\n", ".\n"}, targetIdx, 0.15, 0.85, false); idx > 0 {
+		return idx
+	}
+
+	// Priority 2: Conversational discourse turn markers (split before turn marker so it starts the new turn)
+	turnMarkers := []string{
+		" terima kasih ", " terimakasih ", " silakan ", " silahkan ",
+		" ya ", " iya ", " oke ", " baik ", " halo ", " selamat ",
+		" tapi ", " nah ", " betul ", " tentu ", " yes ", " thank you ",
+	}
+	if idx := findClosestPatternMatch(text, turnMarkers, targetIdx, 0.18, 0.82, true); idx > 0 {
+		return idx
+	}
+
+	// Priority 3: Clause commas (split after comma)
+	if idx := findClosestPatternMatch(text, []string{", ", "; ", ": "}, targetIdx, 0.20, 0.80, false); idx > 0 {
+		return idx
+	}
+
+	// Priority 4: Word boundary space closest to targetIdx
+	bestSpace := -1
+	minDist := textLen
+	minBound := int(0.20 * float64(textLen))
+	maxBound := int(0.80 * float64(textLen))
+
+	for i := minBound; i <= maxBound; i++ {
+		if text[i] == ' ' {
+			dist := int(math.Abs(float64(i - targetIdx)))
+			if dist < minDist {
+				minDist = dist
+				bestSpace = i + 1
+			}
+		}
+	}
+	return bestSpace
+}
+
+// findClosestPatternMatch finds the occurrence of any pattern closest to targetIdx within bounds.
+// If splitAtPrefix is true, it splits right before the pattern (used for turn-initial discourse markers).
+// If splitAtPrefix is false, it splits right after the pattern (used for sentence terminators).
+func findClosestPatternMatch(text string, patterns []string, targetIdx int, minRatio, maxRatio float64, splitAtPrefix bool) int {
+	textLen := len(text)
+	minIdx := int(minRatio * float64(textLen))
+	maxIdx := int(maxRatio * float64(textLen))
+
+	bestIdx := -1
+	minDist := float64(textLen)
+
+	for _, p := range patterns {
+		startSearch := 0
+		for {
+			idx := strings.Index(strings.ToLower(text[startSearch:]), strings.ToLower(p))
+			if idx == -1 {
+				break
+			}
+			matchIdx := startSearch + idx + len(p)
+			if splitAtPrefix {
+				matchIdx = startSearch + idx
+			}
+			startSearch += idx + 1
+
+			if matchIdx < minIdx || matchIdx > maxIdx {
+				continue
+			}
+
+			dist := math.Abs(float64(matchIdx - targetIdx))
+			if dist < minDist {
+				minDist = dist
+				bestIdx = matchIdx
+			}
+		}
+	}
+	return bestIdx
 }
 
 // SliceAcousticReferenceByTime extracts only the acoustic reference lines that fall
@@ -635,4 +726,162 @@ func IsNonSpeechToken(text string) bool {
 		}
 	}
 	return false
+}
+
+// IsAcousticallyAnchored checks if a segment has high biometric acoustic grounding
+// and determines whether an LLM speaker change should be rejected to prevent hallucinated speaker swaps.
+func IsAcousticallyAnchored(seg dtos.SegmentResult, proposedSpeaker string) bool {
+	acSpk := strings.TrimSpace(seg.AcousticSpeaker)
+	if acSpk == "" {
+		acSpk = strings.TrimSpace(seg.SpeakerLabel)
+	}
+	acSpk = NormalizeSpeakerLabel(acSpk)
+	propSpk := NormalizeSpeakerLabel(proposedSpeaker)
+
+	if acSpk == "" || propSpk == "" || strings.EqualFold(acSpk, propSpk) {
+		return false
+	}
+
+	// High confidence acoustic threshold (>= 70% duration overlap)
+	if seg.AcousticConfidence < 0.70 {
+		return false
+	}
+
+	// Exception: explicit self-introduction or identity declaration
+	lowerText := strings.ToLower(seg.Text)
+	if strings.Contains(lowerText, "nama saya ") || strings.Contains(lowerText, "saya adalah ") {
+		return false
+	}
+
+	return true
+}
+
+// ResolveSpeakerLabelAndName maps raw speaker inputs (e.g. "Putri", "Speaker 0", "speaker_1", "0")
+// into canonical speaker labels ("Speaker N") and human-readable names using the discovered speaker roster.
+func ResolveSpeakerLabelAndName(rawSpeaker, rawName string, rosterMap map[string]dtos.SpeakerRosterItem) (string, string) {
+	trimmedSpk := strings.TrimSpace(rawSpeaker)
+	trimmedName := strings.TrimSpace(rawName)
+
+	// 1. Check if rawSpeaker matches an established person's name in roster
+	for lbl, item := range rosterMap {
+		if strings.EqualFold(trimmedSpk, item.Name) && !isGenericSpeaker(item.Name) {
+			normLbl := NormalizeSpeakerLabel(lbl)
+			return normLbl, item.Name
+		}
+	}
+
+	// 2. Normalize rawSpeaker label format
+	normLbl := NormalizeSpeakerLabel(trimmedSpk)
+
+	// 3. Determine speaker name
+	outName := trimmedName
+	if outName == "" || isGenericSpeaker(outName) {
+		if item, ok := rosterMap[normLbl]; ok && !isGenericSpeaker(item.Name) {
+			outName = item.Name
+		} else {
+			outName = normLbl
+		}
+	}
+
+	return normLbl, outName
+}
+
+func isGenericSpeaker(name string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(name))
+	if trimmed == "" {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "speaker") || strings.HasPrefix(trimmed, "pembicara") || trimmed == "unknown" || trimmed == "peserta"
+}
+
+// BuildSegmentsFromWords groups word-level results into cohesive transcript segments
+// demarcated by speaker changes, natural speech pauses, and sentence boundaries.
+func BuildSegmentsFromWords(words []dtos.WordResult, maxPauseSeconds float64, maxDurationSeconds float64) []dtos.SegmentResult {
+	if len(words) == 0 {
+		return nil
+	}
+	if maxPauseSeconds <= 0 {
+		maxPauseSeconds = 1.2
+	}
+	if maxDurationSeconds <= 0 {
+		maxDurationSeconds = 15.0
+	}
+
+	var segments []dtos.SegmentResult
+	var currentWords []dtos.WordResult
+	currentSpeaker := NormalizeSpeakerLabel(words[0].Speaker)
+
+	flushCurrent := func() {
+		if len(currentWords) == 0 {
+			return
+		}
+		var textParts []string
+		for _, w := range currentWords {
+			textParts = append(textParts, w.Word)
+		}
+		text := strings.TrimSpace(strings.Join(textParts, " "))
+		if text == "" {
+			currentWords = nil
+			return
+		}
+
+		start := currentWords[0].Start
+		end := currentWords[len(currentWords)-1].End
+		if end <= start {
+			end = start + 0.1
+		}
+
+		spk := currentSpeaker
+		if spk == "" {
+			spk = "Speaker 0"
+		}
+
+		wordsCopy := make([]dtos.WordResult, len(currentWords))
+		copy(wordsCopy, currentWords)
+
+		segments = append(segments, dtos.SegmentResult{
+			ID:                 len(segments),
+			Start:              start,
+			End:                end,
+			Text:               text,
+			SpeakerLabel:       spk,
+			SpeakerName:        spk,
+			AcousticSpeaker:    spk,
+			AcousticConfidence: 1.0,
+			Words:              wordsCopy,
+		})
+		currentWords = nil
+	}
+
+	for _, w := range words {
+		if len(currentWords) == 0 {
+			currentWords = append(currentWords, w)
+			if w.Speaker != "" {
+				currentSpeaker = NormalizeSpeakerLabel(w.Speaker)
+			}
+			continue
+		}
+
+		prev := currentWords[len(currentWords)-1]
+		wSpk := NormalizeSpeakerLabel(w.Speaker)
+		speakerChanged := wSpk != "" && currentSpeaker != "" && wSpk != currentSpeaker
+		pauseExceeded := (w.Start - prev.End) > maxPauseSeconds
+		durationExceeded := (w.End - currentWords[0].Start) > maxDurationSeconds
+
+		isSentenceEnd := strings.HasSuffix(prev.Word, ".") || strings.HasSuffix(prev.Word, "?") || strings.HasSuffix(prev.Word, "!")
+		shouldSplitSentence := isSentenceEnd && (w.End-currentWords[0].Start) > 4.0
+
+		if speakerChanged || pauseExceeded || durationExceeded || shouldSplitSentence {
+			flushCurrent()
+			currentWords = append(currentWords, w)
+			if wSpk != "" {
+				currentSpeaker = wSpk
+			}
+		} else {
+			currentWords = append(currentWords, w)
+		}
+	}
+	flushCurrent()
+
+	return segments
 }

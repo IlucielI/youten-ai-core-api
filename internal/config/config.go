@@ -81,9 +81,10 @@ type Config struct {
 	GuestDailyQuota int
 	UserDailyQuota  int
 
-	// Max File Size Configuration (in Megabytes, fallback: 500MB)
-	DefaultMaxFileSizeMB      int
-	DefaultGuestMaxFileSizeMB int
+	// Max File Size Configuration (in Megabytes, fallback: 100MB for upload, 1024MB for link import)
+	DefaultMaxFileSizeMB       int
+	DefaultGuestMaxFileSizeMB  int
+	DefaultMaxLinkImportSizeMB int
 
 	// Request Body Limit Configuration
 	MaxRequestBodySize int64
@@ -210,9 +211,10 @@ func Load() Config {
 		GuestDailyQuota: getEnvInt("GUEST_DAILY_QUOTA", 1),
 		UserDailyQuota:  getEnvInt("USER_DAILY_QUOTA", 5),
 
-		// Max File Size settings (in Megabytes, default: 500MB)
-		DefaultMaxFileSizeMB:      getEnvInt("DEFAULT_MAX_FILE_SIZE_MB", 500),
-		DefaultGuestMaxFileSizeMB: getEnvInt("DEFAULT_GUEST_MAX_FILE_SIZE_MB", 500),
+		// Max File Size settings (in Megabytes, default: 100MB for upload, 1024MB for link import)
+		DefaultMaxFileSizeMB:       getEnvInt("DEFAULT_MAX_FILE_SIZE_MB", 100),
+		DefaultGuestMaxFileSizeMB:  getEnvInt("DEFAULT_GUEST_MAX_FILE_SIZE_MB", 100),
+		DefaultMaxLinkImportSizeMB: getEnvInt("DEFAULT_MAX_LINK_IMPORT_SIZE_MB", 1024),
 
 		// Request Body Limit settings (default 2MB)
 		MaxRequestBodySize: int64(getEnvInt("MAX_REQUEST_BODY_SIZE", 2*1024*1024)),

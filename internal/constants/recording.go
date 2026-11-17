@@ -145,4 +145,8 @@ const (
 	ErrCodePipelineTimeout = "ERR_PIPELINE_TIMEOUT"
 )
 
+// DefaultMaxLinkImportSizeMB defines the ceiling on imported media from links (1GB = 1024MB).
+const DefaultMaxLinkImportSizeMB = 1024
+
+
 

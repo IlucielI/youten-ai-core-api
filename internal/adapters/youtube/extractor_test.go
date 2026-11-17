@@ -405,3 +405,39 @@ func TestYouTube_MediaLinkExtractor_Interface(t *testing.T) {
 		t.Errorf("expected ExtractID on invalid URL to return error, got nil")
 	}
 }
+
+func TestYouTube_NewExtractor_MaxAudioSizeBytes(t *testing.T) {
+	tempDir := t.TempDir()
+	fakeBin := filepath.Join(tempDir, "yt-dlp")
+	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("failed to write fake binary: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		maxAudioSize int64
+	}{
+		{"zero defaults to 1GB", 0},
+		{"negative defaults to 1GB", -100},
+		{"1GB accepted", 1024 * 1024 * 1024},
+		{"1.5GB capped to 1GB default", 1536 * 1024 * 1024},
+		{"2GB capped to 1GB default", 2048 * 1024 * 1024},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ext, err := youtube.NewExtractorWithConfig(youtube.Config{
+				BinaryPath:        fakeBin,
+				TempDir:           tempDir,
+				MaxAudioSizeBytes: tc.maxAudioSize,
+			})
+			if err != nil {
+				t.Fatalf("unexpected NewExtractor error: %v", err)
+			}
+			if ext == nil {
+				t.Fatal("expected non-nil extractor")
+			}
+		})
+	}
+}
+

@@ -68,7 +68,7 @@ var (
 	ErrGuestDailyQuotaExceeded = apperror.New(http.StatusTooManyRequests, ResponseCodeTooManyRequests, "guest daily recording quota exceeded")
 
 	// ErrPayloadTooLarge is returned when uploaded file exceeds maximum allowed size.
-	ErrPayloadTooLarge = apperror.New(http.StatusRequestEntityTooLarge, ResponseCodePayloadTooLarge, "payload too large, maximum size is 500MB")
+	ErrPayloadTooLarge = apperror.New(http.StatusRequestEntityTooLarge, ResponseCodePayloadTooLarge, "payload too large, maximum size is 100MB")
 
 	// ErrUnsupportedMediaType is returned when uploaded file format is not supported.
 	ErrUnsupportedMediaType = apperror.New(http.StatusUnsupportedMediaType, ResponseCodeUnsupportedMediaType, "unsupported media type")

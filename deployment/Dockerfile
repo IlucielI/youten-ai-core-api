@@ -1,5 +1,5 @@
-ARG BASE_IMAGE=code-base-golang-api-base:latest
-FROM ${BASE_IMAGE} AS builder
+ARG BASE_IMAGE=golang:1.26-alpine
+FROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH

@@ -13,6 +13,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/apperror"
+	"code-base-golang/internal/queue"
 )
 
 // DispatchMeetingBot initiates a voice bot session for the requested platform and associates it with a recording.
@@ -126,6 +127,8 @@ func (s *Service) DispatchMeetingBot(ctx context.Context, req dtos.DispatchBotRe
 	if err := s.repo.UpdateBotSessionStatus(ctx, sessionID, constants.BotSessionStatusRecording, nil, &now, nil); err != nil {
 		return nil, err
 	}
+
+	s.publishProgress(recordingID, models.RecordingStatusRecording, nil, nil)
 
 	return &dtos.DispatchBotResponse{
 		SessionID:      sessionID,
@@ -285,6 +288,11 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 		return apperror.New(http.StatusBadRequest, constants.ErrCodeInvalidEvent, "unrecognized webhook event")
 	}
 
+	// Idempotency: Ignore duplicate completed events to prevent re-triggering transcription pipeline
+	if session.Status == constants.BotSessionStatusCompleted && mappedStatus == constants.BotSessionStatusCompleted {
+		return nil
+	}
+
 	now := time.Now().UTC()
 	var startedAt, endedAt *time.Time
 	var errMsg *string
@@ -311,11 +319,36 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 		if err := s.repo.UpdateRecordingAudioURL(ctx, session.RecordingID, *payload.AudioURL, duration); err != nil {
 			return err
 		}
-		return s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil)
+		if err := s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusTranscribing, nil, nil); err != nil {
+			return err
+		}
+
+		s.publishProgress(session.RecordingID, models.RecordingStatusTranscribing, nil, nil)
+
+		template := constants.DefaultTemplateKey
+		language := "id"
+		if rec, err := s.repo.FindRecordingByID(ctx, session.RecordingID); err == nil && rec != nil {
+			if rec.SelectedTemplate != "" {
+				template = rec.SelectedTemplate
+			}
+			if rec.OutputLanguage != "" {
+				language = rec.OutputLanguage
+			}
+		}
+
+		nextPayload := queue.RecordingPipelinePayload{
+			RecordingID: session.RecordingID,
+			AudioPath:   *payload.AudioURL,
+			Template:    template,
+			Language:    language,
+			Stage:       models.RecordingStatusTranscribing,
+		}
+		return s.publishEvent(ctx, constants.TopicRecordingTranscribe, nextPayload)
 	}
 
 	if mappedStatus == constants.BotSessionStatusFailed {
 		errCode := constants.ErrCodeBotSessionFailed
+		s.publishProgress(session.RecordingID, models.RecordingStatusFailed, &errCode, payload.ErrorMessage)
 		return s.repo.UpdateRecordingStatus(ctx, session.RecordingID, models.RecordingStatusFailed, &errCode, payload.ErrorMessage)
 	}
 
@@ -366,6 +399,3 @@ func (s *Service) HandleZoomWebhook(ctx context.Context, req dtos.ZoomWebhookReq
 		ErrorMessage:      req.ErrorMessage,
 	})
 }
-
-
-

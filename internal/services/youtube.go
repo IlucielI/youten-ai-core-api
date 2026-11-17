@@ -15,15 +15,15 @@ var (
 	// ErrExtractionFailed indicates a failure during media extraction execution or output parsing.
 	ErrExtractionFailed = errors.New("media extraction failed")
 	// ErrAudioTooLarge indicates that the extracted audio exceeds the hard upper limit.
-	ErrAudioTooLarge = errors.New("extracted audio exceeds maximum allowed size (500MB)")
+	ErrAudioTooLarge = errors.New("extracted audio exceeds maximum allowed size (1GB)")
 
 	// ErrInvalidYouTubeURL aliases ErrInvalidMediaURL for YouTube link validation.
 	ErrInvalidYouTubeURL = ErrInvalidMediaURL
 	// ErrVideoIDNotFound aliases ErrMediaIDNotFound for YouTube video ID resolution.
 	ErrVideoIDNotFound = ErrMediaIDNotFound
 
-	// MaxImportAudioSizeBytes sets the hard ceiling on imported audio size (500MB).
-	MaxImportAudioSizeBytes int64 = 500 * 1024 * 1024
+	// MaxImportAudioSizeBytes sets the hard ceiling on imported audio size (1GB).
+	MaxImportAudioSizeBytes int64 = 1024 * 1024 * 1024
 )
 
 // MediaLinkExtractor defines the provider-neutral application port contract

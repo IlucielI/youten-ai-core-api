@@ -34,8 +34,8 @@ var (
 )
 
 const (
-	// DefaultMaxAudioSizeBytes defines the default 500MB ceiling on extracted media artifacts.
-	DefaultMaxAudioSizeBytes int64 = 500 * 1024 * 1024
+	// DefaultMaxAudioSizeBytes defines the default 1GB ceiling on extracted media artifacts.
+	DefaultMaxAudioSizeBytes int64 = 1024 * 1024 * 1024
 	// DefaultMetadataTimeout is the fallback deadline for metadata inspection if context lacks one.
 	DefaultMetadataTimeout = 30 * time.Second
 	// DefaultDownloadTimeout is the fallback deadline for audio extraction if context lacks one.
@@ -118,7 +118,7 @@ func NewExtractorWithConfig(cfg Config) (*Extractor, error) {
 	}
 
 	maxAudio := cfg.MaxAudioSizeBytes
-	if maxAudio <= 0 || maxAudio > 1024*1024*1024 {
+	if maxAudio <= 0 || maxAudio > 2048*1024*1024 {
 		maxAudio = DefaultMaxAudioSizeBytes
 	}
 
@@ -466,7 +466,7 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 		return nil, fmt.Errorf("%w: extracted audio file is not a regular file", services.ErrExtractionFailed)
 	}
 
-	if fileInfo.Size() > e.maxAudioSizeBytes {
+	if fileInfo.Size() > maxAudioSize {
 		_ = file.Close()
 		return nil, services.ErrAudioTooLarge
 	}

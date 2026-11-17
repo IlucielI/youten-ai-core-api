@@ -80,24 +80,20 @@ func (s *Service) ProcessImport(ctx context.Context, p queue.RecordingPipelinePa
 		return errors.New(errMsg)
 	}
 
-	fallbackMB := s.cfg.DefaultMaxFileSizeMB
-	if fallbackMB <= 0 {
-		fallbackMB = constants.DefaultMaxFileSizeMB
+	fallbackLinkMB := s.cfg.DefaultMaxLinkImportSizeMB
+	if fallbackLinkMB <= 0 {
+		fallbackLinkMB = constants.DefaultMaxLinkImportSizeMB
 	}
-	var effectiveMaxBytes int64
+	effectiveMaxBytes := int64(fallbackLinkMB) * 1024 * 1024
 	if recording.UserID != nil {
 		user, uErr := s.repo.FindUserByIDWithRole(ctx, *recording.UserID)
 		if uErr != nil {
 			user, _ = s.repo.FindUserByID(ctx, *recording.UserID)
 		}
-		effMB := resolveMaxFileSizeMB(user, fallbackMB)
-		effectiveMaxBytes = int64(effMB) * 1024 * 1024
-	} else {
-		guestMB := s.cfg.DefaultGuestMaxFileSizeMB
-		if guestMB <= 0 {
-			guestMB = fallbackMB
+		effMB := resolveMaxFileSizeMB(user, fallbackLinkMB)
+		if effMB > fallbackLinkMB {
+			effectiveMaxBytes = int64(effMB) * 1024 * 1024
 		}
-		effectiveMaxBytes = int64(guestMB) * 1024 * 1024
 	}
 
 	importCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)

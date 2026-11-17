@@ -27,8 +27,8 @@ const (
 	DefaultMetadataTimeout = 30 * time.Second
 	// DefaultDownloadTimeout is the deadline for streaming media downloads.
 	DefaultDownloadTimeout = 10 * time.Minute
-	// DefaultMaxAudioSizeBytes sets the hard 500MB ceiling for media downloads.
-	DefaultMaxAudioSizeBytes = 500 * 1024 * 1024
+	// DefaultMaxAudioSizeBytes sets the hard 1GB ceiling for media downloads.
+	DefaultMaxAudioSizeBytes = 1024 * 1024 * 1024
 	// DefaultMaxConcurrency limits simultaneous download goroutines.
 	DefaultMaxConcurrency = 5
 	// MaxFilenameLength limits sanitized filename string lengths.

@@ -340,9 +340,9 @@ func TestService_AdminOverrideUserMaxFileSize(t *testing.T) {
 		if resp.MaxFileSizeMB != nil {
 			t.Errorf("expected nil override, got %v", resp.MaxFileSizeMB)
 		}
-		// Fallback size is 500
-		if resp.EffectiveMaxFileSizeMB != 500 {
-			t.Errorf("expected fallback 500, got %d", resp.EffectiveMaxFileSizeMB)
+		// Fallback size is 100
+		if resp.EffectiveMaxFileSizeMB != 100 {
+			t.Errorf("expected fallback 100, got %d", resp.EffectiveMaxFileSizeMB)
 		}
 	})
 

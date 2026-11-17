@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"time"
@@ -387,11 +388,20 @@ func (s *Service) ImportRecordingFromURL(
 		return nil, constants.ErrUnsupportedMediaType
 	}
 
-	// 5. Stream media directly into S3 storage
+	maxLinkBytes := int64(s.cfg.DefaultMaxLinkImportSizeMB) * 1024 * 1024
+	if maxLinkBytes <= 0 {
+		maxLinkBytes = int64(constants.DefaultMaxLinkImportSizeMB) * 1024 * 1024
+	}
+	if resp.ContentLength > maxLinkBytes {
+		return nil, constants.ErrPayloadTooLarge.WithMessage("media size from link exceeds maximum limit of 1GB")
+	}
+
+	// 5. Stream media directly into S3 storage with safety ceiling
 	recID := uuid.New()
 	objectKey := fmt.Sprintf("recordings/%s/%s", recID.String(), safeFilename)
 
-	if err := s.storage.Upload(fetchCtx, s.cfg.S3BucketName, objectKey, resp.Body, resp.ContentLength, contentType); err != nil {
+	limitedBody := io.LimitReader(resp.Body, maxLinkBytes+1)
+	if err := s.storage.Upload(fetchCtx, s.cfg.S3BucketName, objectKey, limitedBody, resp.ContentLength, contentType); err != nil {
 		return nil, fmt.Errorf("failed to stream media to storage: %w", err)
 	}
 

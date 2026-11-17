@@ -245,8 +245,8 @@ func populateSummaryMetadata(meta *dtos.RecordingContextMetadata, summary *model
 		meta.ActionItems = formatted.ActionItems
 	}
 	for _, sec := range formatted.Sections {
-		if strings.TrimSpace(sec.Heading) != "" {
-			meta.KeyTopics = append(meta.KeyTopics, sec.Heading)
+		if heading := strings.TrimSpace(sec.Heading); heading != "" {
+			meta.KeyTopics = append(meta.KeyTopics, heading)
 		}
 	}
 }

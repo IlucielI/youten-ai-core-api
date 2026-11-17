@@ -21,27 +21,33 @@ This directory contains containerization files and Docker Compose configurations
 The container workflow is optimized using a **two-step Docker build strategy** that decouples heavy Go dependency downloading (`go.mod`/`go.sum`) from rapid application source code compilation:
 
 ```
-[ go.mod / go.sum ] ──────► Dockerfile.base ──────► code-base-golang-api-base:latest
-                                                               │
-[ App Source Code ] ──────► Dockerfile      ◄─────────────────┘
-                                  │
-                                  ▼
-                    code-base-golang-api:latest
+[ go.mod / go.sum ] ────────► Dockerfile.builder-base ──► code-base-golang-api-builder-base:latest
+                                                                    │
+[ App Source Code ] ────────► Dockerfile (builder)    ◄─────────────┘
+                                    │
+                              /out/api binary
+                                    │
+[ Alpine + yt-dlp + ffmpeg ] ► Dockerfile.runtime-base ──► code-base-golang-api-runtime-base:latest
+                                                                    │
+                              Dockerfile (runtime)    ◄─────────────┘
+                                    │
+                                    ▼
+                      code-base-golang-api:latest
 ```
 
 ---
 
-## Two-Stage Docker Build Strategy
+## Two Base Images Docker Build Strategy
 
-1. **Base Image (`Dockerfile.base`)**:
-   - Downloads and pre-compiles all external Go modules into module cache.
+1. **Builder Base Image (`Dockerfile.builder-base`)**:
+   - Downloads and pre-compiles all external Go modules into module cache (`golang:1.26-alpine`).
    - **Only rebuild** when `go.mod` or `go.sum` changes.
-2. **Application Image (`Dockerfile`)**:
-   - Uses the cached local base image (`code-base-golang-api-base:latest`).
-   - Copies current source code and `/migrations`.
-   - Injects build arguments (`APP_VERSION`, `GIT_HASH`).
-   - Compiles binary in seconds.
-   - Generates a lightweight, minimal Alpine Linux runtime image with non-root user.
+2. **Runtime Base Image (`Dockerfile.runtime-base`)**:
+   - Pre-installs `ffmpeg`, `python3`, `quickjs`, `yt-dlp`, and configures non-root `app` user (`alpine:3.20`).
+   - **Only rebuild** when external media/audio runtime tooling changes.
+3. **Application Image (`Dockerfile`)**:
+   - Uses `BUILDER_BASE` with native cross-compilation (`--platform=$BUILDPLATFORM`) to compile the binary in seconds without QEMU emulation.
+   - Uses `RUNTIME_BASE` to package the compiled binary and SQL migrations into an ultra-fast runtime container.
 
 ---
 
@@ -135,6 +141,6 @@ docker compose -f deployment/docker-compose.yaml exec api /app/api migrate force
 
 | Script | Purpose |
 |--------|---------|
-| `build-base.sh` | Builds the Go dependencies base image (`Dockerfile.base`). Run when dependencies update. |
+| `build-base.sh` | Builds both the Go builder base (`Dockerfile.builder-base`) and runtime base (`Dockerfile.runtime-base`). |
 | `build-api.sh` | Compiles source code against base image and outputs runtime Docker image (`Dockerfile`). |
 | `build.sh` | Smart build runner: automatically builds base image if not found, then compiles API. |

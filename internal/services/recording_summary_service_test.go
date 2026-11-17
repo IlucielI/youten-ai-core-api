@@ -170,6 +170,50 @@ func TestService_UpdateTranscriptSegment_Success(t *testing.T) {
 	}
 }
 
+func TestService_UpdateTranscriptSegment_WithSpeakerOverride(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	segID := uuid.New()
+	guestToken := "guest-token-123"
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token"}).
+			AddRow(recID, guestToken))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE id = \$1 AND recording_id = \$2.*LIMIT \$3`).
+		WithArgs(segID, recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_label", "speaker_name", "start_time", "end_time", "text", "sequence_order"}).
+			AddRow(segID, recID, "Speaker 0", "Speaker 0", 12.0, 15.0, "Old text", 1))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "text"=\$1,"updated_at"=\$2 WHERE id = \$3 AND recording_id = \$4`).
+		WithArgs("New text", sqlmock.AnyArg(), segID, recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments" SET "speaker_label"=\$1,"speaker_name"=\$2,"updated_at"=\$3 WHERE id = \$4 AND recording_id = \$5`).
+		WithArgs("Speaker 1", "Pewawancara", sqlmock.AnyArg(), segID, recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	newLabel := "Speaker 1"
+	newName := "Pewawancara"
+	resp, err := svc.UpdateTranscriptSegment(ctx, recID, segID, guestToken, dtos.UpdateTranscriptSegmentRequest{
+		Text:         "New text",
+		SpeakerLabel: &newLabel,
+		SpeakerName:  &newName,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Text != "New text" || resp.SpeakerLabel != "Speaker 1" || resp.SpeakerName != "Pewawancara" {
+		t.Errorf("unexpected updated segment: %+v", resp)
+	}
+}
+
 func TestService_UpdateTranscriptSegment_NotFound(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 	recID := uuid.New()

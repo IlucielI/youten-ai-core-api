@@ -10,10 +10,12 @@ type STTOptions struct {
 
 // WordResult represents word-level karaoke timing.
 type WordResult struct {
-	Word        string  `json:"word"`
-	Start       float64 `json:"start"`
-	End         float64 `json:"end"`
-	Probability float64 `json:"probability,omitempty"`
+	Word              string  `json:"word"`
+	Start             float64 `json:"start"`
+	End               float64 `json:"end"`
+	Probability       float64 `json:"probability,omitempty"`
+	Speaker           string  `json:"speaker,omitempty"`
+	SpeakerConfidence float64 `json:"speaker_confidence,omitempty"`
 }
 
 // SegmentResult represents an individual transcribed segment with timing and optional speaker.
@@ -23,9 +25,11 @@ type SegmentResult struct {
 	Start            float64      `json:"start"`
 	End              float64      `json:"end"`
 	Text             string       `json:"text"`
-	SpeakerLabel     string       `json:"speaker_label,omitempty"`
-	SpeakerName      string       `json:"speaker_name,omitempty"`
-	Tokens           []int        `json:"tokens,omitempty"`
+	SpeakerLabel       string       `json:"speaker_label,omitempty"`
+	SpeakerName        string       `json:"speaker_name,omitempty"`
+	AcousticSpeaker    string       `json:"acoustic_speaker,omitempty"`
+	AcousticConfidence float64      `json:"acoustic_confidence,omitempty"`
+	Tokens             []int        `json:"tokens,omitempty"`
 	Temperature      float64      `json:"temperature,omitempty"`
 	AvgLogprob       float64      `json:"avg_logprob,omitempty"`
 	CompressionRatio float64      `json:"compression_ratio,omitempty"`
@@ -38,6 +42,7 @@ type TranscriptionResult struct {
 	Text         string          `json:"text"`
 	Language     string          `json:"language"`
 	Duration     float64         `json:"duration"`
-	Segments     []SegmentResult `json:"segments"`
-	DiarizedText string          `json:"diarized_text,omitempty"`
+	Segments         []SegmentResult `json:"segments"`
+	DiarizedSegments []SegmentResult `json:"diarized_segments,omitempty"`
+	DiarizedText     string          `json:"diarized_text,omitempty"`
 }

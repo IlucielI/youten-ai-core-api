@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/strutil"
+	"code-base-golang/internal/pkg/sttalign"
 	"code-base-golang/internal/services"
 )
 
@@ -76,17 +77,23 @@ type openAIVerboseJSON struct {
 		Speaker          *int    `json:"speaker,omitempty"`
 		SpeakerLabel     string  `json:"speaker_label,omitempty"`
 		Words            []struct {
-			Word        string  `json:"word"`
-			Start       float64 `json:"start"`
-			End         float64 `json:"end"`
-			Probability float64 `json:"probability,omitempty"`
+			Word              string  `json:"word"`
+			Start             float64 `json:"start"`
+			End               float64 `json:"end"`
+			Probability       float64 `json:"probability,omitempty"`
+			Speaker           *int    `json:"speaker,omitempty"`
+			SpeakerLabel      string  `json:"speaker_label,omitempty"`
+			SpeakerConfidence float64 `json:"speaker_confidence,omitempty"`
 		} `json:"words"`
 	} `json:"segments"`
 	Words []struct {
-		Word        string  `json:"word"`
-		Start       float64 `json:"start"`
-		End         float64 `json:"end"`
-		Probability float64 `json:"probability,omitempty"`
+		Word              string  `json:"word"`
+		Start             float64 `json:"start"`
+		End               float64 `json:"end"`
+		Probability       float64 `json:"probability,omitempty"`
+		Speaker           *int    `json:"speaker,omitempty"`
+		SpeakerLabel      string  `json:"speaker_label,omitempty"`
+		SpeakerConfidence float64 `json:"speaker_confidence,omitempty"`
 	} `json:"words,omitempty"`
 }
 
@@ -105,7 +112,21 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 	}
 
 	if o.diarizeModel == "" || strings.EqualFold(o.diarizeModel, o.model) {
-		return o.transcribeSingle(ctx, audioBytes, filename, o.model, opts)
+		res, err := o.transcribeSingle(ctx, audioBytes, filename, o.model, opts)
+		if err != nil {
+			return nil, err
+		}
+		hasSpeakers := false
+		for _, seg := range res.Segments {
+			if seg.SpeakerLabel != "" {
+				hasSpeakers = true
+				break
+			}
+		}
+		if hasSpeakers {
+			res.DiarizedSegments = res.Segments
+		}
+		return res, nil
 	}
 
 	var (
@@ -140,14 +161,21 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 	if diarizeErr != nil {
 		log.Printf("[STT WARN] secondary diarization STT (%s) failed: %v, continuing with primary STT only", o.diarizeModel, diarizeErr)
 	} else if diarizeResult != nil {
+		// Retain structured acoustic diarized segments
+		primaryResult.DiarizedSegments = diarizeResult.Segments
+
 		// Attach acoustic speaker diarized text from secondary STT
 		if strings.TrimSpace(diarizeResult.DiarizedText) != "" {
 			primaryResult.DiarizedText = diarizeResult.DiarizedText
 		} else {
 			primaryResult.DiarizedText = diarizeResult.Text
 		}
+
 		if len(primaryResult.Segments) == 0 && len(diarizeResult.Segments) > 0 {
 			primaryResult.Segments = diarizeResult.Segments
+		} else if len(primaryResult.Segments) > 0 && len(diarizeResult.Segments) > 0 {
+			// Pre-align Whisper segments with acoustic diarization segments
+			primaryResult.Segments = sttalign.AlignSegments(primaryResult.Segments, diarizeResult.Segments)
 		}
 	}
 
@@ -246,42 +274,110 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 		return nil, fmt.Errorf("failed to parse verbose json response: %w", err)
 	}
 
+	// Ingest root-level words if provided by STT engine (OpenAI Whisper verbose_json / Deepgram Nova-3 format)
+	rootWords := make([]dtos.WordResult, len(parsed.Words))
+	for wIdx, w := range parsed.Words {
+		spk := ""
+		if strings.TrimSpace(w.SpeakerLabel) != "" {
+			spk = sttalign.NormalizeSpeakerLabel(w.SpeakerLabel)
+		} else if w.Speaker != nil {
+			spk = fmt.Sprintf("Speaker %d", *w.Speaker)
+		}
+		rootWords[wIdx] = dtos.WordResult{
+			Word:              w.Word,
+			Start:             w.Start,
+			End:               w.End,
+			Probability:       w.Probability,
+			Speaker:           spk,
+			SpeakerConfidence: w.SpeakerConfidence,
+		}
+	}
+
 	segments := make([]dtos.SegmentResult, len(parsed.Segments))
 	for i, s := range parsed.Segments {
 		words := make([]dtos.WordResult, len(s.Words))
 		for wIdx, w := range s.Words {
+			spk := ""
+			if strings.TrimSpace(w.SpeakerLabel) != "" {
+				spk = sttalign.NormalizeSpeakerLabel(w.SpeakerLabel)
+			} else if w.Speaker != nil {
+				spk = fmt.Sprintf("Speaker %d", *w.Speaker)
+			}
 			words[wIdx] = dtos.WordResult{
-				Word:        w.Word,
-				Start:       w.Start,
-				End:         w.End,
-				Probability: w.Probability,
+				Word:              w.Word,
+				Start:             w.Start,
+				End:               w.End,
+				Probability:       w.Probability,
+				Speaker:           spk,
+				SpeakerConfidence: w.SpeakerConfidence,
+			}
+		}
+
+		// If segment has no nested words, slice corresponding root words by timestamp window
+		if len(words) == 0 && len(rootWords) > 0 {
+			for _, rw := range rootWords {
+				if rw.End >= s.Start-0.05 && rw.Start <= s.End+0.05 {
+					words = append(words, rw)
+				}
 			}
 		}
 
 		text := s.Text
 		speaker := ""
 		if strings.TrimSpace(s.SpeakerLabel) != "" {
-			speaker = strings.TrimSpace(s.SpeakerLabel)
+			speaker = sttalign.NormalizeSpeakerLabel(s.SpeakerLabel)
 		} else if s.Speaker != nil {
 			speaker = fmt.Sprintf("Speaker %d", *s.Speaker)
 		} else if match := speakerPrefixRegex.FindStringSubmatch(strings.TrimSpace(text)); len(match) == 3 {
-			speaker = strings.TrimSpace(match[1])
+			speaker = sttalign.NormalizeSpeakerLabel(match[1])
 			text = strings.TrimSpace(match[2])
 		}
 
+		// If segment has no speaker label but contains words with speaker annotations, derive best speaker
+		wordAgreementCount := 0
+		if len(words) > 0 {
+			spkCounts := make(map[string]int)
+			for _, w := range words {
+				if w.Speaker != "" {
+					spkCounts[w.Speaker]++
+				}
+			}
+			bestSpk := ""
+			for spk, cnt := range spkCounts {
+				if cnt > wordAgreementCount {
+					wordAgreementCount = cnt
+					bestSpk = spk
+				}
+			}
+			if speaker == "" && bestSpk != "" {
+				speaker = bestSpk
+			}
+		}
+
+		confidence := 0.0
+		if speaker != "" {
+			if len(words) > 0 && wordAgreementCount > 0 {
+				confidence = float64(wordAgreementCount) / float64(len(words))
+			} else {
+				confidence = 0.85
+			}
+		}
+
 		segments[i] = dtos.SegmentResult{
-			ID:               s.ID,
-			Seek:             s.Seek,
-			Start:            s.Start,
-			End:              s.End,
-			Text:             text,
-			SpeakerLabel:     speaker,
-			Tokens:           s.Tokens,
-			Temperature:      s.Temperature,
-			AvgLogprob:       s.AvgLogprob,
-			CompressionRatio: s.CompressionRatio,
-			NoSpeechProb:     s.NoSpeechProb,
-			Words:            words,
+			ID:                 s.ID,
+			Seek:               s.Seek,
+			Start:              s.Start,
+			End:                s.End,
+			Text:               text,
+			SpeakerLabel:       speaker,
+			Tokens:             s.Tokens,
+			Temperature:        s.Temperature,
+			AvgLogprob:         s.AvgLogprob,
+			CompressionRatio:   s.CompressionRatio,
+			NoSpeechProb:       s.NoSpeechProb,
+			Words:              words,
+			AcousticSpeaker:    speaker,
+			AcousticConfidence: confidence,
 		}
 	}
 
@@ -290,7 +386,12 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 		duration = opts.AudioDuration
 	}
 
-	// Defensive fallback if audio returned single text without segmented array or diarized text block
+	// If STT returned words but no segments, construct segments directly from words
+	if len(segments) == 0 && len(rootWords) > 0 {
+		segments = sttalign.BuildSegmentsFromWords(rootWords, 1.2, 15.0)
+	}
+
+	// Defensive fallback if audio returned single text without segmented array or word timestamps
 	if len(segments) == 0 && parsed.Text != "" {
 		diarized := parseDiarizedTextSegments(parsed.Text, duration)
 		if len(diarized) > 0 {

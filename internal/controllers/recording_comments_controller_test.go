@@ -706,6 +706,10 @@ func TestControllers_StreamRecordingChat_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
 	mock.ExpectCommit()
 
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
 	mockLLM := &mockControllerLLM{
 		streamFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
 			out := make(chan dtos.StreamChunk, 2)
@@ -771,6 +775,10 @@ func TestControllers_StreamRecordingChat_StreamError(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
 	mock.ExpectCommit()
 
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
 	mockLLM := &mockControllerLLM{
 		streamFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
 			out := make(chan dtos.StreamChunk, 2)
@@ -823,6 +831,10 @@ func TestControllers_StreamRecordingChat_EmptyResponse(t *testing.T) {
 	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
 	mock.ExpectCommit()
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
 
 	// Stream returns 0 tokens
 	mockLLM := &mockControllerLLM{

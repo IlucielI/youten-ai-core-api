@@ -45,6 +45,20 @@ type StreamChunk struct {
 	Err          error  `json:"-"`
 }
 
+// RecordingContextMetadata provides rich meeting metadata for grounded AI chat copilot synthesis.
+type RecordingContextMetadata struct {
+	Title             string   `json:"title,omitempty"`
+	DurationSeconds   float64  `json:"duration_seconds,omitempty"`
+	DurationFormatted string   `json:"duration_formatted,omitempty"`
+	SelectedTemplate  string   `json:"selected_template,omitempty"`
+	DetectedLanguage  string   `json:"detected_language,omitempty"`
+	OutputLanguage    string   `json:"output_language,omitempty"`
+	Speakers          []string `json:"speakers,omitempty"`
+	SummaryOverview   string   `json:"summary_overview,omitempty"`
+	KeyTopics         []string `json:"key_topics,omitempty"`
+	ActionItems       []string `json:"action_items,omitempty"`
+}
+
 // RecordingChatRequest represents the request payload for interactive RAG chat over a recording.
 type RecordingChatRequest struct {
 	SessionID           *uuid.UUID         `json:"session_id,omitempty"`
@@ -52,4 +66,6 @@ type RecordingChatRequest struct {
 	ConversationHistory []ChatMessageInput `json:"conversation_history,omitempty"`
 	OwnershipToken      string             `json:"ownership_token,omitempty"`
 	ShareToken          string             `json:"share_token,omitempty"`
+	SummaryOverview     string             `json:"summary_overview,omitempty"`
+	ActionItems         []string           `json:"action_items,omitempty"`
 }

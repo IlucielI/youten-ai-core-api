@@ -1,3 +1,30 @@
+{{- if .Metadata}}
+Meeting Information:
+- Title: {{if .Metadata.Title}}{{.Metadata.Title}}{{else}}Untitled Meeting{{end}}
+{{- if .Metadata.DurationFormatted}}
+- Duration: {{.Metadata.DurationFormatted}}
+{{- end}}
+{{- if .Metadata.TemplateCategory}}
+- Meeting Type / Template: {{.Metadata.TemplateCategory}}
+{{- end}}
+{{- if .Metadata.Speakers}}
+- Participants / Speakers: {{range $idx, $spk := .Metadata.Speakers}}{{if $idx}}, {{end}}{{$spk}}{{end}}
+{{- end}}
+{{- if .Metadata.SummaryOverview}}
+- Executive Overview: {{.Metadata.SummaryOverview}}
+{{- end}}
+{{- if .Metadata.KeyTopics}}
+- Key Discussion Topics:
+{{range .Metadata.KeyTopics}}  * {{.}}
+{{end}}
+{{- end}}
+{{- if .Metadata.ActionItems}}
+- Action Items & Decisions:
+{{range .Metadata.ActionItems}}  * {{.}}
+{{end}}
+{{- end}}
+
+{{end -}}
 Transcript Context:
 {{- if .Chunks}}
 {{range .Chunks}}

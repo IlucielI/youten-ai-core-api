@@ -65,6 +65,23 @@ func TestRAG_BuildRAGPrompt(t *testing.T) {
 	if !strings.Contains(emptyUser, "(No transcript context available)") {
 		t.Error("expected notice about no context")
 	}
+
+	// Test with metadata
+	meta := &dtos.RecordingContextMetadata{
+		Title:            "Architecture Review",
+		SelectedTemplate: "TECH_REVIEW",
+		Speakers:         []string{"David", "Emma"},
+	}
+	sysMeta, userMeta := services.BuildRAGPrompt("Which database was chosen?", chunks, meta)
+	if !strings.Contains(sysMeta, "Strict Grounding Rules") {
+		t.Error("expected system prompt to contain Strict Grounding Rules")
+	}
+	if !strings.Contains(userMeta, "Architecture Review") {
+		t.Error("expected user prompt to contain metadata title")
+	}
+	if !strings.Contains(userMeta, "David, Emma") {
+		t.Error("expected user prompt to contain speakers")
+	}
 }
 
 func TestRAG_ExtractCitations(t *testing.T) {
@@ -76,6 +93,16 @@ func TestRAG_ExtractCitations(t *testing.T) {
 	}
 	if citations[0] != "00:25" || citations[1] != "01:05" || citations[2] != "01:15:30" {
 		t.Errorf("unexpected citations slice: %v", citations)
+	}
+
+	// Citations with range format [MM:SS - MM:SS]
+	rangeText := "Discussed between [02:15 - 02:45] and confirmed at [05:10]."
+	rangeCitations := services.ExtractCitations(rangeText)
+	if len(rangeCitations) != 3 {
+		t.Fatalf("expected 3 citations for range text, got %d: %v", len(rangeCitations), rangeCitations)
+	}
+	if rangeCitations[0] != "02:15" || rangeCitations[1] != "02:45" || rangeCitations[2] != "05:10" {
+		t.Errorf("unexpected range citations: %v", rangeCitations)
 	}
 
 	// No citations

@@ -59,6 +59,54 @@ func TestTemplates_RenderRAGUserPrompt(t *testing.T) {
 	}
 }
 
+func TestTemplates_RenderRAGUserPrompt_WithMetadata(t *testing.T) {
+	meta := &dtos.RecordingContextMetadata{
+		Title:             "Weekly Sprint Planning",
+		DurationFormatted: "45:00",
+		SelectedTemplate:  "DAILY_STANDUP",
+		Speakers:          []string{"Alice", "Bob"},
+		SummaryOverview:   "Discussed sprint velocity and backend blockers.",
+		KeyTopics:         []string{"Database Migration", "API Rate Limiting"},
+		ActionItems:       []string{"Bob to finish migration script by Wednesday"},
+	}
+
+	chunks := []dtos.TranscriptChunkData{
+		{
+			ChunkIndex: 0,
+			Content:    "We are on track with sprint goals.",
+			StartTime:  0.0,
+			EndTime:    30.0,
+		},
+	}
+
+	prompt, err := templates.RenderRAGUserPrompt("What did Bob commit to?", chunks, meta)
+	if err != nil {
+		t.Fatalf("unexpected error rendering user prompt with metadata: %v", err)
+	}
+
+	if !strings.Contains(prompt, "Weekly Sprint Planning") {
+		t.Errorf("expected title in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Duration: 45:00") {
+		t.Errorf("expected duration in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "DAILY_STANDUP") {
+		t.Errorf("expected template in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Alice, Bob") {
+		t.Errorf("expected speakers list in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Discussed sprint velocity") {
+		t.Errorf("expected overview in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Database Migration") {
+		t.Errorf("expected topic in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Bob to finish migration script") {
+		t.Errorf("expected action item in prompt, got: %s", prompt)
+	}
+}
+
 func TestTemplates_SummaryPrompts(t *testing.T) {
 	sys, err := templates.DefaultSummarySystemPrompt()
 	if err != nil {

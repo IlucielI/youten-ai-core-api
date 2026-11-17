@@ -118,7 +118,7 @@ func NewExtractorWithConfig(cfg Config) (*Extractor, error) {
 	}
 
 	maxAudio := cfg.MaxAudioSizeBytes
-	if maxAudio <= 0 || maxAudio > 2048*1024*1024 {
+	if maxAudio <= 0 || maxAudio > DefaultMaxAudioSizeBytes {
 		maxAudio = DefaultMaxAudioSizeBytes
 	}
 

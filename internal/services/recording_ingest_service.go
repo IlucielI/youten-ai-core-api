@@ -18,10 +18,11 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/queue"
+	"code-base-golang/internal/pkg/apperror"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
+	"code-base-golang/internal/queue"
 )
 
 // GeneratePresignUpload generates a pre-signed S3 PUT URL for direct client-to-storage upload
@@ -400,9 +401,22 @@ func (s *Service) ImportRecordingFromURL(
 	recID := uuid.New()
 	objectKey := fmt.Sprintf("recordings/%s/%s", recID.String(), safeFilename)
 
-	limitedBody := io.LimitReader(resp.Body, maxLinkBytes+1)
-	if err := s.storage.Upload(fetchCtx, s.cfg.S3BucketName, objectKey, limitedBody, resp.ContentLength, contentType); err != nil {
+	limitReader := &maxBytesReader{r: resp.Body, limit: maxLinkBytes}
+	if err := s.storage.Upload(fetchCtx, s.cfg.S3BucketName, objectKey, limitReader, resp.ContentLength, contentType); err != nil {
+		if limitReader.read > maxLinkBytes || errors.Is(err, constants.ErrPayloadTooLarge) {
+			_ = s.storage.Delete(fetchCtx, s.cfg.S3BucketName, objectKey)
+			return nil, constants.ErrPayloadTooLarge.WithMessage("media size from link exceeds maximum limit of 1GB")
+		}
+		var appErr *apperror.AppError
+		if errors.As(err, &appErr) && appErr.Code == constants.ResponseCodePayloadTooLarge {
+			_ = s.storage.Delete(fetchCtx, s.cfg.S3BucketName, objectKey)
+			return nil, appErr
+		}
 		return nil, fmt.Errorf("failed to stream media to storage: %w", err)
+	}
+	if limitReader.read > maxLinkBytes {
+		_ = s.storage.Delete(fetchCtx, s.cfg.S3BucketName, objectKey)
+		return nil, constants.ErrPayloadTooLarge.WithMessage("media size from link exceeds maximum limit of 1GB")
 	}
 
 	// 6. Build and persist Recording record
@@ -671,6 +685,33 @@ func sanitizeMediaID(raw string) string {
 	}
 	return sb.String()
 }
+
+// maxBytesReader wraps an io.Reader and returns constants.ErrPayloadTooLarge if bytes read exceed limit.
+type maxBytesReader struct {
+	r     io.Reader
+	limit int64
+	read  int64
+}
+
+func (m *maxBytesReader) Read(p []byte) (int, error) {
+	if m.read > m.limit {
+		return 0, constants.ErrPayloadTooLarge.WithMessage("media size from link exceeds maximum limit of 1GB")
+	}
+
+	remaining := (m.limit + 1) - m.read
+	toRead := p
+	if int64(len(p)) > remaining {
+		toRead = p[:remaining]
+	}
+
+	n, err := m.r.Read(toRead)
+	m.read += int64(n)
+	if m.read > m.limit {
+		return n, constants.ErrPayloadTooLarge.WithMessage("media size from link exceeds maximum limit of 1GB")
+	}
+	return n, err
+}
+
 
 
 

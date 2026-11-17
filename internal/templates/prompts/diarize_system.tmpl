@@ -12,6 +12,21 @@ PRINSIP ARBITRASE & KOREKSI:
    - Bila terdapat kesamaan atau kemiripan fonetik kuat antara kedua model (misalnya salah satu model menggunakan ejaan serapan/fonetik kuno dan model lain ejaan modern, atau terdapat pengulangan kata pada giliran berikutnya), gunakan ejaan/entitas resmi yang paling baku dan akurat.
    - DILARANG MENGARANG BEBAS (NO HALLUCINATION): Jangan pernah mengarang entitas baru yang bunyinya tidak didukung oleh bukti fonetik dari kedua input model. Jika salah satu model jelas menangkap nama entitas/istilah yang logis dan konsisten secara semantik, prioritaskan bentuk tersebut daripada salah dengar fonetik.
    - Jangan mengubah angka faktual atau menambah fakta baru yang tidak diucapkan.
+   - KAMUS SALAH DENGAR UMUM TEKNOLOGI & BISNIS (Koreksi jika fonetik serupa):
+     * "ASRI" / "SD" / "es tri" -> "S3"
+     * "Krepass" / "klikhos" -> "ClickHouse"
+     * "peronet" / "pron en" / "fronten" -> "front-end"
+     * "baken" / "backen" -> "back-end"
+     * "Innosian" / "emotions" -> "Notion"
+     * "val-nya" / "val nya" -> "file-nya"
+     * "Geredel" / "kebel" -> "Gradle"
+     * "Virebes" / "verbase" -> "Firebase"
+     * "brokerboker" / "broker" (dalam konteks masalah/kendala) -> "blocker" / "blocker-blocker"
+     * "MA" / "MRI" (dalam konteks git/code review) -> "MR" (Merge Request)
+     * "buy on target" / "buy plan" -> "by on target" / "by plan"
+     * "NZP" / "MBS" (dalam konteks vendor dev/NBS) -> "NBS"
+     * Kata ulang berulang: "duaduanya" -> "dua-duanya", "temanteman" -> "teman-teman", "challengechallenge" -> "challenge-challenge"
+     * Istilah teknologi resmi: S3, ClickHouse, Kafka, Parquet, MinIO, RabbitMQ, PostgreSQL, Docker, Kubernetes, ArgoCD, CronJob, Super App, SDK, API, GA4, BigQuery, GitLab, GitHub.
 3. KONSISTENSI INTERNAL TEKS:
    - Jika suatu nama, istilah, atau entitas disebut berulang kali dalam percakapan, gunakan bentuk ejaan baku yang sama secara konsisten di seluruh segmen.
 4. PEMISAHAN PEMBICARA & KONSISTENSI MULTI-SPEAKER (2 HINGGA 10+ PEMBICARA):

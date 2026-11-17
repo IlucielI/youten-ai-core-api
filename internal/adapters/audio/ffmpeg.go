@@ -78,23 +78,46 @@ func (f *FFmpegExtractor) ExtractMonoAudio(ctx context.Context, input io.Reader,
 		return nil, ErrEmptyInput
 	}
 
-	// ffmpeg command: -i <input> -vn (no video) -ac 1 (mono) -ar 16000 (16kHz) -b:a 64k (64kbps) -f mp3 <output>
-	cmd := exec.CommandContext(ctx, f.binaryPath,
+	// Acoustic speech enhancement:
+	// 1. highpass=f=80: eliminates low-frequency HVAC rumble, air conditioning hum, and desk thumps.
+	// 2. lowpass=f=8000: attenuates high-frequency noise outside human vocal spectrum.
+	// 3. dynaudnorm=p=0.95:m=10:r=0.9:s=12: Dynamic Audio Normalizer continuously amplifies quiet/distant
+	//    speakers (up to +10-12dB) while preventing louder participants from clipping, ensuring balanced vocal levels.
+	// 4. -b:a 128k: preserves speech harmonics and sibilants critical for ASR phonetic accuracy.
+	enhancedArgs := []string{
 		"-y",
 		"-i", inputPath,
 		"-vn",
 		"-ac", "1",
 		"-ar", "16000",
-		"-b:a", "64k",
+		"-af", "highpass=f=80,lowpass=f=8000,dynaudnorm=p=0.95:m=10:r=0.9:s=12",
+		"-b:a", "128k",
 		"-f", "mp3",
 		outputPath,
-	)
+	}
 
+	cmd := exec.CommandContext(ctx, f.binaryPath, enhancedArgs...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("ffmpeg execution failed (%w): %s", err, strings.TrimSpace(stderr.String()))
+		// Fallback to standard mono extraction if filter chain is unsupported on input stream
+		basicArgs := []string{
+			"-y",
+			"-i", inputPath,
+			"-vn",
+			"-ac", "1",
+			"-ar", "16000",
+			"-b:a", "64k",
+			"-f", "mp3",
+			outputPath,
+		}
+		stderr.Reset()
+		fallbackCmd := exec.CommandContext(ctx, f.binaryPath, basicArgs...)
+		fallbackCmd.Stderr = &stderr
+		if fallbackErr := fallbackCmd.Run(); fallbackErr != nil {
+			return nil, fmt.Errorf("ffmpeg execution failed (%w): %s", fallbackErr, strings.TrimSpace(stderr.String()))
+		}
 	}
 
 	outputData, err := os.ReadFile(outputPath)

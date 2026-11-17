@@ -141,7 +141,11 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		log.Printf("[STT WARN] secondary diarization STT (%s) failed: %v, continuing with primary STT only", o.diarizeModel, diarizeErr)
 	} else if diarizeResult != nil {
 		// Attach acoustic speaker diarized text from secondary STT
-		primaryResult.DiarizedText = diarizeResult.Text
+		if strings.TrimSpace(diarizeResult.DiarizedText) != "" {
+			primaryResult.DiarizedText = diarizeResult.DiarizedText
+		} else {
+			primaryResult.DiarizedText = diarizeResult.Text
+		}
 		if len(primaryResult.Segments) == 0 && len(diarizeResult.Segments) > 0 {
 			primaryResult.Segments = diarizeResult.Segments
 		}
@@ -182,6 +186,12 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 		return nil, err
 	}
 	if err := writer.WriteField("diarize", "true"); err != nil {
+		return nil, err
+	}
+	if err := writer.WriteField("smart_format", "true"); err != nil {
+		return nil, err
+	}
+	if err := writer.WriteField("punctuate", "true"); err != nil {
 		return nil, err
 	}
 

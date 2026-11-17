@@ -26,10 +26,23 @@ type RAGChunkView struct {
 	EndFormatted   string
 }
 
+// RAGMetadataView wraps high-level meeting metadata for grounded prompt rendering.
+type RAGMetadataView struct {
+	Title             string
+	DurationFormatted string
+	TemplateCategory  string
+	DetectedLanguage  string
+	Speakers          []string
+	SummaryOverview   string
+	KeyTopics         []string
+	ActionItems       []string
+}
+
 // RAGUserData holds input parameters for rag_user.tmpl.
 type RAGUserData struct {
-	Query  string
-	Chunks []RAGChunkView
+	Query    string
+	Chunks   []RAGChunkView
+	Metadata *RAGMetadataView
 }
 
 // WorkspaceChunkView wraps chunk metadata for cross-meeting workspace Q&A.
@@ -70,8 +83,8 @@ func DefaultRAGSystemPrompt() (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
-// RenderRAGUserPrompt formats the query and retrieved context chunks into the grounded RAG user prompt.
-func RenderRAGUserPrompt(query string, chunks []dtos.TranscriptChunkData) (string, error) {
+// RenderRAGUserPrompt formats the query, optional meeting metadata, and retrieved context chunks into the grounded RAG user prompt.
+func RenderRAGUserPrompt(query string, chunks []dtos.TranscriptChunkData, meta ...*dtos.RecordingContextMetadata) (string, error) {
 	var chunkViews []RAGChunkView
 	for _, c := range chunks {
 		chunkViews = append(chunkViews, RAGChunkView{
@@ -82,9 +95,25 @@ func RenderRAGUserPrompt(query string, chunks []dtos.TranscriptChunkData) (strin
 		})
 	}
 
+	var metaView *RAGMetadataView
+	if len(meta) > 0 && meta[0] != nil {
+		m := meta[0]
+		metaView = &RAGMetadataView{
+			Title:             strings.TrimSpace(m.Title),
+			DurationFormatted: strings.TrimSpace(m.DurationFormatted),
+			TemplateCategory:  strings.TrimSpace(m.SelectedTemplate),
+			DetectedLanguage:  strings.TrimSpace(m.DetectedLanguage),
+			Speakers:          m.Speakers,
+			SummaryOverview:   strings.TrimSpace(m.SummaryOverview),
+			KeyTopics:         m.KeyTopics,
+			ActionItems:       m.ActionItems,
+		}
+	}
+
 	data := RAGUserData{
-		Query:  strings.TrimSpace(query),
-		Chunks: chunkViews,
+		Query:    strings.TrimSpace(query),
+		Chunks:   chunkViews,
+		Metadata: metaView,
 	}
 
 	var buf bytes.Buffer
@@ -95,12 +124,12 @@ func RenderRAGUserPrompt(query string, chunks []dtos.TranscriptChunkData) (strin
 }
 
 // RenderRAGPrompts returns both system and user prompts ready for LLM consumption.
-func RenderRAGPrompts(query string, chunks []dtos.TranscriptChunkData) (systemPrompt, userPrompt string, err error) {
+func RenderRAGPrompts(query string, chunks []dtos.TranscriptChunkData, meta ...*dtos.RecordingContextMetadata) (systemPrompt, userPrompt string, err error) {
 	systemPrompt, err = DefaultRAGSystemPrompt()
 	if err != nil {
 		return "", "", err
 	}
-	userPrompt, err = RenderRAGUserPrompt(query, chunks)
+	userPrompt, err = RenderRAGUserPrompt(query, chunks, meta...)
 	if err != nil {
 		return "", "", err
 	}

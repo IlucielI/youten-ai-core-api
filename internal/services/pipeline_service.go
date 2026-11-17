@@ -219,22 +219,39 @@ func (s *Service) ProcessExtraction(ctx context.Context, p queue.RecordingPipeli
 	return s.publishEvent(ctx, constants.TopicRecordingTranscribe, nextPayload)
 }
 
-// defaultASRPromptVocabulary provides a curated technical, corporate, and software engineering lexicon
+// defaultASRPromptVocabularyID provides a curated technical, corporate, and software engineering lexicon in Indonesian
 // to prime the speech recognition engine's beam-search, preventing phonetic drifts and hallucinations.
-const defaultASRPromptVocabulary = "Rapat kerja teknologi, software engineering, product development, data pipeline, sprint checkpoint, deployment. " +
+const defaultASRPromptVocabularyID = "Rapat kerja teknologi, software engineering, product development, data pipeline, sprint checkpoint, deployment. " +
 	"Istilah: S3, AWS, MinIO, ClickHouse, Parquet, Kafka, PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes, ArgoCD, CronJob, GitLab, GitHub, " +
+	"PR, MR, Merge Request, Pull Request, SDK, API, endpoint, front-end, back-end, iOS, Android, GA4, Google Analytics, Firebase, BigQuery, " +
+	"JSON, HTTP, Notion, Jira, Slack, CI/CD, staging, production, Telkomsel, NBS, bug, issue, blocker, PIC."
+
+// defaultASRPromptVocabularyEN provides a matching English technical lexicon for English speech contexts.
+const defaultASRPromptVocabularyEN = "Technology meeting, software engineering, product development, data pipeline, sprint checkpoint, deployment. " +
+	"Terms: S3, AWS, MinIO, ClickHouse, Parquet, Kafka, PostgreSQL, Redis, RabbitMQ, Docker, Kubernetes, ArgoCD, CronJob, GitLab, GitHub, " +
 	"PR, MR, Merge Request, Pull Request, SDK, API, endpoint, front-end, back-end, iOS, Android, GA4, Google Analytics, Firebase, BigQuery, " +
 	"JSON, HTTP, Notion, Jira, Slack, CI/CD, staging, production, Telkomsel, NBS, bug, issue, blocker, PIC."
 
 func buildContextualSTTPrompt(title string, lang string) string {
 	var sb strings.Builder
 	cleanTitle := strings.TrimSpace(title)
+	isEnglish := strings.HasPrefix(strings.ToLower(strings.TrimSpace(lang)), "en")
+
 	if cleanTitle != "" {
-		sb.WriteString("Topik: ")
+		if isEnglish {
+			sb.WriteString("Topic: ")
+		} else {
+			sb.WriteString("Topik: ")
+		}
 		sb.WriteString(cleanTitle)
 		sb.WriteString(". ")
 	}
-	sb.WriteString(defaultASRPromptVocabulary)
+
+	if isEnglish {
+		sb.WriteString(defaultASRPromptVocabularyEN)
+	} else {
+		sb.WriteString(defaultASRPromptVocabularyID)
+	}
 	return sb.String()
 }
 
@@ -1541,10 +1558,8 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 				}
 
 				if targetIdx >= i && targetIdx < end {
-					if segments[targetIdx].SpeakerLabel == "" || segments[targetIdx].SpeakerLabel == constants.DefaultSpeakerLabel {
-						if strings.TrimSpace(it.Speaker) != "" {
-							segments[targetIdx].SpeakerLabel = strings.TrimSpace(it.Speaker)
-						}
+					if speaker := strings.TrimSpace(it.Speaker); speaker != "" {
+						segments[targetIdx].SpeakerLabel = speaker
 					}
 					speakerName := strings.TrimSpace(it.SpeakerName)
 					if speakerName == "" {

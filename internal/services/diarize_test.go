@@ -515,6 +515,14 @@ func TestBuildContextualSTTPrompt(t *testing.T) {
 	if !strings.Contains(emptyPrompt, "GitLab") {
 		t.Errorf("expected default vocabulary even when title is empty")
 	}
+
+	enPrompt := buildContextualSTTPrompt("Quarterly Sync", "en")
+	if !strings.Contains(enPrompt, "Topic: Quarterly Sync.") {
+		t.Errorf("expected English prompt to contain 'Topic: Quarterly Sync.', got: %s", enPrompt)
+	}
+	if !strings.Contains(enPrompt, "Technology meeting") || !strings.Contains(enPrompt, "Terms:") {
+		t.Errorf("expected English domain vocabulary in prompt, got: %s", enPrompt)
+	}
 }
 
 func TestCleanLLMJSONResponse(t *testing.T) {

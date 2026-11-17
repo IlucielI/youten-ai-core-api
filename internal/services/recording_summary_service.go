@@ -20,6 +20,7 @@ import (
 	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/apperror"
 	"code-base-golang/internal/pkg/jsonutil"
+	"code-base-golang/internal/pkg/sttalign"
 	"code-base-golang/internal/templates"
 )
 
@@ -55,7 +56,7 @@ func (s *Service) UpdateTranscriptSpeakers(ctx context.Context, id uuid.UUID, ow
 	}, nil
 }
 
-// UpdateTranscriptSegment updates the text of a single transcript segment and dispatches async chunk re-indexing.
+// UpdateTranscriptSegment updates the text and/or speaker of a single transcript segment and dispatches async chunk re-indexing.
 func (s *Service) UpdateTranscriptSegment(ctx context.Context, id uuid.UUID, segmentID uuid.UUID, ownershipToken string, req dtos.UpdateTranscriptSegmentRequest) (*dtos.TranscriptSegmentDTO, error) {
 	rec, err := s.repo.FindRecordingByID(ctx, id)
 	if err != nil {
@@ -77,6 +78,23 @@ func (s *Service) UpdateTranscriptSegment(ctx context.Context, id uuid.UUID, seg
 			return nil, constants.ErrTranscriptSegmentNotFound
 		}
 		return nil, fmt.Errorf("failed to update transcript segment: %w", err)
+	}
+
+	if req.SpeakerLabel != nil || req.SpeakerName != nil {
+		updates := make(map[string]any)
+		if req.SpeakerLabel != nil && strings.TrimSpace(*req.SpeakerLabel) != "" {
+			normSpk := sttalign.NormalizeSpeakerLabel(*req.SpeakerLabel)
+			updates["speaker_label"] = normSpk
+			updatedSeg.SpeakerLabel = normSpk
+		}
+		if req.SpeakerName != nil && strings.TrimSpace(*req.SpeakerName) != "" {
+			name := strings.TrimSpace(*req.SpeakerName)
+			updates["speaker_name"] = name
+			updatedSeg.SpeakerName = name
+		}
+		if len(updates) > 0 && s.repo.DB() != nil {
+			_ = s.repo.DB().WithContext(ctx).Model(&models.TranscriptSegment{}).Where("id = ? AND recording_id = ?", segmentID, rec.ID).Updates(updates).Error
+		}
 	}
 
 	// Trigger async re-indexing so RAG chunk embeddings stay in sync

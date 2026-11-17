@@ -8,6 +8,49 @@ import (
 	"code-base-golang/internal/pkg/sttalign"
 )
 
+func TestNormalizeSpeakerLabel(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"SPEAKER_00", "Speaker 0"},
+		{"SPEAKER_01", "Speaker 1"},
+		{"speaker_0", "Speaker 0"},
+		{"speaker 2", "Speaker 2"},
+		{"[Speaker 3]", "Speaker 3"},
+		{"0", "Speaker 0"},
+		{"1", "Speaker 1"},
+		{"Pembicara 0", "Speaker 0"},
+		{"Pembicara 2", "Speaker 2"},
+		{"Caesar", "Caesar"},
+		{"Putri", "Putri"},
+		{"", "Speaker 0"},
+	}
+
+	for _, c := range cases {
+		if res := sttalign.NormalizeSpeakerLabel(c.input); res != c.expected {
+			t.Errorf("NormalizeSpeakerLabel(%q): expected %q, got %q", c.input, c.expected, res)
+		}
+	}
+}
+
+func TestFindBestAcousticSpeaker_CollarGapBridging(t *testing.T) {
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 10.0, SpeakerLabel: "Speaker 1"},
+		{Start: 11.5, End: 20.0, SpeakerLabel: "Speaker 1"},
+	}
+
+	// Range [10.2, 10.8] falls in the silence gap between 10.0 and 11.5 (zero direct overlap),
+	// but is within 0.2s of Speaker 1. Collar bridging should attribute it to Speaker 1!
+	spk, maxOv, total := sttalign.FindBestAcousticSpeaker(10.2, 10.8, diarized)
+	if spk != "Speaker 1" {
+		t.Errorf("expected collar gap to bridge to Speaker 1, got %s", spk)
+	}
+	if maxOv != 0.0 || total != 0.0 {
+		t.Errorf("expected 0 direct overlap for gap, got maxOv=%f, total=%f", maxOv, total)
+	}
+}
+
 func TestCalculateOverlap(t *testing.T) {
 	// Normal overlap
 	if ov := sttalign.CalculateOverlap(0.0, 5.0, 3.0, 8.0); ov != 2.0 {

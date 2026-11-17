@@ -15,6 +15,9 @@ var (
 	// Regex matching acoustic reference line: "Speaker X [0.00s - 10.00s]: text"
 	acousticLineRegex = regexp.MustCompile(`(?i)^(?:\[)?(Speaker\s*\w+|Pembicara\s*\w+)(?:\])?\s*\[\s*([\d\.]+)\s*s?\s*-\s*([\d\.]+)\s*s?\]\s*:\s*(.*)$`)
 
+	// Regex matching various speaker label formats: SPEAKER_00, speaker_0, Pembicara 1, 0, etc.
+	speakerNumRegex = regexp.MustCompile(`(?i)^(?:\[)?(?:speaker|pembicara)?[\s\-_]*(\d+)(?:\])?$`)
+
 	// Non-speech and music noise tokens frequently hallucinated by ASR
 	nonSpeechTokens = map[string]bool{
 		"musik":            true,
@@ -37,6 +40,22 @@ var (
 	}
 )
 
+// NormalizeSpeakerLabel standardizes diverse speaker formats (SPEAKER_00, speaker_0, Pembicara 1, 0)
+// into canonical "Speaker N" format.
+func NormalizeSpeakerLabel(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "Speaker 0"
+	}
+	if match := speakerNumRegex.FindStringSubmatch(trimmed); len(match) == 2 {
+		num, err := strconv.Atoi(match[1])
+		if err == nil {
+			return fmt.Sprintf("Speaker %d", num)
+		}
+	}
+	return trimmed
+}
+
 // CalculateOverlap returns the duration of temporal overlap between two time intervals.
 func CalculateOverlap(s1, e1, s2, e2 float64) float64 {
 	overlap := math.Min(e1, e2) - math.Max(s1, s2)
@@ -47,6 +66,7 @@ func CalculateOverlap(s1, e1, s2, e2 float64) float64 {
 }
 
 // FindBestAcousticSpeaker finds the speaker with the maximum overlap across diarized acoustic segments.
+// If direct overlap is zero, it uses a tolerance collar (1.5s) to bridge short VAD silence gaps.
 func FindBestAcousticSpeaker(start, end float64, diarizedSegments []dtos.SegmentResult) (bestSpeaker string, maxOverlap float64, totalOverlap float64) {
 	if len(diarizedSegments) == 0 || end <= start {
 		return "", 0.0, 0.0
@@ -54,7 +74,7 @@ func FindBestAcousticSpeaker(start, end float64, diarizedSegments []dtos.Segment
 
 	speakerDurations := make(map[string]float64)
 	for _, d := range diarizedSegments {
-		spk := strings.TrimSpace(d.SpeakerLabel)
+		spk := NormalizeSpeakerLabel(d.SpeakerLabel)
 		if spk == "" {
 			continue
 		}
@@ -71,7 +91,36 @@ func FindBestAcousticSpeaker(start, end float64, diarizedSegments []dtos.Segment
 			bestSpeaker = spk
 		}
 	}
-	return bestSpeaker, maxOverlap, totalOverlap
+
+	if maxOverlap > 0 {
+		return bestSpeaker, maxOverlap, totalOverlap
+	}
+
+	// Collar gap bridging: If zero direct overlap (e.g. Whisper detected speech during a 0.5s VAD acoustic pause),
+	// find the closest acoustic segment within a 1.5s tolerance collar.
+	const collar = 1.5
+	minDist := collar + 1.0
+	closestSpk := ""
+	for _, d := range diarizedSegments {
+		spk := NormalizeSpeakerLabel(d.SpeakerLabel)
+		if spk == "" {
+			continue
+		}
+		var dist float64
+		if d.End < start {
+			dist = start - d.End
+		} else if d.Start > end {
+			dist = d.Start - end
+		}
+		if dist <= collar && dist < minDist {
+			minDist = dist
+			closestSpk = spk
+		}
+	}
+	if closestSpk != "" {
+		return closestSpk, 0.0, 0.0
+	}
+	return "", 0.0, 0.0
 }
 
 // AlignSegments aligns Whisper segments with acoustic diarization segments.
@@ -106,11 +155,13 @@ func AlignSegments(whisperSegments []dtos.SegmentResult, diarizedSegments []dtos
 		bestSpeaker, maxOv, _ := FindBestAcousticSpeaker(wSeg.Start, wSeg.End, diarizedSegments)
 
 		confidence := 0.0
-		if dur > 0 {
+		if dur > 0 && maxOv > 0 {
 			confidence = maxOv / dur
 			if confidence > 1.0 {
 				confidence = 1.0
 			}
+		} else if bestSpeaker != "" {
+			confidence = 0.75
 		}
 
 		// Check if segment should be split on clause boundary (when 2 speakers have significant overlap)
@@ -122,11 +173,12 @@ func AlignSegments(whisperSegments []dtos.SegmentResult, diarizedSegments []dtos
 
 		wSegCopy := wSeg
 		if bestSpeaker != "" {
-			wSegCopy.SpeakerLabel = bestSpeaker
-			wSegCopy.AcousticSpeaker = bestSpeaker
+			normSpk := NormalizeSpeakerLabel(bestSpeaker)
+			wSegCopy.SpeakerLabel = normSpk
+			wSegCopy.AcousticSpeaker = normSpk
 			wSegCopy.AcousticConfidence = confidence
 			if wSegCopy.SpeakerName == "" {
-				wSegCopy.SpeakerName = bestSpeaker
+				wSegCopy.SpeakerName = normSpk
 			}
 		}
 		aligned = append(aligned, wSegCopy)
@@ -193,11 +245,12 @@ func alignAndSplitByWords(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segme
 		// Single speaker across all words: assign speaker and return
 		resSeg := wSeg
 		if len(runs) == 1 && runs[0][0].speaker != "" {
-			resSeg.SpeakerLabel = runs[0][0].speaker
-			resSeg.AcousticSpeaker = runs[0][0].speaker
+			normSpk := NormalizeSpeakerLabel(runs[0][0].speaker)
+			resSeg.SpeakerLabel = normSpk
+			resSeg.AcousticSpeaker = normSpk
 			resSeg.AcousticConfidence = 1.0
 			if resSeg.SpeakerName == "" {
-				resSeg.SpeakerName = runs[0][0].speaker
+				resSeg.SpeakerName = normSpk
 			}
 		}
 		return []dtos.SegmentResult{resSeg}
@@ -224,6 +277,7 @@ func alignAndSplitByWords(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segme
 		if spk == "" {
 			spk = overallBest
 		}
+		spk = NormalizeSpeakerLabel(spk)
 
 		start := r[0].word.Start
 		end := r[len(r)-1].word.End
@@ -290,6 +344,8 @@ func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentRe
 	// Find early speaker vs late speaker based on acoustic segments
 	earlySpk, _, _ := FindBestAcousticSpeaker(wSeg.Start, wSeg.Start+dur*0.4, diarizedSegments)
 	lateSpk, _, _ := FindBestAcousticSpeaker(wSeg.End-dur*0.4, wSeg.End, diarizedSegments)
+	earlySpk = NormalizeSpeakerLabel(earlySpk)
+	lateSpk = NormalizeSpeakerLabel(lateSpk)
 	if earlySpk == "" || lateSpk == "" || earlySpk == lateSpk {
 		return nil
 	}

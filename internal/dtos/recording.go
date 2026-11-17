@@ -323,10 +323,12 @@ type UpdateSpeakersResponse struct {
 	Speakers     map[string]string `json:"speakers"`
 }
 
-// UpdateTranscriptSegmentRequest holds payload to update the text of a single transcript segment.
+// UpdateTranscriptSegmentRequest holds payload to update the text or speaker of a single transcript segment.
 type UpdateTranscriptSegmentRequest struct {
-	Text           string `json:"text"`
-	OwnershipToken string `json:"ownership_token,omitempty"`
+	Text           string  `json:"text"`
+	SpeakerLabel   *string `json:"speaker_label,omitempty"`
+	SpeakerName    *string `json:"speaker_name,omitempty"`
+	OwnershipToken string  `json:"ownership_token,omitempty"`
 }
 
 // RegenerateSummaryRequest defines payload for regenerating a recording's summary with an optional template category and custom angle.

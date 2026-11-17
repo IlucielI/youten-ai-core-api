@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"code-base-golang/internal/dtos"
 )
@@ -363,11 +364,14 @@ func trySplitByClause(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentRe
 	}
 
 	// Find early speaker vs late speaker based on acoustic segments
-	earlySpk, _, _ := FindBestAcousticSpeaker(wSeg.Start, wSeg.Start+dur*0.4, diarizedSegments)
-	lateSpk, _, _ := FindBestAcousticSpeaker(wSeg.End-dur*0.4, wSeg.End, diarizedSegments)
+	earlySpk, earlyOv, _ := FindBestAcousticSpeaker(wSeg.Start, wSeg.Start+dur*0.4, diarizedSegments)
+	lateSpk, lateOv, _ := FindBestAcousticSpeaker(wSeg.End-dur*0.4, wSeg.End, diarizedSegments)
+	if earlySpk == "" || lateSpk == "" || earlyOv <= 0 || lateOv <= 0 {
+		return nil
+	}
 	earlySpk = NormalizeSpeakerLabel(earlySpk)
 	lateSpk = NormalizeSpeakerLabel(lateSpk)
-	if earlySpk == "" || lateSpk == "" || earlySpk == lateSpk {
+	if earlySpk == lateSpk {
 		return nil
 	}
 
@@ -496,27 +500,29 @@ func findClosestPatternMatch(text string, patterns []string, targetIdx int, minR
 	minDist := float64(textLen)
 
 	for _, p := range patterns {
-		startSearch := 0
-		for {
-			idx := strings.Index(strings.ToLower(text[startSearch:]), strings.ToLower(p))
-			if idx == -1 {
+		pLen := len(p)
+		if pLen == 0 || pLen > textLen {
+			continue
+		}
+		for i := 0; i+pLen <= textLen; {
+			if strings.EqualFold(text[i:i+pLen], p) {
+				matchIdx := i + pLen
+				if splitAtPrefix {
+					matchIdx = i
+				}
+				if matchIdx >= minIdx && matchIdx <= maxIdx {
+					dist := math.Abs(float64(matchIdx - targetIdx))
+					if dist < minDist {
+						minDist = dist
+						bestIdx = matchIdx
+					}
+				}
+			}
+			_, size := utf8.DecodeRuneInString(text[i:])
+			if size <= 0 {
 				break
 			}
-			matchIdx := startSearch + idx + len(p)
-			if splitAtPrefix {
-				matchIdx = startSearch + idx
-			}
-			startSearch += idx + 1
-
-			if matchIdx < minIdx || matchIdx > maxIdx {
-				continue
-			}
-
-			dist := math.Abs(float64(matchIdx - targetIdx))
-			if dist < minDist {
-				minDist = dist
-				bestIdx = matchIdx
-			}
+			i += size
 		}
 	}
 	return bestIdx
@@ -639,21 +645,45 @@ func DetectAndCorrectSpeakerInversion(original []dtos.SegmentResult, proposed []
 	acousticCounts := make(map[string]int)
 	totalEvaluated := 0
 
-	limit := len(original)
-	if len(proposed) < limit {
-		limit = len(proposed)
-	}
-
-	for i := 0; i < limit; i++ {
-		acSpk := strings.TrimSpace(original[i].AcousticSpeaker)
-		if acSpk == "" {
-			acSpk = strings.TrimSpace(original[i].SpeakerLabel)
-		}
-		propSpk := strings.TrimSpace(proposed[i].SpeakerLabel)
-
-		if acSpk == "" || propSpk == "" {
+	for pIdx, p := range proposed {
+		propSpk := strings.TrimSpace(p.SpeakerLabel)
+		if propSpk == "" {
 			continue
 		}
+
+		var matchedOrig *dtos.SegmentResult
+		maxOv := 0.0
+		for idx := range original {
+			if original[idx].ID == p.ID && p.ID > 0 {
+				matchedOrig = &original[idx]
+				break
+			}
+			ov := CalculateOverlap(p.Start, p.End, original[idx].Start, original[idx].End)
+			if ov > maxOv {
+				maxOv = ov
+				matchedOrig = &original[idx]
+			}
+		}
+
+		// Fallback to sequential index if no temporal overlap or unassigned timestamps/IDs
+		if matchedOrig == nil && pIdx < len(original) {
+			matchedOrig = &original[pIdx]
+		}
+
+		if matchedOrig == nil {
+			continue
+		}
+
+		acSpk := strings.TrimSpace(matchedOrig.AcousticSpeaker)
+		if acSpk == "" {
+			acSpk = strings.TrimSpace(matchedOrig.SpeakerLabel)
+		}
+		if acSpk == "" {
+			continue
+		}
+
+		acSpk = NormalizeSpeakerLabel(acSpk)
+		propSpk = NormalizeSpeakerLabel(propSpk)
 
 		if _, exists := mapping[acSpk]; !exists {
 			mapping[acSpk] = make(map[string]int)
@@ -767,10 +797,13 @@ func IsAcousticallyAnchored(seg dtos.SegmentResult, proposedSpeaker string) bool
 	if acSpk == "" {
 		acSpk = strings.TrimSpace(seg.SpeakerLabel)
 	}
+	if acSpk == "" || strings.TrimSpace(proposedSpeaker) == "" {
+		return false
+	}
 	acSpk = NormalizeSpeakerLabel(acSpk)
 	propSpk := NormalizeSpeakerLabel(proposedSpeaker)
 
-	if acSpk == "" || propSpk == "" || strings.EqualFold(acSpk, propSpk) {
+	if strings.EqualFold(acSpk, propSpk) {
 		return false
 	}
 

@@ -334,7 +334,8 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 		}
 
 		// If segment has no speaker label but contains words with speaker annotations, derive best speaker
-		if speaker == "" && len(words) > 0 {
+		wordAgreementCount := 0
+		if len(words) > 0 {
 			spkCounts := make(map[string]int)
 			for _, w := range words {
 				if w.Speaker != "" {
@@ -342,21 +343,24 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 				}
 			}
 			bestSpk := ""
-			maxCount := 0
 			for spk, cnt := range spkCounts {
-				if cnt > maxCount {
-					maxCount = cnt
+				if cnt > wordAgreementCount {
+					wordAgreementCount = cnt
 					bestSpk = spk
 				}
 			}
-			if bestSpk != "" {
+			if speaker == "" && bestSpk != "" {
 				speaker = bestSpk
 			}
 		}
 
 		confidence := 0.0
 		if speaker != "" {
-			confidence = 1.0
+			if len(words) > 0 && wordAgreementCount > 0 {
+				confidence = float64(wordAgreementCount) / float64(len(words))
+			} else {
+				confidence = 0.85
+			}
 		}
 
 		segments[i] = dtos.SegmentResult{

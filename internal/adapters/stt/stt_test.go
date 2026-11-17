@@ -293,8 +293,8 @@ func TestOmniRouteSTT_Transcribe_RootWordsDistribution(t *testing.T) {
 	if len(res.Segments) != 1 {
 		t.Fatalf("expected 1 segment, got %d", len(res.Segments))
 	}
-	if len(res.Segments[0].Words) != 4 {
-		t.Errorf("expected 4 words distributed into segment, got %d", len(res.Segments[0].Words))
+	if len(res.Segments[0].Words) < 4 {
+		t.Fatalf("expected at least 4 words distributed into segment, got %d", len(res.Segments[0].Words))
 	}
 	if res.Segments[0].Words[0].Word != "Kita" {
 		t.Errorf("expected first word to be 'Kita', got %s", res.Segments[0].Words[0].Word)

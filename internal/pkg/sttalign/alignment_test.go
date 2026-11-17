@@ -126,8 +126,8 @@ func TestAlignSegments_WordLevelTurnSplitting(t *testing.T) {
 	if aligned[0].SpeakerLabel != "Speaker 0" {
 		t.Errorf("expected segment 0 to be Speaker 0, got %s", aligned[0].SpeakerLabel)
 	}
-	if !strings.Contains(aligned[0].Text, "Apakah ada lowongan accounting?") {
-		t.Errorf("expected segment 0 text to be Putri's question, got %q", aligned[0].Text)
+	if got := strings.TrimSpace(aligned[0].Text); got != "Apakah ada lowongan accounting?" {
+		t.Errorf("expected segment 0 text to be Putri's question, got %q", got)
 	}
 	if aligned[0].Start != 10.0 || aligned[0].End != 13.5 {
 		t.Errorf("expected segment 0 time [10.0 - 13.5], got [%.2f - %.2f]", aligned[0].Start, aligned[0].End)
@@ -137,8 +137,8 @@ func TestAlignSegments_WordLevelTurnSplitting(t *testing.T) {
 	if aligned[1].SpeakerLabel != "Speaker 1" {
 		t.Errorf("expected segment 1 to be Speaker 1, got %s", aligned[1].SpeakerLabel)
 	}
-	if !strings.Contains(aligned[1].Text, "Iya, kita membuka posisi tersebut.") {
-		t.Errorf("expected segment 1 text to be Interviewer's answer, got %q", aligned[1].Text)
+	if got := strings.TrimSpace(aligned[1].Text); got != "Iya, kita membuka posisi tersebut." {
+		t.Errorf("expected segment 1 text to be Interviewer's answer, got %q", got)
 	}
 	if aligned[1].Start != 14.0 || aligned[1].End != 19.5 {
 		t.Errorf("expected segment 1 time [14.0 - 19.5], got [%.2f - %.2f]", aligned[1].Start, aligned[1].End)
@@ -347,11 +347,11 @@ func TestAlignSegments_ClauseSplittingWithDiscourseMarkers(t *testing.T) {
 	if aligned[1].SpeakerLabel != "Speaker 1" {
 		t.Errorf("expected segment 1 to be Speaker 1, got %s", aligned[1].SpeakerLabel)
 	}
-	if !strings.Contains(aligned[0].Text, "Selamat siang") {
-		t.Errorf("unexpected segment 0 text: %q", aligned[0].Text)
+	if got := strings.TrimSpace(aligned[0].Text); got != "Selamat siang saya terima lamaran" {
+		t.Errorf("expected segment 0 text to be 'Selamat siang saya terima lamaran', got %q", got)
 	}
-	if !strings.Contains(aligned[1].Text, "terima kasih") {
-		t.Errorf("unexpected segment 1 text: %q", aligned[1].Text)
+	if got := strings.TrimSpace(aligned[1].Text); got != "terima kasih Pak saya Putri" {
+		t.Errorf("expected segment 1 text to be 'terima kasih Pak saya Putri', got %q", got)
 	}
 }
 

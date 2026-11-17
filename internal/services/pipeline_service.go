@@ -21,6 +21,7 @@ import (
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/pkg/ssrf"
 	"code-base-golang/internal/pkg/strutil"
+	"code-base-golang/internal/pkg/sttalign"
 	"code-base-golang/internal/sse"
 	"code-base-golang/internal/templates"
 )
@@ -325,22 +326,17 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		return fmt.Errorf("failed to clean up transcript segments: %w", err)
 	}
 
-	// Pre-filter: remove pure music/non-speech/empty segments from Whisper BEFORE LLM consensus.
-	// This prevents speech utterances from being mapped onto intro music timestamps (e.g. 00:00).
-	var prefilteredSegments []dtos.SegmentResult
-	for _, seg := range sttResult.Segments {
-		cleanText := strings.TrimSpace(seg.Text)
-		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
-		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" || norm == "intro" {
-			continue
-		}
-		prefilteredSegments = append(prefilteredSegments, seg)
+	// Pre-filter: remove pure music/non-speech/empty segments and stutter loops
+	sttResult.Segments = sttalign.FilterHallucinationsAndNoise(sttResult.Segments)
+
+	// Ensure acoustic alignment if structured diarized segments are present
+	if len(sttResult.DiarizedSegments) > 0 {
+		sttResult.Segments = sttalign.AlignSegments(sttResult.Segments, sttResult.DiarizedSegments)
 	}
-	sttResult.Segments = prefilteredSegments
 
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors
 	if len(sttResult.Segments) > 0 && s.llm != nil {
-		s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText)
+		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments)
 	}
 
 	var modelSegments []models.TranscriptSegment
@@ -1270,62 +1266,9 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 }
 
 // sliceAcousticReference extracts the most relevant portion of the diarized acoustic reference
-// for a given time window [startTime, endTime] across the audio.
-// If the reference is empty or short (<= 8000 chars), it returns the full reference.
-// Otherwise, it computes a proportional slice with a generous context buffer (12%)
-// aligned to line boundaries, preventing reference truncation for long recordings (e.g. 50+ minutes).
+// for a given time window [startTime, endTime] across the audio using timestamp-aligned boundaries.
 func sliceAcousticReference(ref string, startTime, endTime, totalDuration float64) string {
-	ref = strings.TrimSpace(ref)
-	if ref == "" || len(ref) <= 8000 {
-		return ref
-	}
-
-	if totalDuration <= 0 {
-		if len(ref) > 8000 {
-			return ref[:8000]
-		}
-		return ref
-	}
-
-	fracStart := (startTime / totalDuration) - 0.12
-	if fracStart < 0 {
-		fracStart = 0
-	}
-	fracEnd := (endTime / totalDuration) + 0.12
-	if fracEnd > 1.0 {
-		fracEnd = 1.0
-	}
-
-	refLen := len(ref)
-	byteStart := int(fracStart * float64(refLen))
-	byteEnd := int(fracEnd * float64(refLen))
-
-	// Snap byteStart to next line break
-	if byteStart > 0 && byteStart < refLen {
-		if idx := strings.Index(ref[byteStart:], "\n"); idx != -1 && byteStart+idx < refLen {
-			byteStart += idx + 1
-		}
-	}
-
-	// Snap byteEnd to previous line break
-	if byteEnd < refLen && byteEnd > byteStart {
-		if idx := strings.LastIndex(ref[:byteEnd], "\n"); idx != -1 && idx > byteStart {
-			byteEnd = idx
-		}
-	}
-
-	if byteEnd <= byteStart {
-		byteStart = 0
-		if byteEnd = 8000; byteEnd > refLen {
-			byteEnd = refLen
-		}
-	}
-
-	sliced := strings.TrimSpace(ref[byteStart:byteEnd])
-	if len(sliced) > 8000 {
-		sliced = sliced[:8000]
-	}
-	return sliced
+	return sttalign.SliceAcousticReferenceByTime(nil, ref, startTime, endTime, totalDuration, 12.0)
 }
 
 // pruneGhostSpeakers filters false-positive outlier speaker spikes (e.g. noise/laughter < 1.2% total words,
@@ -1421,18 +1364,36 @@ func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]dtos
 	return segments
 }
 
-// diarizeAndCorrectSegmentsWithLLM uses a 3-pass architecture:
+// diarizeAndCorrectSegmentsWithLLM uses an advanced 3-pass architecture:
+// Pre-pass: Acoustic temporal alignment and speaker-turn splitting.
 // Pass 1: Global Speaker Roster Discovery across acoustic and textual dialogue.
-// Pass 2: Sequential sliding-window chunk consensus with locked roster and dynamic acoustic slicing.
+// Pass 2: Sequential sliding-window chunk consensus with locked roster, timestamp-aligned acoustic slicing,
+//         and post-chunk systematic inversion detection.
 // Pass 3: Post-processing ghost speaker pruning and canonical name propagation.
-func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult, diarizedRef ...string) {
-	if len(segments) == 0 || s.llm == nil {
-		return
+func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult, extra ...interface{}) []dtos.SegmentResult {
+	if len(segments) == 0 {
+		return segments
 	}
 
-	rawRef := ""
-	if len(diarizedRef) > 0 {
-		rawRef = strings.TrimSpace(diarizedRef[0])
+	var rawRef string
+	var diarizedList []dtos.SegmentResult
+
+	for _, arg := range extra {
+		switch v := arg.(type) {
+		case string:
+			rawRef = strings.TrimSpace(v)
+		case []dtos.SegmentResult:
+			diarizedList = v
+		}
+	}
+
+	// Pre-pass: If acoustic segments provided, perform acoustic alignment & speaker-turn splitting
+	if len(diarizedList) > 0 {
+		segments = sttalign.AlignSegments(segments, diarizedList)
+	}
+
+	if s.llm == nil {
+		return segments
 	}
 
 	// Pass 1: Global Speaker Roster Discovery
@@ -1466,7 +1427,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 		startTime := segments[i].Start
 		endTime := segments[end-1].End
-		acousticSlice := sliceAcousticReference(rawRef, startTime, endTime, totalDuration)
+		acousticSlice := sttalign.SliceAcousticReferenceByTime(diarizedList, rawRef, startTime, endTime, totalDuration, 12.0)
 
 		var sb strings.Builder
 		sb.WriteString("ROSTER PEMBICARA RESMI:\n")
@@ -1492,13 +1453,21 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		hasContent := false
 		for idx := i; idx < end; idx++ {
 			txt := strings.TrimSpace(segments[idx].Text)
-			if txt != "" {
-				hasContent = true
-				if segments[idx].Start > 0 || segments[idx].End > 0 {
-					sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, segments[idx].Start, segments[idx].End, txt))
-				} else {
-					sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
-				}
+			if txt == "" {
+				continue
+			}
+			hasContent = true
+			acSpk := segments[idx].AcousticSpeaker
+			if acSpk == "" {
+				acSpk = segments[idx].SpeakerLabel
+			}
+
+			if acSpk != "" {
+				sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs] (Acoustic: %s): %s\n", idx, segments[idx].Start, segments[idx].End, acSpk, txt))
+			} else if segments[idx].Start > 0 || segments[idx].End > 0 {
+				sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, segments[idx].Start, segments[idx].End, txt))
+			} else {
+				sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
 			}
 		}
 
@@ -1551,6 +1520,12 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 				}
 			}
 
+			// Stage proposed updates for this chunk
+			proposed := make([]dtos.SegmentResult, end-i)
+			for relIdx := 0; relIdx < end-i; relIdx++ {
+				proposed[relIdx] = segments[i+relIdx]
+			}
+
 			for _, it := range items {
 				targetIdx := it.Index
 				if !hasAbsoluteIndex && i > 0 && it.Index >= 0 && (i+it.Index) < end {
@@ -1558,24 +1533,35 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 				}
 
 				if targetIdx >= i && targetIdx < end {
+					relIdx := targetIdx - i
 					if speaker := strings.TrimSpace(it.Speaker); speaker != "" {
-						segments[targetIdx].SpeakerLabel = speaker
+						proposed[relIdx].SpeakerLabel = speaker
 					}
 					speakerName := strings.TrimSpace(it.SpeakerName)
 					if speakerName == "" {
-						speakerName = segments[targetIdx].SpeakerLabel
+						speakerName = proposed[relIdx].SpeakerLabel
 					}
-					segments[targetIdx].SpeakerName = speakerName
+					proposed[relIdx].SpeakerName = speakerName
 					if strings.TrimSpace(it.Text) != "" {
-						segments[targetIdx].Text = strings.TrimSpace(it.Text)
+						proposed[relIdx].Text = strings.TrimSpace(it.Text)
 					}
-					// If LLM discovered a concrete real name during this chunk, record into rosterMap
-					if !isGenericSpeakerLabel(speakerName) && segments[targetIdx].SpeakerLabel != "" {
-						curr := rosterMap[segments[targetIdx].SpeakerLabel]
-						curr.Label = segments[targetIdx].SpeakerLabel
-						curr.Name = speakerName
-						rosterMap[segments[targetIdx].SpeakerLabel] = curr
-					}
+				}
+			}
+
+			// Inversion guardrail: detect if LLM systematically flipped speaker labels in this chunk
+			correctedChunk := sttalign.DetectAndCorrectSpeakerInversion(segments[i:end], proposed)
+			for relIdx := 0; relIdx < end-i; relIdx++ {
+				targetIdx := i + relIdx
+				segments[targetIdx].SpeakerLabel = correctedChunk[relIdx].SpeakerLabel
+				segments[targetIdx].SpeakerName = correctedChunk[relIdx].SpeakerName
+				segments[targetIdx].Text = correctedChunk[relIdx].Text
+
+				// If LLM discovered a concrete real name during this chunk, record into rosterMap
+				if !isGenericSpeakerLabel(segments[targetIdx].SpeakerName) && segments[targetIdx].SpeakerLabel != "" {
+					curr := rosterMap[segments[targetIdx].SpeakerLabel]
+					curr.Label = segments[targetIdx].SpeakerLabel
+					curr.Name = segments[targetIdx].SpeakerName
+					rosterMap[segments[targetIdx].SpeakerLabel] = curr
 				}
 			}
 		}
@@ -1602,6 +1588,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 	// Pass 3: Post-processing Ghost Speaker Pruning & Canonical Name Assignment
 	pruneGhostSpeakers(segments, rosterMap)
+	return segments
 }
 
 // isGenericSpeakerLabel returns true if the name is empty or a generic placeholder (e.g. "Speaker 0", "Pembicara 1").

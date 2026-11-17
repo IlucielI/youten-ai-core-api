@@ -18,6 +18,7 @@ import (
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/strutil"
+	"code-base-golang/internal/pkg/sttalign"
 	"code-base-golang/internal/services"
 )
 
@@ -140,14 +141,21 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 	if diarizeErr != nil {
 		log.Printf("[STT WARN] secondary diarization STT (%s) failed: %v, continuing with primary STT only", o.diarizeModel, diarizeErr)
 	} else if diarizeResult != nil {
+		// Retain structured acoustic diarized segments
+		primaryResult.DiarizedSegments = diarizeResult.Segments
+
 		// Attach acoustic speaker diarized text from secondary STT
 		if strings.TrimSpace(diarizeResult.DiarizedText) != "" {
 			primaryResult.DiarizedText = diarizeResult.DiarizedText
 		} else {
 			primaryResult.DiarizedText = diarizeResult.Text
 		}
+
 		if len(primaryResult.Segments) == 0 && len(diarizeResult.Segments) > 0 {
 			primaryResult.Segments = diarizeResult.Segments
+		} else if len(primaryResult.Segments) > 0 && len(diarizeResult.Segments) > 0 {
+			// Pre-align Whisper segments with acoustic diarization segments
+			primaryResult.Segments = sttalign.AlignSegments(primaryResult.Segments, diarizeResult.Segments)
 		}
 	}
 

@@ -246,5 +246,11 @@ func TestOmniRouteSTT_Transcribe_ParallelDualModelDiarization(t *testing.T) {
 	if !strings.Contains(res.DiarizedText, "Speaker 1 [10.10s - 20.00s]:") {
 		t.Errorf("expected DiarizedText to contain Speaker 1 timestamp, got: %s", res.DiarizedText)
 	}
+	if len(res.DiarizedSegments) != 2 {
+		t.Errorf("expected 2 DiarizedSegments, got %d", len(res.DiarizedSegments))
+	}
+	if len(res.Segments) == 0 || res.Segments[0].SpeakerLabel == "" {
+		t.Errorf("expected primary segments to be aligned with speaker labels, got %+v", res.Segments)
+	}
 }
 

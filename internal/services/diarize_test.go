@@ -568,6 +568,187 @@ func TestCleanLLMJSONResponse(t *testing.T) {
 	}
 }
 
+func TestService_DiarizeAndCorrectSegments_SimulasiInterviewJobFair(t *testing.T) {
+	// Real-world scenario based on Simulasi_Interview_Kerja_Bahasa_Indonesia.m4a
+	// Two speakers: Pewawancara (Speaker 1) and Putri (Speaker 0)
+	mockLLM := &dummyLLM{
+		generateChatFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+			userContent := messages[0].Content
+			if strings.Contains(userContent, "ROSTER PEMBICARA RESMI") {
+				// Chunk response: strictly preserve acoustic speakers and map Putri's real name
+				return &dtos.ChatResponse{
+					Content: `[
+						{"index": 0, "speaker": "Speaker 1", "speaker_name": "Pewawancara", "text": "Selamat siang, silakan duduk. Bisakah Anda menceritakan tentang diri Anda?"},
+						{"index": 1, "speaker": "Speaker 0", "speaker_name": "Putri", "text": "Selamat siang Pak, terima kasih. Nama saya Putri. Saya lulusan S1 Akuntansi dari Universitas Indonesia."},
+						{"index": 2, "speaker": "Speaker 1", "speaker_name": "Pewawancara", "text": "Apa kelebihan dan kelemahan terbesar Anda?"},
+						{"index": 3, "speaker": "Speaker 0", "speaker_name": "Putri", "text": "Kelebihan saya adalah teliti dalam mengolah data keuangan dan siap bekerja di bawah tekanan."}
+					]`,
+				}, nil
+			}
+			// Roster discovery response
+			return &dtos.ChatResponse{
+				Content: `[
+					{"label": "Speaker 1", "name": "Pewawancara", "role": "Interviewer"},
+					{"label": "Speaker 0", "name": "Putri", "role": "Pelamar"}
+				]`,
+			}, nil
+		},
+	}
+
+	svc := &Service{llm: mockLLM}
+
+	whisperSegments := []dtos.SegmentResult{
+		{ID: 0, Start: 0.0, End: 6.0, Text: "Selamat siang silakan duduk bisakah anda menceritakan tentang diri anda", SpeakerLabel: ""},
+		{ID: 1, Start: 6.2, End: 15.0, Text: "Selamat siang Pak terima kasih nama saya Putri saya lulusan S1 Akuntansi dari Universitas Indonesia", SpeakerLabel: ""},
+		{ID: 2, Start: 15.5, End: 20.0, Text: "Apa kelebihan dan kelemahan terbesar anda", SpeakerLabel: ""},
+		{ID: 3, Start: 20.2, End: 30.0, Text: "Kelebihan saya adalah teliti dalam mengolah data keuangan dan siap bekerja di bawah tekanan", SpeakerLabel: ""},
+	}
+
+	diarizedSegments := []dtos.SegmentResult{
+		{Start: 0.0, End: 6.0, SpeakerLabel: "Speaker 1", Text: "Selamat siang silakan duduk bisakah anda menceritakan tentang diri anda"},
+		{Start: 6.1, End: 15.1, SpeakerLabel: "Speaker 0", Text: "Selamat siang Pak terima kasih nama saya Putri saya lulusan S1 Akuntansi dari Universitas Indonesia"},
+		{Start: 15.3, End: 20.1, SpeakerLabel: "Speaker 1", Text: "Apa kelebihan dan kelemahan terbesar anda"},
+		{Start: 20.1, End: 30.2, SpeakerLabel: "Speaker 0", Text: "Kelebihan saya adalah teliti dalam mengolah data keuangan dan siap bekerja di bawah tekanan"},
+	}
+
+	diarizedRef := "Speaker 1 [0.00s - 6.00s]: Selamat siang silakan duduk bisakah anda menceritakan tentang diri anda\n" +
+		"Speaker 0 [6.10s - 15.10s]: Selamat siang Pak terima kasih nama saya Putri saya lulusan S1 Akuntansi dari Universitas Indonesia\n" +
+		"Speaker 1 [15.30s - 20.10s]: Apa kelebihan dan kelemahan terbesar anda\n" +
+		"Speaker 0 [20.10s - 30.20s]: Kelebihan saya adalah teliti dalam mengolah data keuangan dan siap bekerja di bawah tekanan"
+
+	aligned := svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), whisperSegments, diarizedRef, diarizedSegments)
+
+	if len(aligned) != 4 {
+		t.Fatalf("expected 4 aligned segments, got %d", len(aligned))
+	}
+
+	// Turn 0: Pewawancara (Speaker 1)
+	if aligned[0].SpeakerLabel != "Speaker 1" || aligned[0].SpeakerName != "Pewawancara" {
+		t.Errorf("turn 0 expected Speaker 1 / Pewawancara, got label=%q name=%q", aligned[0].SpeakerLabel, aligned[0].SpeakerName)
+	}
+
+	// Turn 1: Putri (Speaker 0) - MUST NOT BE FLIPPED TO PEWAWANCARA!
+	if aligned[1].SpeakerLabel != "Speaker 0" || aligned[1].SpeakerName != "Putri" {
+		t.Errorf("turn 1 expected Speaker 0 / Putri, got label=%q name=%q", aligned[1].SpeakerLabel, aligned[1].SpeakerName)
+	}
+
+	// Turn 2: Pewawancara (Speaker 1)
+	if aligned[2].SpeakerLabel != "Speaker 1" || aligned[2].SpeakerName != "Pewawancara" {
+		t.Errorf("turn 2 expected Speaker 1 / Pewawancara, got label=%q name=%q", aligned[2].SpeakerLabel, aligned[2].SpeakerName)
+	}
+
+	// Turn 3: Putri (Speaker 0)
+	if aligned[3].SpeakerLabel != "Speaker 0" || aligned[3].SpeakerName != "Putri" {
+		t.Errorf("turn 3 expected Speaker 0 / Putri, got label=%q name=%q", aligned[3].SpeakerLabel, aligned[3].SpeakerName)
+	}
+}
+
+func TestService_DiarizeAndCorrectSegments_WordLevelTurnSplitInService(t *testing.T) {
+	// When Whisper returns a single segment with words spanning both Putri and Pewawancara
+	whisperSeg := dtos.SegmentResult{
+		ID:    0,
+		Start: 10.0,
+		End:   20.0,
+		Text:  "Apakah job desk yang diberikan? Untuk job desk kita membuka staff accounting.",
+		Words: []dtos.WordResult{
+			{Word: "Apakah", Start: 10.0, End: 10.8},
+			{Word: "job", Start: 10.9, End: 11.4},
+			{Word: "desk", Start: 11.5, End: 12.0},
+			{Word: "yang", Start: 12.1, End: 12.5},
+			{Word: "diberikan?", Start: 12.6, End: 13.8},
+			{Word: "Untuk", Start: 14.2, End: 14.8},
+			{Word: "job", Start: 14.9, End: 15.4},
+			{Word: "desk", Start: 15.5, End: 16.0},
+			{Word: "kita", Start: 16.1, End: 16.6},
+			{Word: "membuka", Start: 16.7, End: 17.6},
+			{Word: "staff", Start: 17.7, End: 18.5},
+			{Word: "accounting.", Start: 18.6, End: 19.8},
+		},
+	}
+
+	diarizedSegments := []dtos.SegmentResult{
+		{Start: 10.0, End: 14.0, SpeakerLabel: "Speaker 0"},
+		{Start: 14.1, End: 20.0, SpeakerLabel: "Speaker 1"},
+	}
+
+	svc := &Service{llm: nil} // Test acoustic pre-pass without LLM
+	splitSegs := svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), []dtos.SegmentResult{whisperSeg}, "", diarizedSegments)
+
+	if len(splitSegs) != 2 {
+		t.Fatalf("expected Whisper segment to be split into 2 distinct speaker segments, got %d", len(splitSegs))
+	}
+	if splitSegs[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("part 0 expected Speaker 0, got %s", splitSegs[0].SpeakerLabel)
+	}
+	if !strings.Contains(splitSegs[0].Text, "Apakah job desk") {
+		t.Errorf("part 0 expected Putri's question, got %q", splitSegs[0].Text)
+	}
+	if splitSegs[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("part 1 expected Speaker 1, got %s", splitSegs[1].SpeakerLabel)
+	}
+	if !strings.Contains(splitSegs[1].Text, "Untuk job desk") {
+		t.Errorf("part 1 expected Interviewer's answer, got %q", splitSegs[1].Text)
+	}
+}
+
+func TestService_DiarizeAndCorrectSegments_InversionAutoCorrection(t *testing.T) {
+	// Simulate LLM hallucinating and systematically inverting Speaker 0 and Speaker 1
+	mockLLM := &dummyLLM{
+		generateChatFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+			userContent := messages[0].Content
+			if strings.Contains(userContent, "ROSTER PEMBICARA RESMI") {
+				// Inverted LLM hallucination: returns Speaker 1 for Speaker 0's turns, and Speaker 0 for Speaker 1's turns
+				return &dtos.ChatResponse{
+					Content: `[
+						{"index": 0, "speaker": "Speaker 1", "speaker_name": "Speaker 1", "text": "Turn 0"},
+						{"index": 1, "speaker": "Speaker 1", "speaker_name": "Speaker 1", "text": "Turn 1"},
+						{"index": 2, "speaker": "Speaker 1", "speaker_name": "Speaker 1", "text": "Turn 2"},
+						{"index": 3, "speaker": "Speaker 0", "speaker_name": "Speaker 0", "text": "Turn 3"},
+						{"index": 4, "speaker": "Speaker 0", "speaker_name": "Speaker 0", "text": "Turn 4"},
+						{"index": 5, "speaker": "Speaker 0", "speaker_name": "Speaker 0", "text": "Turn 5"}
+					]`,
+				}, nil
+			}
+			return &dtos.ChatResponse{
+				Content: `[{"label": "Speaker 0", "name": "Speaker 0"}, {"label": "Speaker 1", "name": "Speaker 1"}]`,
+			}, nil
+		},
+	}
+
+	svc := &Service{llm: mockLLM}
+
+	whisperSegs := make([]dtos.SegmentResult, 6)
+	for i := 0; i < 6; i++ {
+		whisperSegs[i] = dtos.SegmentResult{
+			ID:    i,
+			Start: float64(i * 10),
+			End:   float64(i*10 + 8),
+			Text:  "Turn original",
+		}
+	}
+
+	// Acoustic ground truth: 0..2 are Speaker 0, 3..5 are Speaker 1
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 28.0, SpeakerLabel: "Speaker 0"},
+		{Start: 30.0, End: 58.0, SpeakerLabel: "Speaker 1"},
+	}
+
+	result := svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), whisperSegs, "", diarized)
+
+	// Verify inversion was detected and reversed back to Speaker 0 for 0..2 and Speaker 1 for 3..5
+	for i := 0; i < 3; i++ {
+		if result[i].SpeakerLabel != "Speaker 0" {
+			t.Errorf("turn %d: expected Speaker 0, got %s", i, result[i].SpeakerLabel)
+		}
+	}
+	for i := 3; i < 6; i++ {
+		if result[i].SpeakerLabel != "Speaker 1" {
+			t.Errorf("turn %d: expected Speaker 1, got %s", i, result[i].SpeakerLabel)
+		}
+	}
+}
+
+
 
 
 

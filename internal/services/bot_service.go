@@ -306,7 +306,11 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 	}
 
 	if len(payload.Participants) > 0 || len(payload.ActiveSpeakers) > 0 {
-		if rec, err := s.repo.FindRecordingByID(ctx, session.RecordingID); err == nil && rec != nil {
+		rec, err := s.repo.FindRecordingByID(ctx, session.RecordingID)
+		if err != nil {
+			return fmt.Errorf("failed to find recording %s for analytics update: %w", session.RecordingID, err)
+		}
+		if rec != nil {
 			if rec.AnalyticsData == nil {
 				rec.AnalyticsData = make(models.JSONMap)
 			}
@@ -316,7 +320,9 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 			if len(payload.ActiveSpeakers) > 0 {
 				rec.AnalyticsData["meeting_active_speakers"] = payload.ActiveSpeakers
 			}
-			_ = s.repo.UpdateRecordingAnalytics(ctx, rec.ID, rec.AnalyticsData)
+			if err := s.repo.UpdateRecordingAnalytics(ctx, rec.ID, rec.AnalyticsData); err != nil {
+				return fmt.Errorf("failed to update recording analytics: %w", err)
+			}
 		}
 	}
 

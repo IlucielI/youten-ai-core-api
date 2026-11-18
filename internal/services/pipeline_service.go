@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1239,7 +1240,7 @@ func defaultRosterFromSegments(segments []dtos.SegmentResult, diarizedRef string
 
 // discoverSpeakerRoster analyzes audio foundations (acoustic reference or transcript turns)
 // to discover the global cast of participants (handles 2, 3, or 10+ speakers reliably).
-func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.SegmentResult, diarizedRef string) []dtos.SpeakerRosterItem {
+func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.SegmentResult, diarizedRef string, externalRoster ...[]string) []dtos.SpeakerRosterItem {
 	if s.llm == nil {
 		return defaultRosterFromSegments(segments, diarizedRef)
 	}
@@ -1298,6 +1299,14 @@ func (s *Service) discoverSpeakerRoster(ctx context.Context, segments []dtos.Seg
 				sb.WriteString(fmt.Sprintf("%d: %s\n", i, segments[i].Text))
 			}
 		}
+	}
+
+	if len(externalRoster) > 0 && len(externalRoster[0]) > 0 {
+		sb.WriteString("\nDAFTAR PESERTA MEETING (Google Meet / Zoom / Teams):\n")
+		for _, name := range externalRoster[0] {
+			sb.WriteString(fmt.Sprintf("- %s\n", name))
+		}
+		sb.WriteString("Gunakan daftar peserta ini untuk mencocokkan identitas pembicara asli jika dibuktikan dalam percakapan. Jangan memetakan urutan peserta secara sembarangan.\n")
 	}
 
 	if sb.Len() == 0 {
@@ -1461,6 +1470,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	var rawRef string
 	var diarizedList []dtos.SegmentResult
 	var externalRoster []string
+	var analyticsMap models.JSONMap
 
 	for _, arg := range extra {
 		switch v := arg.(type) {
@@ -1469,8 +1479,10 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		case []dtos.SegmentResult:
 			diarizedList = v
 		case models.JSONMap:
+			analyticsMap = v
 			externalRoster = extractExternalRosterFromAnalytics(v)
 		case map[string]interface{}:
+			analyticsMap = models.JSONMap(v)
 			externalRoster = extractExternalRosterFromAnalytics(models.JSONMap(v))
 		}
 	}
@@ -1484,24 +1496,38 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		return segments
 	}
 
-	// Pass 1: Global Speaker Roster Discovery
-	rosterList := s.discoverSpeakerRoster(ctx, segments, rawRef)
+	// Pass 1: Global Speaker Roster Discovery with candidate participant context
+	rosterList := s.discoverSpeakerRoster(ctx, segments, rawRef, externalRoster)
 	rosterMap := make(map[string]dtos.SpeakerRosterItem)
 	for _, r := range rosterList {
 		rosterMap[r.Label] = r
 	}
 
-	// Pre-seed roster with ground-truth meeting participants (Google Meet, Zoom, MS Teams)
-	for idx, name := range externalRoster {
-		lbl := fmt.Sprintf("Speaker %d", idx)
-		if existing, exists := rosterMap[lbl]; exists {
-			existing.Name = name
-			rosterMap[lbl] = existing
-		} else {
-			rosterMap[lbl] = dtos.SpeakerRosterItem{
-				Label: lbl,
-				Name:  name,
-				Role:  "Participant",
+	// Pre-seed roster with verified visual speaker names (keyed directly by acoustic label)
+	if rawVis, ok := analyticsMap["visual_speakers"]; ok {
+		if visBytes, err := json.Marshal(rawVis); err == nil {
+			var visMap map[string]string
+			if err := json.Unmarshal(visBytes, &visMap); err == nil {
+				keys := make([]string, 0, len(visMap))
+				for k := range visMap {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, lbl := range keys {
+					name := strings.TrimSpace(visMap[lbl])
+					if name != "" && !isGenericSpeakerLabel(name) {
+						if existing, exists := rosterMap[lbl]; exists {
+							existing.Name = name
+							rosterMap[lbl] = existing
+						} else {
+							rosterMap[lbl] = dtos.SpeakerRosterItem{
+								Label: lbl,
+								Name:  name,
+								Role:  "Participant",
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1545,6 +1571,14 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		if previousContext != "" {
 			sb.WriteString("\nKONTEKS GILIRAN BICARA SEBELUMNYA:\n")
 			sb.WriteString(previousContext)
+		}
+
+		if len(externalRoster) > 0 {
+			sb.WriteString("\nDAFTAR PESERTA MEETING (Google Meet / Zoom / Teams):\n")
+			for _, name := range externalRoster {
+				sb.WriteString(fmt.Sprintf("- %s\n", name))
+			}
+			sb.WriteString("Gunakan nama peserta di atas sebagai referensi nama pembicara asli jika dibuktikan dalam percakapan (misal saling menyapa atau memperkenalkan diri). JANGAN mengasumsikan urutan peserta sama dengan nomor speaker akustik.\n")
 		}
 
 		if acousticSlice != "" {
@@ -1758,8 +1792,13 @@ func extractExternalRosterFromAnalytics(analytics models.JSONMap) []string {
 		if visBytes, err := json.Marshal(rawVis); err == nil {
 			var visMap map[string]string
 			if err := json.Unmarshal(visBytes, &visMap); err == nil {
-				for _, name := range visMap {
-					trimmed := strings.TrimSpace(name)
+				keys := make([]string, 0, len(visMap))
+				for k := range visMap {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					trimmed := strings.TrimSpace(visMap[k])
 					if trimmed != "" && !seen[trimmed] && !isGenericSpeakerLabel(trimmed) {
 						names = append(names, trimmed)
 						seen[trimmed] = true

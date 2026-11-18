@@ -253,6 +253,8 @@ type botWebhookPayload struct {
 	AudioURL          *string
 	DurationSeconds   *int
 	ErrorMessage      *string
+	Participants      []dtos.MeetingParticipant
+	ActiveSpeakers    []dtos.ActiveSpeakerEvent
 }
 
 // mapBotWebhookEvent maps external provider lifecycle events into canonical bot session statuses.
@@ -303,6 +305,27 @@ func (s *Service) processBotWebhook(ctx context.Context, payload botWebhookPaylo
 		return err
 	}
 
+	if len(payload.Participants) > 0 || len(payload.ActiveSpeakers) > 0 {
+		rec, err := s.repo.FindRecordingByID(ctx, session.RecordingID)
+		if err != nil {
+			return fmt.Errorf("failed to find recording %s for analytics update: %w", session.RecordingID, err)
+		}
+		if rec != nil {
+			if rec.AnalyticsData == nil {
+				rec.AnalyticsData = make(models.JSONMap)
+			}
+			if len(payload.Participants) > 0 {
+				rec.AnalyticsData["meeting_participants"] = payload.Participants
+			}
+			if len(payload.ActiveSpeakers) > 0 {
+				rec.AnalyticsData["meeting_active_speakers"] = payload.ActiveSpeakers
+			}
+			if err := s.repo.UpdateRecordingAnalytics(ctx, rec.ID, rec.AnalyticsData); err != nil {
+				return fmt.Errorf("failed to update recording analytics: %w", err)
+			}
+		}
+	}
+
 	if mappedStatus == constants.BotSessionStatusCompleted && payload.AudioURL != nil && *payload.AudioURL != "" {
 		duration := float64(0)
 		if payload.DurationSeconds != nil {
@@ -334,6 +357,8 @@ func (s *Service) HandleGoogleMeetWebhook(ctx context.Context, req dtos.GoogleMe
 		AudioURL:          req.AudioURL,
 		DurationSeconds:   req.DurationSeconds,
 		ErrorMessage:      req.ErrorMessage,
+		Participants:      req.Participants,
+		ActiveSpeakers:    req.ActiveSpeakers,
 	})
 }
 
@@ -349,6 +374,8 @@ func (s *Service) HandleMSTeamsWebhook(ctx context.Context, req dtos.MSTeamsWebh
 		AudioURL:          req.AudioURL,
 		DurationSeconds:   req.DurationSeconds,
 		ErrorMessage:      req.ErrorMessage,
+		Participants:      req.Participants,
+		ActiveSpeakers:    req.ActiveSpeakers,
 	})
 }
 
@@ -364,6 +391,8 @@ func (s *Service) HandleZoomWebhook(ctx context.Context, req dtos.ZoomWebhookReq
 		AudioURL:          req.AudioURL,
 		DurationSeconds:   req.DurationSeconds,
 		ErrorMessage:      req.ErrorMessage,
+		Participants:      req.Participants,
+		ActiveSpeakers:    req.ActiveSpeakers,
 	})
 }
 

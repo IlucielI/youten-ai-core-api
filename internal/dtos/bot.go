@@ -77,33 +77,53 @@ type CapabilitiesResponse struct {
 	LinkImport  bool              `json:"link_import"`
 }
 
+// MeetingParticipant represents a participant identified in a meeting session (from bot metadata or visual roster).
+type MeetingParticipant struct {
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
+	Role  string `json:"role,omitempty"`
+}
+
+// ActiveSpeakerEvent represents a timestamp interval when a participant was speaking.
+type ActiveSpeakerEvent struct {
+	SpeakerName string  `json:"speaker_name"`
+	StartTime   float64 `json:"start_time"`
+	EndTime     float64 `json:"end_time"`
+}
+
 // GoogleMeetWebhookRequest carries asynchronous status or completion callbacks from a headless bot runner.
 type GoogleMeetWebhookRequest struct {
-	ExternalSessionID string  `json:"external_session_id"`
-	Event             string  `json:"event"`
-	AudioURL          *string `json:"audio_url,omitempty"`
-	DurationSeconds   *int    `json:"duration_seconds,omitempty"`
-	ErrorMessage      *string `json:"error_message,omitempty"`
+	ExternalSessionID string               `json:"external_session_id"`
+	Event             string               `json:"event"`
+	AudioURL          *string              `json:"audio_url,omitempty"`
+	DurationSeconds   *int                 `json:"duration_seconds,omitempty"`
+	ErrorMessage      *string              `json:"error_message,omitempty"`
+	Participants      []MeetingParticipant `json:"participants,omitempty"`
+	ActiveSpeakers    []ActiveSpeakerEvent `json:"active_speakers,omitempty"`
 }
 
 // MSTeamsWebhookRequest carries asynchronous status or completion callbacks from an Azure/MS Teams calling bot worker.
 type MSTeamsWebhookRequest struct {
-	ExternalSessionID string  `json:"external_session_id"`
-	CallConnectionID  string  `json:"call_connection_id,omitempty"`
-	Event             string  `json:"event"`
-	AudioURL          *string `json:"audio_url,omitempty"`
-	DurationSeconds   *int    `json:"duration_seconds,omitempty"`
-	ErrorMessage      *string `json:"error_message,omitempty"`
+	ExternalSessionID string               `json:"external_session_id"`
+	CallConnectionID  string               `json:"call_connection_id,omitempty"`
+	Event             string               `json:"event"`
+	AudioURL          *string              `json:"audio_url,omitempty"`
+	DurationSeconds   *int                 `json:"duration_seconds,omitempty"`
+	ErrorMessage      *string              `json:"error_message,omitempty"`
+	Participants      []MeetingParticipant `json:"participants,omitempty"`
+	ActiveSpeakers    []ActiveSpeakerEvent `json:"active_speakers,omitempty"`
 }
 
 // ZoomWebhookRequest carries asynchronous status or completion callbacks from a Zoom bot worker.
 type ZoomWebhookRequest struct {
-	ExternalSessionID string  `json:"external_session_id"`
-	MeetingID         string  `json:"meeting_id,omitempty"`
-	Event             string  `json:"event"`
-	AudioURL          *string `json:"audio_url,omitempty"`
-	DurationSeconds   *int    `json:"duration_seconds,omitempty"`
-	ErrorMessage      *string `json:"error_message,omitempty"`
+	ExternalSessionID string               `json:"external_session_id"`
+	MeetingID         string               `json:"meeting_id,omitempty"`
+	Event             string               `json:"event"`
+	AudioURL          *string              `json:"audio_url,omitempty"`
+	DurationSeconds   *int                 `json:"duration_seconds,omitempty"`
+	ErrorMessage      *string              `json:"error_message,omitempty"`
+	Participants      []MeetingParticipant `json:"participants,omitempty"`
+	ActiveSpeakers    []ActiveSpeakerEvent `json:"active_speakers,omitempty"`
 }
 
 

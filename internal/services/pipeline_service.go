@@ -329,14 +329,25 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 	// Pre-filter: remove pure music/non-speech/empty segments and stutter loops
 	sttResult.Segments = sttalign.FilterHallucinationsAndNoise(sttResult.Segments)
 
-	// Ensure acoustic alignment if structured diarized segments are present.
-	// This is the primary acoustic alignment pass; do not re-align in LLM post-processing.
+	// Ensure acoustic alignment and compound dialogue turn splitting if structured diarized segments are present.
 	if len(sttResult.DiarizedSegments) > 0 {
 		sttResult.Segments = sttalign.AlignSegments(sttResult.Segments, sttResult.DiarizedSegments)
+	} else if len(sttResult.Segments) > 0 {
+		// Single-model STT mode: no separate acoustic diarizer.
+		// Perform compound dialogue turn splitting directly without fabricating false acoustic overlap.
+		var splitSegs []dtos.SegmentResult
+		for _, seg := range sttResult.Segments {
+			turns := sttalign.SplitCompoundDialogue(seg, nil)
+			if len(turns) > 1 {
+				splitSegs = append(splitSegs, turns...)
+			} else {
+				splitSegs = append(splitSegs, seg)
+			}
+		}
+		sttResult.Segments = splitSegs
 	}
 
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors.
-	// Diarized segments are passed as nil to prevent duplicate acoustic re-alignment.
 	if len(sttResult.Segments) > 0 && s.llm != nil {
 		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, nil)
 	}
@@ -378,16 +389,39 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		if fallbackDuration <= 0 {
 			fallbackDuration = recording.DurationSeconds
 		}
-		modelSegments = append(modelSegments, models.TranscriptSegment{
-			RecordingID:   recording.ID,
-			SpeakerLabel:  constants.DefaultSpeakerLabel,
-			SpeakerName:   constants.DefaultSpeakerLabel,
-			StartTime:     0,
-			EndTime:       fallbackDuration,
-			Text:          sttResult.Text,
-			WordsData:     json.RawMessage("[]"),
-			SequenceOrder: 1,
-		})
+		fallbackSeg := dtos.SegmentResult{
+			Start:        0,
+			End:          fallbackDuration,
+			Text:         sttResult.Text,
+			SpeakerLabel: constants.DefaultSpeakerLabel,
+			SpeakerName:  constants.DefaultSpeakerLabel,
+		}
+		turns := sttalign.SplitCompoundDialogue(fallbackSeg, nil)
+		if len(turns) > 1 {
+			for idx, turn := range turns {
+				modelSegments = append(modelSegments, models.TranscriptSegment{
+					RecordingID:   recording.ID,
+					SpeakerLabel:  turn.SpeakerLabel,
+					SpeakerName:   turn.SpeakerName,
+					StartTime:     turn.Start,
+					EndTime:       turn.End,
+					Text:          turn.Text,
+					WordsData:     json.RawMessage("[]"),
+					SequenceOrder: idx + 1,
+				})
+			}
+		} else {
+			modelSegments = append(modelSegments, models.TranscriptSegment{
+				RecordingID:   recording.ID,
+				SpeakerLabel:  constants.DefaultSpeakerLabel,
+				SpeakerName:   constants.DefaultSpeakerLabel,
+				StartTime:     0,
+				EndTime:       fallbackDuration,
+				Text:          sttResult.Text,
+				WordsData:     json.RawMessage("[]"),
+				SequenceOrder: 1,
+			})
+		}
 	}
 
 	// Merge consecutive segments from the same speaker to prevent sentence fragmentation
@@ -1607,8 +1641,16 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		previousContext = ctxSb.String()
 	}
 
-	// Pass 3: Post-processing Ghost Speaker Pruning & Canonical Name Assignment
+	// Pass 3: Post-processing Ghost Speaker Pruning, Canonical Name Assignment, and Role Consistency.
 	pruneGhostSpeakers(segments, rosterMap)
+	roleConsistent := sttalign.EnforceDialogueRoleConsistency(segments)
+	for i := range segments {
+		// Strictly preserve high-confidence acoustic diarization evidence (>= 0.70)
+		if segments[i].AcousticConfidence >= 0.70 && segments[i].AcousticSpeaker != "" && !sttalign.IsCandidateIdentityMarker(segments[i].Text) {
+			continue
+		}
+		segments[i] = roleConsistent[i]
+	}
 	return segments
 }
 

@@ -502,3 +502,417 @@ func TestIsNonSpeechToken_BracketedMarkers(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectCompoundDialogueSplitPoints(t *testing.T) {
+	cases := []struct {
+		name           string
+		text           string
+		expectedPoints []int
+	}{
+		{
+			name:           "Question followed by answer",
+			text:           "sudah makan belum? Alhamdulillah sudah Pak",
+			expectedPoints: []int{19},
+		},
+		{
+			name:           "Greeting followed by return greeting",
+			text:           "Selamat siang Pak, ini surat lamaran dan CV saya. Selamat siang saya terima surat lamaran CV-nya.",
+			expectedPoints: []int{50},
+		},
+		{
+			name:           "Candidate answer with interjected interviewer question and answer",
+			text:           "Karena sesuai dengan jurusan saya, yaitu akuntansi, saya tertarik melamar di bagian accounting. Lalu, kontribusi apa yang akan kamu lakukan di perusahaan ini? Saya berdedikasi tinggi untuk perusahaan dan saya mampu mengerjakan tugas-tugas akuntansi.",
+			expectedPoints: []int{96, 159},
+		},
+		{
+			name:           "Meeting rapid exchange",
+			text:           "satu e-wallet. Nah, e-wallet-nya apa? Bebas. Bebas. Oke, nanti kredensial e-wallet-nya itu yang diproduksi itu gimana?",
+			expectedPoints: []int{38, 52},
+		},
+		{
+			name:           "Single speaker question with self clarification",
+			text:           "Berarti ke mana ya? Berarti K224 atau K226 ya?",
+			expectedPoints: nil,
+		},
+		{
+			name:           "Question with fullwidth question mark followed by answer",
+			text:           "Apa kabar？ Baik, terima kasih.",
+			expectedPoints: []int{13},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			points := sttalign.DetectCompoundDialogueSplitPoints(tc.text)
+			if len(points) != len(tc.expectedPoints) {
+				t.Fatalf("expected %d split points, got %d (points: %v)", len(tc.expectedPoints), len(points), points)
+			}
+			for i, want := range tc.expectedPoints {
+				if points[i] != want {
+					t.Errorf("split point %d: expected %d, got %d (points: %v)", i, want, points[i], points)
+				}
+			}
+			for _, p := range points {
+				if p <= 0 || p >= len(tc.text) {
+					t.Errorf("split point %d is outside valid boundary [1, %d)", p, len(tc.text))
+				}
+			}
+		})
+	}
+}
+
+func TestSplitCompoundDialogue_RealInterviewQnA(t *testing.T) {
+	wSeg := dtos.SegmentResult{
+		ID:           7,
+		Start:        50.0,
+		End:          52.8,
+		Text:         "sudah makan belum? Alhamdulillah sudah Pak",
+		SpeakerLabel: "Speaker 0",
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, nil)
+	if len(split) != 2 {
+		t.Fatalf("expected 2 split segments, got %d", len(split))
+	}
+
+	if !strings.Contains(split[0].Text, "sudah makan belum?") {
+		t.Errorf("expected part 0 to be question, got %q", split[0].Text)
+	}
+	if split[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected question to be Speaker 0, got %q", split[0].SpeakerLabel)
+	}
+
+	if !strings.Contains(split[1].Text, "Alhamdulillah sudah Pak") {
+		t.Errorf("expected part 1 to be answer, got %q", split[1].Text)
+	}
+	if split[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected answer to be Speaker 1, got %q", split[1].SpeakerLabel)
+	}
+
+	if split[0].End != split[1].Start {
+		t.Errorf("expected continuous timestamps, got %f vs %f", split[0].End, split[1].Start)
+	}
+}
+
+func TestSplitCompoundDialogue_ThreeTurnsInterviewerInterjection(t *testing.T) {
+	wSeg := dtos.SegmentResult{
+		ID:           15,
+		Start:        180.0,
+		End:          200.0,
+		Text:         "Karena sesuai dengan jurusan saya, yaitu akuntansi, saya tertarik melamar di bagian accounting. Lalu, kontribusi apa yang akan kamu lakukan di perusahaan ini? Saya berdedikasi tinggi untuk perusahaan dan saya mampu mengerjakan tugas-tugas akuntansi.",
+		SpeakerLabel: "Speaker 1",
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, nil)
+	if len(split) != 3 {
+		t.Fatalf("expected 3 split segments, got %d", len(split))
+	}
+
+	// Turn 1: Candidate answer
+	if !strings.Contains(split[0].Text, "jurusan saya") || split[0].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected turn 1 candidate Speaker 1, got spk=%q text=%q", split[0].SpeakerLabel, split[0].Text)
+	}
+	// Turn 2: Interviewer question
+	if !strings.Contains(split[1].Text, "kontribusi apa") || split[1].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected turn 2 interviewer Speaker 0, got spk=%q text=%q", split[1].SpeakerLabel, split[1].Text)
+	}
+	// Turn 3: Candidate answer
+	if !strings.Contains(split[2].Text, "berdedikasi tinggi") || split[2].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected turn 3 candidate Speaker 1, got spk=%q text=%q", split[2].SpeakerLabel, split[2].Text)
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_CorrectsMislabeledTurns(t *testing.T) {
+	// A dialogue where Candidate self-introduces as Putri in segment 2.
+	// But segment 4 (an interviewer question) was mistakenly labeled as Speaker 1 (Putri),
+	// and segment 5 (candidate answer) was mistakenly labeled as Speaker 0.
+	segments := []dtos.SegmentResult{
+		{ID: 0, SpeakerLabel: "Speaker 0", SpeakerName: "Speaker 0", Text: "Selamat siang, silakan duduk."},
+		{ID: 1, SpeakerLabel: "Speaker 0", SpeakerName: "Speaker 0", Text: "Sebelumnya, perkenalkan diri kamu secara singkat."},
+		{ID: 2, SpeakerLabel: "Speaker 1", SpeakerName: "Putri Riskip Alokatimah", Text: "Perkenalkan nama saya Putri Riskip Alokatimah, jurusan akuntansi."},
+		{ID: 3, SpeakerLabel: "Speaker 0", SpeakerName: "Speaker 0", Text: "Gimana tadi perjalanannya ke sini?"},
+		{ID: 4, SpeakerLabel: "Speaker 1", SpeakerName: "Putri Riskip Alokatimah", Text: "Lalu, kontribusi apa yang akan kamu lakukan di perusahaan ini?"}, // Mistake: Interviewer question given to Putri
+		{ID: 5, SpeakerLabel: "Speaker 0", SpeakerName: "Speaker 0", Text: "Saya berdedikasi tinggi untuk perusahaan dan saya mampu mengerjakan tugas akuntansi."}, // Mistake: Candidate answer given to Interviewer
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+
+	// Segment 4 should be corrected to Speaker 0 (Interviewer)
+	if corrected[4].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 4 to be corrected to Speaker 0, got %q", corrected[4].SpeakerLabel)
+	}
+
+	// Segment 5 should be corrected to Speaker 1 (Putri)
+	if corrected[5].SpeakerLabel != "Speaker 1" || corrected[5].SpeakerName != "Putri Riskip Alokatimah" {
+		t.Errorf("expected segment 5 to be corrected to Speaker 1 (Putri), got spk=%q name=%q", corrected[5].SpeakerLabel, corrected[5].SpeakerName)
+	}
+}
+
+func TestDetectCompoundDialogueSplitPoints_GreetingAfterSentence(t *testing.T) {
+	text := "Saya ingin bertanya tentang pekerjaan Anda. Selamat pagi, apa kabar?"
+	pts := sttalign.DetectCompoundDialogueSplitPoints(text)
+	if len(pts) == 0 {
+		t.Fatalf("expected split point before greeting, got none")
+	}
+	// Verify split separates sentence and greeting
+	part1 := strings.TrimSpace(text[:pts[0]])
+	part2 := strings.TrimSpace(text[pts[0]:])
+	if !strings.HasPrefix(part2, "Selamat pagi") {
+		t.Errorf("expected part 2 to start with greeting, got %q (part 1=%q)", part2, part1)
+	}
+}
+
+func TestAssignDialogueTurnSpeakers_ConsistentAcousticPreserved(t *testing.T) {
+	// A compound dialogue where acoustic diarization firmly verified that both parts were spoken by Speaker 0
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          10.0,
+		Text:         "sudah makan belum? Alhamdulillah sudah Pak",
+		SpeakerLabel: "Speaker 0",
+	}
+
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 5.0, SpeakerLabel: "Speaker 0"},
+		{Start: 5.0, End: 10.0, SpeakerLabel: "Speaker 0"},
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, diarized)
+	if len(split) != 2 {
+		t.Fatalf("expected 2 split segments, got %d", len(split))
+	}
+
+	// Because all parts are acoustically attributed to Speaker 0 with acoustic diarization,
+	// the acoustic speaker must be preserved rather than flipped by text heuristic
+	if split[0].SpeakerLabel != "Speaker 0" || split[1].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected both parts to preserve acoustic Speaker 0, got [%s, %s]", split[0].SpeakerLabel, split[1].SpeakerLabel)
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_HighAcousticConfidencePreserved(t *testing.T) {
+	// Candidate introduction establishes Speaker 1 as candidate and Speaker 0 as interviewer
+	segments := []dtos.SegmentResult{
+		{ID: 0, SpeakerLabel: "Speaker 0", Text: "Perkenalkan diri anda secara singkat."},
+		{ID: 1, SpeakerLabel: "Speaker 1", Text: "Perkenalkan nama saya Putri Riskip Alokatimah."},
+		// Segment 2 is an interviewer remark with high acoustic confidence (>= 0.70)
+		{
+			ID:                 2,
+			SpeakerLabel:       "Speaker 0",
+			AcousticSpeaker:    "Speaker 0",
+			AcousticConfidence: 0.95,
+			Text:               "Ya, saya bersedia mendengar penjelasan Anda.", // Contains phrase "ya saya bersedia"
+		},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+
+	// Segment 2 must NOT be overridden to Speaker 1 (candidate) because it is anchored by high acoustic confidence
+	if corrected[2].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected high-confidence acoustic speaker to be preserved as Speaker 0, got %q", corrected[2].SpeakerLabel)
+	}
+}
+
+func TestAlignSegments_CompoundDialoguePreservesSpeakerFallback(t *testing.T) {
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          8.0,
+		Text:         "sudah makan belum? Alhamdulillah sudah Pak",
+		SpeakerLabel: "Speaker 0",
+	}
+
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 8.0, SpeakerLabel: "Speaker 0"},
+	}
+
+	aligned := sttalign.AlignSegments([]dtos.SegmentResult{wSeg}, diarized)
+	if len(aligned) != 2 {
+		t.Fatalf("expected 2 aligned segments, got %d", len(aligned))
+	}
+
+	for i, seg := range aligned {
+		if seg.SpeakerLabel != "Speaker 0" {
+			t.Errorf("segment %d expected SpeakerLabel 'Speaker 0', got %q", i, seg.SpeakerLabel)
+		}
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence_Exclamation(t *testing.T) {
+	// Candidate introduces as Speaker 1, Interviewer speaks as Speaker 0
+	segments := []dtos.SegmentResult{
+		{ID: 0, SpeakerLabel: "Speaker 1", Text: "Perkenalkan nama saya Budi."},
+		// Interviewer prompt preceded by exclamation mark
+		{ID: 1, SpeakerLabel: "Speaker 0", Text: "Terima kasih! Lingkungan kerja seperti apa yang anda sukai?"},
+		// Segment 2: candidate response with trailing question mistakenly attributed to Interviewer (Speaker 0)
+		{ID: 2, SpeakerLabel: "Speaker 0", Text: "Saya berdedikasi tinggi untuk perusahaan. Apakah ada tes teknikal berikutnya?"},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+
+	if corrected[0].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 0 to be Candidate Speaker 1, got %q", corrected[0].SpeakerLabel)
+	}
+	if corrected[1].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 1 to be Interviewer Speaker 0, got %q", corrected[1].SpeakerLabel)
+	}
+	if corrected[2].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 2 to be corrected to Candidate Speaker 1, got %q", corrected[2].SpeakerLabel)
+	}
+}
+
+func TestSplitCompoundDialogue_QuestionStarterWithoutQuestionMark(t *testing.T) {
+	// ASR omitted question mark (used period), but previous turn has a clear question starter
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          8.0,
+		Text:         "gimana tadi perjalanannya. alhamdulillah lancar pak",
+		SpeakerLabel: "Speaker 0",
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, nil)
+	if len(split) != 2 {
+		t.Fatalf("expected 2 split turns, got %d", len(split))
+	}
+	if split[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected first turn to be questioner Speaker 0, got %q", split[0].SpeakerLabel)
+	}
+	if split[0].Text != "gimana tadi perjalanannya." {
+		t.Errorf("expected first turn text 'gimana tadi perjalanannya.', got %q", split[0].Text)
+	}
+	if split[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected second turn to alternate to respondent Speaker 1, got %q", split[1].SpeakerLabel)
+	}
+	if split[1].Text != "alhamdulillah lancar pak" {
+		t.Errorf("expected second turn text 'alhamdulillah lancar pak', got %q", split[1].Text)
+	}
+}
+
+func TestSplitCompoundDialogue_AlternateSpeakerFromDiarization(t *testing.T) {
+	// Diarization has Speaker 0 and Speaker 2
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          8.0,
+		Text:         "apakah anda bersedia? Ya saya bersedia",
+		SpeakerLabel: "Speaker 0",
+	}
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 4.0, SpeakerLabel: "Speaker 0"},
+		{Start: 4.0, End: 8.0, SpeakerLabel: "Speaker 2"},
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, diarized)
+	if len(split) != 2 {
+		t.Fatalf("expected 2 split turns, got %d", len(split))
+	}
+	if split[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected first turn to be Speaker 0, got %q", split[0].SpeakerLabel)
+	}
+	if split[0].Text != "apakah anda bersedia?" {
+		t.Errorf("expected first turn text 'apakah anda bersedia?', got %q", split[0].Text)
+	}
+	if split[1].SpeakerLabel != "Speaker 2" {
+		t.Errorf("expected second turn to be alternate Speaker 2, got %q", split[1].SpeakerLabel)
+	}
+	if split[1].Text != "Ya saya bersedia" {
+		t.Errorf("expected second turn text 'Ya saya bersedia', got %q", split[1].Text)
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_StrongAcousticPreservesAcousticSpeakerWhenEmpty(t *testing.T) {
+	segments := []dtos.SegmentResult{
+		{
+			ID:                 0,
+			SpeakerLabel:       "",
+			AcousticSpeaker:    "Speaker 2",
+			AcousticConfidence: 0.85,
+			Text:               "Pertemuan ini berjalan sangat tertib dan sesuai agenda.",
+		},
+		{
+			ID:           1,
+			SpeakerLabel: "Speaker 0",
+			Text:         "Lingkungan kerja seperti apa yang anda sukai?",
+		},
+		{
+			ID:           2,
+			SpeakerLabel: "Speaker 1",
+			Text:         "Nama saya Budi, saya berdedikasi tinggi untuk perusahaan.",
+		},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+	if corrected[0].SpeakerLabel != "Speaker 2" {
+		t.Errorf("expected empty SpeakerLabel with strong acoustic anchor to be populated with %q, got %q", "Speaker 2", corrected[0].SpeakerLabel)
+	}
+}
+
+func TestIsCandidateIdentityMarker_ExcludesNarrativeJobApplication(t *testing.T) {
+	if !sttalign.IsCandidateIdentityMarker("Nama saya Budi, saya lulusan informatika.") {
+		t.Errorf("expected true for self-introduction")
+	}
+	if sttalign.IsCandidateIdentityMarker("Saya melamar pekerjaan ini karena tertarik dengan reputasi perusahaan.") {
+		t.Errorf("expected false for narrative job application action")
+	}
+}
+
+func TestDetectCompoundDialogueSplitPoints_ShortQuestionStarter(t *testing.T) {
+	points := sttalign.DetectCompoundDialogueSplitPoints("Bisakah kamu? Ya, saya bisa membantu menyelesaikan pekerjaan ini dengan baik.")
+	if len(points) == 0 {
+		t.Errorf("expected split point after short question starter 'Bisakah kamu?'")
+	}
+}
+
+func TestIsInterviewerPromptMarker_ReportedSpeechExcluded(t *testing.T) {
+	if sttalign.IsInterviewerPromptMarker("saya ditanya, apakah anda bersedia bekerja lembur?") {
+		t.Errorf("expected false for reported speech question following comma")
+	}
+	if !sttalign.IsInterviewerPromptMarker("Apakah anda bersedia bekerja lembur?") {
+		t.Errorf("expected true for direct interviewer question")
+	}
+	if !sttalign.IsInterviewerPromptMarker("Lalu, apakah anda bersedia bekerja lembur?") {
+		t.Errorf("expected true for conversational conjunction + interviewer question")
+	}
+}
+
+func TestIsInterviewerPromptMarker_BagaimanaDanKalauBolehTahu(t *testing.T) {
+	if !sttalign.IsInterviewerPromptMarker("Bagaimana pengalaman kerja Anda sebelumnya?") {
+		t.Errorf("expected true for prompt starting with 'Bagaimana'")
+	}
+	if sttalign.IsInterviewerPromptMarker("Saya menjelaskan bagaimana pengalaman kerja saya sebelumnya.") {
+		t.Errorf("expected false when 'bagaimana' is embedded inside narrative statement")
+	}
+	if !sttalign.IsInterviewerPromptMarker("Kalau boleh tahu, pengalaman kerja Anda bagaimana?") {
+		t.Errorf("expected true for prompt starting with 'Kalau boleh tahu'")
+	}
+}
+
+func TestIsAnswerPrefix_UnicodeAndWhitespace(t *testing.T) {
+	if !sttalign.IsAnswerPrefix("Ya, saya bersedia") {
+		t.Errorf("expected true for 'Ya, saya bersedia'")
+	}
+	if !sttalign.IsAnswerPrefix("Ya\nSaya bersedia") {
+		t.Errorf("expected true for 'Ya\\nSaya bersedia'")
+	}
+	if !sttalign.IsAnswerPrefix("Ya\tSaya bersedia") {
+		t.Errorf("expected true for 'Ya\\tSaya bersedia'")
+	}
+	if !sttalign.IsAnswerPrefix("Baik. Saya paham") {
+		t.Errorf("expected true for 'Baik. Saya paham'")
+	}
+	if sttalign.IsAnswerPrefix("Yakin") {
+		t.Errorf("expected false for 'Yakin' (not a standalone prefix)")
+	}
+}
+
+func TestIsCandidateIdentityMarker_GreetingPrefix(t *testing.T) {
+	if !sttalign.IsCandidateIdentityMarker("Selamat pagi, nama saya Budi.") {
+		t.Errorf("expected true for 'Selamat pagi, nama saya Budi.'")
+	}
+	if !sttalign.IsCandidateIdentityMarker("Halo, perkenalkan nama saya Andi.") {
+		t.Errorf("expected true for 'Halo, perkenalkan nama saya Andi.'")
+	}
+	if sttalign.IsCandidateIdentityMarker("Saya tahu nama saya bagus.") {
+		t.Errorf("expected false for 'Saya tahu nama saya bagus.'")
+	}
+}

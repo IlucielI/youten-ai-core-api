@@ -1367,18 +1367,23 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 }
 
 func isCandidateIdentityMarker(lower string) bool {
-	if strings.Contains(lower, "?") {
-		return false
-	}
 	trimmed := strings.TrimSpace(lower)
 	markers := []string{
 		"perkenalkan nama saya ", "perkenalkan, nama saya ", "nama saya ",
-		"perkenalkan saya ", "saya adalah ", "saya berasal dari ",
+		"perkenalkan saya ", "perkenalkan, saya ", "saya adalah ", "saya berasal dari ",
 		"rumah saya di ", "saya melamar ",
 	}
-	for _, m := range markers {
-		if strings.HasPrefix(trimmed, m) {
-			return true
+	sentences := strings.FieldsFunc(trimmed, func(r rune) bool {
+		return r == '.' || r == '!' || r == '?'
+	})
+	for _, sentence := range sentences {
+		s := strings.TrimSpace(sentence)
+		s = strings.TrimLeft(s, `",':;`)
+		s = strings.TrimSpace(s)
+		for _, m := range markers {
+			if strings.HasPrefix(s, m) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1443,17 +1448,21 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 
 	for _, seg := range segments {
 		clean := strings.ToLower(strings.TrimSpace(seg.Text))
-		spk := NormalizeSpeakerLabel(seg.SpeakerLabel)
+		spk := strings.TrimSpace(seg.SpeakerLabel)
+		if spk == "" && seg.AcousticSpeaker != "" {
+			spk = strings.TrimSpace(seg.AcousticSpeaker)
+		}
+		normSpk := NormalizeSpeakerLabel(spk)
 
 		if isCandidateIdentityMarker(clean) && candidateSpeaker == "" {
-			candidateSpeaker = spk
+			candidateSpeaker = normSpk
 			if !isGenericSpeaker(seg.SpeakerName) {
 				candidateName = seg.SpeakerName
 			}
 		}
 
 		if isInterviewerPromptMarker(clean) && interviewerSpeaker == "" {
-			interviewerSpeaker = spk
+			interviewerSpeaker = normSpk
 			if !isGenericSpeaker(seg.SpeakerName) {
 				interviewerName = seg.SpeakerName
 			}
@@ -1476,8 +1485,14 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 			continue
 		}
 
+		currentSpk := strings.TrimSpace(corrected[i].SpeakerLabel)
+		if currentSpk == "" && corrected[i].AcousticSpeaker != "" {
+			currentSpk = strings.TrimSpace(corrected[i].AcousticSpeaker)
+		}
+		normCurrentSpk := NormalizeSpeakerLabel(currentSpk)
+
 		if isCandidateIdentityMarker(clean) {
-			if NormalizeSpeakerLabel(corrected[i].SpeakerLabel) != candidateSpeaker {
+			if corrected[i].SpeakerLabel == "" || normCurrentSpk != candidateSpeaker {
 				corrected[i].SpeakerLabel = candidateSpeaker
 				if candidateName != "" {
 					corrected[i].SpeakerName = candidateName
@@ -1486,7 +1501,7 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 				}
 			}
 		} else if isInterviewerPromptMarker(clean) {
-			if NormalizeSpeakerLabel(corrected[i].SpeakerLabel) != interviewerSpeaker {
+			if corrected[i].SpeakerLabel == "" || normCurrentSpk != interviewerSpeaker {
 				corrected[i].SpeakerLabel = interviewerSpeaker
 				if interviewerName != "" {
 					corrected[i].SpeakerName = interviewerName
@@ -1495,13 +1510,20 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 				}
 			}
 		} else if isCandidateResponseContent(clean) {
-			if NormalizeSpeakerLabel(corrected[i].SpeakerLabel) != candidateSpeaker {
+			if corrected[i].SpeakerLabel == "" || normCurrentSpk != candidateSpeaker {
 				corrected[i].SpeakerLabel = candidateSpeaker
 				if candidateName != "" {
 					corrected[i].SpeakerName = candidateName
 				} else {
 					corrected[i].SpeakerName = candidateSpeaker
 				}
+			}
+		}
+
+		if corrected[i].SpeakerLabel == "" && corrected[i].AcousticSpeaker != "" {
+			corrected[i].SpeakerLabel = NormalizeSpeakerLabel(corrected[i].AcousticSpeaker)
+			if corrected[i].SpeakerName == "" {
+				corrected[i].SpeakerName = corrected[i].SpeakerLabel
 			}
 		}
 	}

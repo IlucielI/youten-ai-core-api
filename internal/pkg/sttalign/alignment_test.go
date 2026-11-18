@@ -729,6 +729,8 @@ func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence(t *test
 		{ID: 1, SpeakerLabel: "Speaker 0", Text: "Lingkungan kerja seperti apa yang anda sukai?"},
 		// Segment 2: candidate response mistakenly attributed to Interviewer (Speaker 0)
 		{ID: 2, SpeakerLabel: "Speaker 0", Text: "Saya berdedikasi tinggi untuk perusahaan."},
+		// Segment 3: segment containing both interviewer prompt and candidate response, mistakenly attributed to Speaker 1
+		{ID: 3, SpeakerLabel: "Speaker 1", Text: "Lingkungan kerja seperti apa yang anda sukai? Saya berdedikasi tinggi untuk perusahaan."},
 	}
 
 	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
@@ -741,5 +743,29 @@ func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence(t *test
 	}
 	if corrected[2].SpeakerLabel != "Speaker 1" {
 		t.Errorf("expected segment 2 to be corrected to Candidate Speaker 1, got %q", corrected[2].SpeakerLabel)
+	}
+	if corrected[3].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected interviewer prompt to take precedence for segment 3, got %q", corrected[3].SpeakerLabel)
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_CandidateSpeakerFromAcousticFallback(t *testing.T) {
+	// Candidate introduces with empty SpeakerLabel but valid AcousticSpeaker
+	segments := []dtos.SegmentResult{
+		{ID: 0, SpeakerLabel: "", AcousticSpeaker: "Speaker 1", Text: "Perkenalkan, saya Budi. Apakah suara saya terdengar jelas?"},
+		{ID: 1, SpeakerLabel: "Speaker 0", Text: "Lingkungan kerja seperti apa yang anda sukai?"},
+		{ID: 2, SpeakerLabel: "Speaker 0", Text: "Saya berdedikasi tinggi untuk perusahaan."},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+
+	if corrected[0].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 0 to fallback to AcousticSpeaker 'Speaker 1', got %q", corrected[0].SpeakerLabel)
+	}
+	if corrected[1].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 1 to be Interviewer 'Speaker 0', got %q", corrected[1].SpeakerLabel)
+	}
+	if corrected[2].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 2 to be corrected to Candidate 'Speaker 1', got %q", corrected[2].SpeakerLabel)
 	}
 }

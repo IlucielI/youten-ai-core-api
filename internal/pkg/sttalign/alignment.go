@@ -1070,8 +1070,8 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 	speakers := make([]string, len(parts))
 	for i := range parts {
 		if len(startTimes) > i && len(endTimes) > i {
-			acSpk, maxOv, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
-			if maxOv > 0 && acSpk != "" {
+			acSpk, _, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
+			if acSpk != "" {
 				speakers[i] = NormalizeSpeakerLabel(acSpk)
 				continue
 			}
@@ -1177,14 +1177,16 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 		bestAcSpk, maxOv, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
 		realAcSpk := ""
 		acConf := 0.50
-		if maxOv > 0 && bestAcSpk != "" {
+		if bestAcSpk != "" {
 			realAcSpk = NormalizeSpeakerLabel(bestAcSpk)
 			dur := endTimes[i] - startTimes[i]
-			if dur > 0 {
+			if dur > 0 && maxOv > 0 {
 				acConf = maxOv / dur
 				if acConf > 1.0 {
 					acConf = 1.0
 				}
+			} else {
+				acConf = 0.70
 			}
 		}
 

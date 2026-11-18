@@ -329,16 +329,18 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 	// Pre-filter: remove pure music/non-speech/empty segments and stutter loops
 	sttResult.Segments = sttalign.FilterHallucinationsAndNoise(sttResult.Segments)
 
-	// Ensure acoustic alignment if structured diarized segments are present.
-	// This is the primary acoustic alignment pass; do not re-align in LLM post-processing.
+	// Ensure acoustic alignment and compound dialogue turn splitting if structured diarized segments are present.
 	if len(sttResult.DiarizedSegments) > 0 {
 		sttResult.Segments = sttalign.AlignSegments(sttResult.Segments, sttResult.DiarizedSegments)
+	} else if len(sttResult.Segments) > 0 {
+		// Even if separate acoustic diarized segments are not present (single STT model),
+		// perform compound dialogue turn splitting directly on the STT segments
+		sttResult.Segments = sttalign.AlignSegments(sttResult.Segments, sttResult.Segments)
 	}
 
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors.
-	// Diarized segments are passed as nil to prevent duplicate acoustic re-alignment.
 	if len(sttResult.Segments) > 0 && s.llm != nil {
-		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, nil)
+		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments)
 	}
 
 	var modelSegments []models.TranscriptSegment
@@ -1607,8 +1609,9 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		previousContext = ctxSb.String()
 	}
 
-	// Pass 3: Post-processing Ghost Speaker Pruning & Canonical Name Assignment
+	// Pass 3: Post-processing Ghost Speaker Pruning, Canonical Name Assignment, and Role Consistency
 	pruneGhostSpeakers(segments, rosterMap)
+	segments = sttalign.EnforceDialogueRoleConsistency(segments)
 	return segments
 }
 

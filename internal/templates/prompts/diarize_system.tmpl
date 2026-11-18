@@ -36,6 +36,8 @@ PRINSIP ARBITRASE & KOREKSI:
      * Field 'speaker_name' diisi nama orang asli jika diketahui (misal: "Putri"), atau fallback ke label "Speaker N".
    - Gunakan ROSTER PEMBICARA RESMI dan KONTEKS GILIRAN BICARA SEBELUMNYA sebagai pedoman utama identitas pembicara.
    - Jika salah satu pembicara memperkenalkan diri ('nama saya [Nama]...') atau disapa oleh lawan bicara ('Pak [Nama]', '[Nama]...'), sematkan nama asli tersebut pada 'speaker_name' pembicara yang bersangkutan secara konsisten di seluruh segmen.
+   - KONSISTENSI PERAN PERCAKAPAN (ROLE CONSISTENCY):
+     * Dalam konteks wawancara atau tanya-jawab, jaga konsistensi peran penanya (pewawancara) dan penjawab (kandidat/narasumber). Jangan pernah menukar pertanyaan pewawancara menjadi ucapan kandidat, atau jawaban kandidat menjadi ucapan pewawancara!
 5. BAHASA: Output teks harus selalu dalam bahasa alami yang baku dan koheren sesuai audio asli.
 
 Keluarkan HANYA JSON array valid tanpa komentar atau markdown tambahan:

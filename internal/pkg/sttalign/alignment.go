@@ -1015,7 +1015,8 @@ func isAnswerPrefix(s string) bool {
 func isQuestionStarter(s string) bool {
 	lower := strings.ToLower(strings.TrimSpace(s))
 	for _, p := range dialogueQuestionStarters {
-		if strings.HasPrefix(lower, p) {
+		trimmedP := strings.TrimSpace(p)
+		if lower == trimmedP || strings.HasPrefix(lower, trimmedP+"?") || strings.HasPrefix(lower, p) {
 			return true
 		}
 	}
@@ -1024,7 +1025,8 @@ func isQuestionStarter(s string) bool {
 		if strings.HasPrefix(lower, c) {
 			trimmed := strings.TrimPrefix(lower, c)
 			for _, p := range dialogueQuestionStarters {
-				if strings.HasPrefix(trimmed, p) {
+				trimmedP := strings.TrimSpace(p)
+				if trimmed == trimmedP || strings.HasPrefix(trimmed, trimmedP+"?") || strings.HasPrefix(trimmed, p) {
 					return true
 				}
 			}
@@ -1058,7 +1060,7 @@ func isSelfIntroOrRoleDeclaration(lower string) bool {
 		"nama saya ", "saya adalah ", "perkenalkan saya ", "perkenalkan, saya ",
 		"perkenalkan nama saya ", "perkenalkan, nama saya ",
 		"nama ku ", "namaku ", "panggil saja saya ", "panggil saya ",
-		"saya bernama ", "saya melamar ",
+		"saya bernama ",
 	}
 	for _, m := range markers {
 		if strings.HasPrefix(trimmed, m) || strings.Contains(trimmed, ". "+m) || strings.Contains(trimmed, ", "+m) {
@@ -1194,10 +1196,7 @@ func splitWordsByTextParts(words []dtos.WordResult, parts []string) [][]dtos.Wor
 		}
 	}
 	if len(parts) > 0 && wIdx < len(words) {
-		remaining := len(words) - wIdx
-		if remaining == len(strings.Fields(parts[len(parts)-1])) {
-			result[len(parts)-1] = append(result[len(parts)-1], words[wIdx:]...)
-		}
+		result[len(parts)-1] = append(result[len(parts)-1], words[wIdx:]...)
 	}
 	return result
 }
@@ -1392,12 +1391,17 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 	return results
 }
 
+// IsCandidateIdentityMarker checks if the given text contains a candidate self-introduction or identity declaration.
+func IsCandidateIdentityMarker(text string) bool {
+	return isCandidateIdentityMarker(strings.ToLower(strings.TrimSpace(text)))
+}
+
 func isCandidateIdentityMarker(lower string) bool {
 	trimmed := strings.TrimSpace(lower)
 	markers := []string{
 		"perkenalkan nama saya ", "perkenalkan, nama saya ", "nama saya ",
 		"perkenalkan saya ", "perkenalkan, saya ", "saya adalah ", "saya berasal dari ",
-		"rumah saya di ", "saya melamar ",
+		"rumah saya di ",
 	}
 	sentences := strings.FieldsFunc(trimmed, func(r rune) bool {
 		return r == '.' || r == '!' || r == '?'
@@ -1437,8 +1441,20 @@ func isCandidateResponseContent(lower string) bool {
 	return false
 }
 
+// IsInterviewerPromptMarker checks if the given text begins with or contains an interviewer prompt question.
+func IsInterviewerPromptMarker(text string) bool {
+	return isInterviewerPromptMarker(strings.ToLower(strings.TrimSpace(text)))
+}
+
 func isInterviewerPromptMarker(lower string) bool {
 	trimmed := strings.TrimSpace(lower)
+	conjunctions := []string{"lalu, ", "lalu ", "kemudian, ", "kemudian ", "selanjutnya, ", "selanjutnya ", "sebelumnya, ", "sebelumnya "}
+	for _, c := range conjunctions {
+		if strings.HasPrefix(trimmed, c) {
+			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, c))
+			break
+		}
+	}
 	prompts := []string{
 		"perkenalkan diri kamu", "perkenalkan diri anda",
 		"gimana tadi perjalanannya", "sudah makan belum",
@@ -1455,7 +1471,7 @@ func isInterviewerPromptMarker(lower string) bool {
 		"apakah anda memiliki keterampilan lain", "apakah kamu memiliki keterampilan lain",
 	}
 	for _, p := range prompts {
-		if strings.HasPrefix(trimmed, p) || strings.Contains(trimmed, ", "+p) || strings.Contains(trimmed, ". "+p) || strings.Contains(trimmed, "? "+p) || strings.Contains(trimmed, "! "+p) {
+		if strings.HasPrefix(trimmed, p) || strings.Contains(trimmed, ". "+p) || strings.Contains(trimmed, "? "+p) || strings.Contains(trimmed, "! "+p) {
 			return true
 		}
 	}
@@ -1510,6 +1526,12 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 		// Guard against overriding high-confidence acoustic diarization evidence
 		hasStrongAcousticAnchor := corrected[i].AcousticConfidence >= 0.70 && corrected[i].AcousticSpeaker != ""
 		if hasStrongAcousticAnchor && !isCandidateIdentityMarker(clean) {
+			if corrected[i].SpeakerLabel == "" {
+				corrected[i].SpeakerLabel = corrected[i].AcousticSpeaker
+				if corrected[i].SpeakerName == "" {
+					corrected[i].SpeakerName = corrected[i].AcousticSpeaker
+				}
+			}
 			continue
 		}
 

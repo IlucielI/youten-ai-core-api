@@ -792,3 +792,58 @@ func TestSplitCompoundDialogue_AlternateSpeakerFromDiarization(t *testing.T) {
 		t.Errorf("expected second turn to be alternate Speaker 2, got %q", split[1].SpeakerLabel)
 	}
 }
+
+func TestEnforceDialogueRoleConsistency_StrongAcousticPreservesAcousticSpeakerWhenEmpty(t *testing.T) {
+	segments := []dtos.SegmentResult{
+		{
+			ID:                 0,
+			SpeakerLabel:       "",
+			AcousticSpeaker:    "Speaker 2",
+			AcousticConfidence: 0.85,
+			Text:               "Pertemuan ini berjalan sangat tertib dan sesuai agenda.",
+		},
+		{
+			ID:           1,
+			SpeakerLabel: "Speaker 0",
+			Text:         "Lingkungan kerja seperti apa yang anda sukai?",
+		},
+		{
+			ID:           2,
+			SpeakerLabel: "Speaker 1",
+			Text:         "Nama saya Budi, saya berdedikasi tinggi untuk perusahaan.",
+		},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+	if corrected[0].SpeakerLabel != "Speaker 2" {
+		t.Errorf("expected empty SpeakerLabel with strong acoustic anchor to be populated with %q, got %q", "Speaker 2", corrected[0].SpeakerLabel)
+	}
+}
+
+func TestIsCandidateIdentityMarker_ExcludesNarrativeJobApplication(t *testing.T) {
+	if !sttalign.IsCandidateIdentityMarker("Nama saya Budi, saya lulusan informatika.") {
+		t.Errorf("expected true for self-introduction")
+	}
+	if sttalign.IsCandidateIdentityMarker("Saya melamar pekerjaan ini karena tertarik dengan reputasi perusahaan.") {
+		t.Errorf("expected false for narrative job application action")
+	}
+}
+
+func TestDetectCompoundDialogueSplitPoints_ShortQuestionStarter(t *testing.T) {
+	points := sttalign.DetectCompoundDialogueSplitPoints("Bisakah kamu? Ya, saya bisa membantu menyelesaikan pekerjaan ini dengan baik.")
+	if len(points) == 0 {
+		t.Errorf("expected split point after short question starter 'Bisakah kamu?'")
+	}
+}
+
+func TestIsInterviewerPromptMarker_ReportedSpeechExcluded(t *testing.T) {
+	if sttalign.IsInterviewerPromptMarker("saya ditanya, apakah anda bersedia bekerja lembur?") {
+		t.Errorf("expected false for reported speech question following comma")
+	}
+	if !sttalign.IsInterviewerPromptMarker("Apakah anda bersedia bekerja lembur?") {
+		t.Errorf("expected true for direct interviewer question")
+	}
+	if !sttalign.IsInterviewerPromptMarker("Lalu, apakah anda bersedia bekerja lembur?") {
+		t.Errorf("expected true for conversational conjunction + interviewer question")
+	}
+}

@@ -148,6 +148,27 @@ func TestTemplates_SummaryPrompts(t *testing.T) {
 	if !strings.Contains(userAngle, "in English:") {
 		t.Errorf("expected 'in English:', got: %s", userAngle)
 	}
+
+	// Visual cues specified
+	cues := []templates.VisualCueView{
+		{
+			TimestampFormatted: "01:15",
+			CueType:            "SLIDE",
+			Title:              "Q4 Architecture",
+			ExtractedText:      "1. PostgreSQL\n2. RabbitMQ",
+			VisualSummary:      "System architecture diagram",
+		},
+	}
+	userCues, err := templates.RenderSummaryUserPromptWithCues("Transcript body", "Indonesian", "", cues)
+	if err != nil {
+		t.Fatalf("unexpected error rendering user prompt with visual cues: %v", err)
+	}
+	if !strings.Contains(userCues, "Visual Presentation & Screen Content") {
+		t.Errorf("expected visual presentation section in prompt, got: %s", userCues)
+	}
+	if !strings.Contains(userCues, "[01:15] (SLIDE) Q4 Architecture:") {
+		t.Errorf("expected formatted visual cue in prompt, got: %s", userCues)
+	}
 }
 
 func TestTemplates_WorkspaceRAGPrompts(t *testing.T) {

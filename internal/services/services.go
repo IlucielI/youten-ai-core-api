@@ -26,6 +26,9 @@ type Service struct {
 	llm            LLMProvider
 	embedding      EmbeddingProvider
 	audioExtractor     AudioExtractor
+	visualExtractor    VisualExtractor
+	visionAnalyzer     VisionAnalyzer
+	localOCR           LocalOCRExtractor
 	mediaLinkExtractor MediaLinkExtractor
 	mediaFetcher       MediaFetcher
 	sseHub             sse.Hub
@@ -161,6 +164,54 @@ func (s *Service) WithAudioExtractor(ext AudioExtractor) *Service {
 // AudioExtractor returns the underlying AudioExtractor adapter.
 func (s *Service) AudioExtractor() AudioExtractor {
 	return s.audioExtractor
+}
+
+// SetVisualExtractor allows injecting or overriding VisualExtractor adapter.
+func (s *Service) SetVisualExtractor(ext VisualExtractor) {
+	s.visualExtractor = ext
+}
+
+// WithVisualExtractor fluently sets the VisualExtractor adapter.
+func (s *Service) WithVisualExtractor(ext VisualExtractor) *Service {
+	s.visualExtractor = ext
+	return s
+}
+
+// VisualExtractor returns the underlying VisualExtractor adapter.
+func (s *Service) VisualExtractor() VisualExtractor {
+	return s.visualExtractor
+}
+
+// SetVisionAnalyzer allows injecting or overriding VisionAnalyzer adapter.
+func (s *Service) SetVisionAnalyzer(va VisionAnalyzer) {
+	s.visionAnalyzer = va
+}
+
+// WithVisionAnalyzer fluently sets the VisionAnalyzer adapter.
+func (s *Service) WithVisionAnalyzer(va VisionAnalyzer) *Service {
+	s.visionAnalyzer = va
+	return s
+}
+
+// VisionAnalyzer returns the underlying VisionAnalyzer adapter.
+func (s *Service) VisionAnalyzer() VisionAnalyzer {
+	return s.visionAnalyzer
+}
+
+// SetLocalOCR allows injecting or overriding local fast-path OCR adapter.
+func (s *Service) SetLocalOCR(ocr LocalOCRExtractor) {
+	s.localOCR = ocr
+}
+
+// WithLocalOCR fluently sets the local fast-path OCR adapter.
+func (s *Service) WithLocalOCR(ocr LocalOCRExtractor) *Service {
+	s.localOCR = ocr
+	return s
+}
+
+// LocalOCR returns the underlying local fast-path OCR adapter.
+func (s *Service) LocalOCR() LocalOCRExtractor {
+	return s.localOCR
 }
 
 // SetMediaLinkExtractor allows injecting or overriding external media link extractor.

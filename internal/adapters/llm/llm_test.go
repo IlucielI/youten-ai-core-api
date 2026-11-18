@@ -3,6 +3,7 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -409,5 +410,81 @@ func TestOmniRouteLLM_StreamExhaustedEmptyResponse(t *testing.T) {
 		t.Errorf("expected 3 attempts before failure, got %d", attempt)
 	}
 }
+
+func TestOmniRouteLLM_AnalyzeKeyframe(t *testing.T) {
+	mockResponse := `{
+		"id": "chatcmpl-vision",
+		"choices": [
+			{
+				"index": 0,
+				"message": {
+					"role": "assistant",
+					"content": "{\"cue_type\": \"SLIDE\", \"title\": \"System Architecture\", \"extracted_text\": \"Backend in Go\", \"visual_summary\": \"Overview diagram\", \"visible_speakers\": [\"Alice\"], \"confidence\": 0.95}"
+				},
+				"finish_reason": "stop"
+			}
+		],
+		"usage": {
+			"prompt_tokens": 150,
+			"completion_tokens": 40,
+			"total_tokens": 190
+		}
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(mockResponse))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{LLMBaseURL: server.URL}
+	adapter := llm.NewOmniRoute(cfg)
+
+	result, err := adapter.AnalyzeKeyframe(context.Background(), []byte("fake-jpeg"), "image/jpeg", "Analyze frame")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.CueType != "SLIDE" {
+		t.Errorf("expected cue_type SLIDE, got %s", result.CueType)
+	}
+	if result.Title != "System Architecture" {
+		t.Errorf("expected title 'System Architecture', got %s", result.Title)
+	}
+	if len(result.VisibleSpeakers) != 1 || result.VisibleSpeakers[0] != "Alice" {
+		t.Errorf("expected speaker Alice, got %v", result.VisibleSpeakers)
+	}
+
+	// Empty bytes error
+	_, err = adapter.AnalyzeKeyframe(context.Background(), nil, "image/jpeg", "")
+	if err == nil {
+		t.Error("expected error on nil bytes, got nil")
+	}
+
+	// Batch test
+	batchResults, err := adapter.AnalyzeKeyframesBatch(context.Background(), []dtos.KeyframeBatchInput{
+		{TimestampSeconds: 15.0, ImageBytes: []byte("frame1"), SequenceOrder: 1},
+	})
+	if err != nil {
+		t.Fatalf("unexpected batch error: %v", err)
+	}
+	if len(batchResults) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(batchResults))
+	}
+	if batchResults[0].SequenceOrder != 1 || batchResults[0].TimestampSeconds != 15.0 {
+		t.Errorf("unexpected batch result metadata: %+v", batchResults[0])
+	}
+
+	// Context cancellation check
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = adapter.AnalyzeKeyframesBatch(cancelCtx, []dtos.KeyframeBatchInput{
+		{TimestampSeconds: 20.0, ImageBytes: []byte("frame2"), SequenceOrder: 2},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got: %v", err)
+	}
+}
+
 
 

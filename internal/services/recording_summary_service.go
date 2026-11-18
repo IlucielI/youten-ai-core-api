@@ -208,7 +208,20 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		customAngle = strings.TrimSpace(*req.CustomAngle)
 	}
 
-	userPrompt, err := templates.RenderSummaryUserPrompt(transcriptBody, targetLang, customAngle)
+	var visualCueViews []templates.VisualCueView
+	if keyframes, err := s.repo.ListVideoKeyframesByRecordingID(ctx, rec.ID); err == nil && len(keyframes) > 0 {
+		for _, kf := range keyframes {
+			visualCueViews = append(visualCueViews, templates.VisualCueView{
+				TimestampFormatted: templates.FormatTimestamp(kf.TimestampSeconds),
+				CueType:            kf.CueType,
+				Title:              kf.Title,
+				ExtractedText:      kf.ExtractedText,
+				VisualSummary:      kf.VisualSummary,
+			})
+		}
+	}
+
+	userPrompt, err := templates.RenderSummaryUserPromptWithCues(transcriptBody, targetLang, customAngle, visualCueViews)
 	if err != nil {
 		userPrompt = fmt.Sprintf("Please summarize the following meeting transcript:\n\n%s", transcriptBody)
 	}

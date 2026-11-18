@@ -72,7 +72,7 @@ func MapStatusToProgress(status string) (stage string, progress int) {
 		return "SUMMARIZING", 75
 	case models.RecordingStatusIndexing:
 		return "INDEXING", 90
-	case models.RecordingStatusCompleted:
+	case models.RecordingStatusCompleted, models.RecordingStatusCompletedAudioOnly:
 		return "COMPLETED", 100
 	case models.RecordingStatusFailed:
 		return "FAILED", 100
@@ -84,7 +84,7 @@ func MapStatusToProgress(status string) (stage string, progress int) {
 // IsTerminalStatus returns true if the status indicates pipeline completion or failure.
 func IsTerminalStatus(status string) bool {
 	s := strings.ToUpper(strings.TrimSpace(status))
-	return s == models.RecordingStatusCompleted || s == models.RecordingStatusFailed
+	return s == models.RecordingStatusCompleted || s == models.RecordingStatusCompletedAudioOnly || s == models.RecordingStatusFailed
 }
 
 // Encode serializes an Event into standard W3C text/event-stream format.

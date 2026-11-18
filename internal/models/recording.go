@@ -16,8 +16,9 @@ const (
 	RecordingStatusTranscribing = "TRANSCRIBING"
 	RecordingStatusSummarizing  = "SUMMARIZING"
 	RecordingStatusIndexing     = "INDEXING"
-	RecordingStatusCompleted    = "COMPLETED"
-	RecordingStatusFailed       = "FAILED"
+	RecordingStatusCompleted          = "COMPLETED"
+	RecordingStatusCompletedAudioOnly = "COMPLETED_AUDIO_ONLY"
+	RecordingStatusFailed             = "FAILED"
 )
 
 // Standard pipeline error codes

@@ -46,6 +46,14 @@ const DefaultTemplateKey = TemplateKeyGeneral
 // DefaultSpeakerLabel is the placeholder label assigned to a speaker before diarization renaming.
 const DefaultSpeakerLabel = "Speaker 0"
 
+// Visual cue types for video keyframes and presentation slides.
+const (
+	VisualCueTypeSlide         = "SLIDE"
+	VisualCueTypeScreenShare   = "SCREEN_SHARE"
+	VisualCueTypeActiveSpeaker = "ACTIVE_SPEAKER"
+	VisualCueTypeDemoAction    = "DEMO_ACTION"
+)
+
 // Chat message sender roles.
 const (
 	ChatRoleUser      = "user"

@@ -389,3 +389,101 @@ func TestProcessVisualExtraction_KeyframeExtractionFails_Degrades(t *testing.T) 
 	}
 }
 
+func TestProcessVisualExtraction_ActiveSpeakerNametagBinding(t *testing.T) {
+	svc, mock, _ := setupVisualTestService(t)
+
+	recID := uuid.New()
+	rec := &models.Recording{
+		BaseModel:        models.BaseModel{ID: recID},
+		OriginalFilename: "zoom_meeting.mp4",
+	}
+	p := queue.RecordingPipelinePayload{
+		RecordingID: recID,
+		SourcePath:  "recordings/test/zoom_meeting.mp4",
+	}
+
+	segments := []models.TranscriptSegment{
+		{StartTime: 0.0, EndTime: 10.0, SpeakerLabel: "Speaker 1"},
+		{StartTime: 12.0, EndTime: 25.0, SpeakerLabel: "Speaker 2"},
+	}
+
+	extractor := &mockVisualExtractor{
+		extractFn: func(ctx context.Context, input io.Reader, filename string, opts dtos.KeyframeExtractionOptions) ([]dtos.ExtractedKeyframe, error) {
+			return []dtos.ExtractedKeyframe{
+				{TimestampSeconds: 5.0, ImageBytes: []byte("active-frame-1"), MimeType: "image/jpeg", SequenceOrder: 1},
+				{TimestampSeconds: 15.0, ImageBytes: []byte("active-frame-2"), MimeType: "image/jpeg", SequenceOrder: 2},
+			}, nil
+		},
+	}
+	svc.SetVisualExtractor(extractor)
+
+	visionAnalyzer := &mockVisionAnalyzer{
+		analyzeFn: func(ctx context.Context, imgBytes []byte, mimeType string, prompt string) (*dtos.KeyframeAnalysisResult, error) {
+			if string(imgBytes) == "active-frame-1" {
+				return &dtos.KeyframeAnalysisResult{
+					CueType:         constants.VisualCueTypeActiveSpeaker,
+					ActiveSpeaker:   "Bayu Anugerah",
+					VisibleSpeakers: []string{"Bayu Anugerah", "Budi Santoso"},
+					Confidence:      0.95,
+				}, nil
+			}
+			return &dtos.KeyframeAnalysisResult{
+				CueType:         constants.VisualCueTypeActiveSpeaker,
+				ActiveSpeaker:   "Budi Santoso",
+				VisibleSpeakers: []string{"Bayu Anugerah", "Budi Santoso"},
+				Confidence:      0.90,
+			}, nil
+		},
+	}
+	svc.SetVisionAnalyzer(visionAnalyzer)
+
+	// DB Expectations:
+	// 1. DeleteVideoKeyframesByRecordingID
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "video_keyframes" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	// 2. SaveVideoKeyframes (batch insert 2 rows)
+	mock.ExpectBegin()
+	rows := sqlmock.NewRows([]string{"id", "metadata", "created_at", "updated_at"}).
+		AddRow(uuid.New(), []byte("{}"), time.Now(), time.Now()).
+		AddRow(uuid.New(), []byte("{}"), time.Now(), time.Now())
+	mock.ExpectQuery(`INSERT INTO "video_keyframes"`).WillReturnRows(rows)
+	mock.ExpectCommit()
+
+	// 3. UpdateTranscriptSpeakerNames transaction
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "transcript_segments"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. UpdateRecordingAnalytics
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.ProcessVisualExtraction(context.Background(), rec, p, segments)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visualSpeakers, ok := rec.AnalyticsData["visual_speakers"].(map[string]string)
+	if !ok {
+		t.Fatalf("expected visual_speakers map in analytics, got: %v", rec.AnalyticsData["visual_speakers"])
+	}
+	if visualSpeakers["Speaker 1"] != "Bayu Anugerah" {
+		t.Errorf("expected Speaker 1 to be 'Bayu Anugerah', got %q", visualSpeakers["Speaker 1"])
+	}
+	if visualSpeakers["Speaker 2"] != "Budi Santoso" {
+		t.Errorf("expected Speaker 2 to be 'Budi Santoso', got %q", visualSpeakers["Speaker 2"])
+	}
+}
+

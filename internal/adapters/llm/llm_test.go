@@ -419,7 +419,7 @@ func TestOmniRouteLLM_AnalyzeKeyframe(t *testing.T) {
 				"index": 0,
 				"message": {
 					"role": "assistant",
-					"content": "{\"cue_type\": \"SLIDE\", \"title\": \"System Architecture\", \"extracted_text\": \"Backend in Go\", \"visual_summary\": \"Overview diagram\", \"visible_speakers\": [\"Alice\"], \"confidence\": 0.95}"
+					"content": "{\"cue_type\": \"ACTIVE_SPEAKER\", \"title\": \"System Architecture\", \"extracted_text\": \"Backend in Go\", \"visual_summary\": \"Overview diagram\", \"visible_speakers\": [\"Alice\"], \"active_speaker\": \"Alice\", \"confidence\": 0.95}"
 				},
 				"finish_reason": "stop"
 			}
@@ -445,8 +445,11 @@ func TestOmniRouteLLM_AnalyzeKeyframe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.CueType != "SLIDE" {
-		t.Errorf("expected cue_type SLIDE, got %s", result.CueType)
+	if result.CueType != "ACTIVE_SPEAKER" {
+		t.Errorf("expected cue_type ACTIVE_SPEAKER, got %s", result.CueType)
+	}
+	if result.ActiveSpeaker != "Alice" {
+		t.Errorf("expected active_speaker Alice, got %s", result.ActiveSpeaker)
 	}
 	if result.Title != "System Architecture" {
 		t.Errorf("expected title 'System Architecture', got %s", result.Title)

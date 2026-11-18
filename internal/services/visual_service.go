@@ -80,6 +80,9 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 	_ = s.repo.DeleteVideoKeyframesByRecordingID(ctx, recording.ID)
 
 	var modelKeyframes []models.VideoKeyframe
+	var validKeyframes []dtos.ExtractedKeyframe
+	var validAnalyses []*dtos.KeyframeAnalysisResult
+
 	for idx, kf := range keyframes {
 		seqOrder := idx + 1
 		destKey := fmt.Sprintf("%s/%s/keyframes/%04d_%.2f.jpg", constants.StoragePrefixRecordings, recording.ID.String(), seqOrder, kf.TimestampSeconds)
@@ -95,6 +98,9 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 		if analysis == nil {
 			continue
 		}
+
+		validKeyframes = append(validKeyframes, kf)
+		validAnalyses = append(validAnalyses, analysis)
 
 		metaJSON, _ := json.Marshal(analysis.Metadata)
 
@@ -121,6 +127,22 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 		log.Printf("[PIPELINE ERROR] recording %s: failed to save video keyframes: %v", recording.ID.String(), err)
 		s.recordVisualDegradation(ctx, recording, fmt.Sprintf("database save failed: %v", err))
 		return nil
+	}
+
+	// Audiovisual Active Speaker Nametag Binding
+	if len(segments) > 0 && len(validKeyframes) > 0 {
+		speakerMap := correlateVisualSpeakerNames(validKeyframes, validAnalyses, segments)
+		if len(speakerMap) > 0 {
+			if count, err := s.repo.UpdateTranscriptSpeakerNames(ctx, recording.ID, speakerMap); err != nil {
+				log.Printf("[PIPELINE WARN] recording %s: failed to update transcript speaker names from visual detection: %v", recording.ID.String(), err)
+			} else {
+				log.Printf("[PIPELINE SUCCESS] recording %s: bound %d speaker names from visual nametags (%d segments updated): %v", recording.ID.String(), len(speakerMap), count, speakerMap)
+				if recording.AnalyticsData == nil {
+					recording.AnalyticsData = make(models.JSONMap)
+				}
+				recording.AnalyticsData["visual_speakers"] = speakerMap
+			}
+		}
 	}
 
 	// Update recording analytics with visual completion details
@@ -253,5 +275,55 @@ func extractFirstLine(text string) string {
 		}
 	}
 	return ""
+}
+
+// correlateVisualSpeakerNames associates meeting video active speaker nametags with transcript speaker labels.
+func correlateVisualSpeakerNames(keyframes []dtos.ExtractedKeyframe, analyses []*dtos.KeyframeAnalysisResult, segments []models.TranscriptSegment) map[string]string {
+	if len(keyframes) == 0 || len(analyses) == 0 || len(segments) == 0 {
+		return nil
+	}
+
+	speakerMap := make(map[string]string)
+	for i, kf := range keyframes {
+		if i >= len(analyses) || analyses[i] == nil {
+			continue
+		}
+		analysis := analyses[i]
+
+		detectedName := strings.TrimSpace(analysis.ActiveSpeaker)
+		if detectedName == "" && len(analysis.VisibleSpeakers) == 1 && analysis.CueType == constants.VisualCueTypeActiveSpeaker {
+			detectedName = strings.TrimSpace(analysis.VisibleSpeakers[0])
+		}
+
+		if detectedName == "" || isGenericSpeakerLabel(detectedName) {
+			continue
+		}
+
+		seg := findSegmentAtTimestamp(kf.TimestampSeconds, segments)
+		if seg == nil {
+			continue
+		}
+
+		label := strings.TrimSpace(seg.SpeakerLabel)
+		if label == "" {
+			label = constants.DefaultSpeakerLabel
+		}
+
+		if _, exists := speakerMap[label]; !exists {
+			speakerMap[label] = detectedName
+		}
+	}
+
+	return speakerMap
+}
+
+// findSegmentAtTimestamp returns the transcript segment that covers the given timestamp.
+func findSegmentAtTimestamp(ts float64, segments []models.TranscriptSegment) *models.TranscriptSegment {
+	for i := range segments {
+		if ts >= segments[i].StartTime && ts <= segments[i].EndTime {
+			return &segments[i]
+		}
+	}
+	return nil
 }
 

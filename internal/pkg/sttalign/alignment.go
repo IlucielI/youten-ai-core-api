@@ -994,10 +994,14 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 
 		if isTerminator {
 			nextIdx := i + termLen
+			hasTrailingSpace := false
 			for nextIdx < len(text) && (text[nextIdx] == ' ' || text[nextIdx] == '\t' || text[nextIdx] == '\n') {
+				hasTrailingSpace = true
 				nextIdx++
 			}
-			if nextIdx < len(text) && nextIdx >= 4 && len(text)-nextIdx >= 4 {
+			// Sentence terminators must be followed by whitespace, or be fullwidth East Asian punctuation.
+			isFullwidth := termLen > 1
+			if (hasTrailingSpace || isFullwidth) && nextIdx < len(text) && nextIdx >= 4 && len(text)-nextIdx >= 4 {
 				rawPoints = append(rawPoints, nextIdx)
 			}
 		}
@@ -1221,8 +1225,11 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 	for i := range corrected {
 		if corrected[i].AcousticConfidence >= 0.70 && corrected[i].AcousticSpeaker != "" {
 			normAc := NormalizeSpeakerLabel(corrected[i].AcousticSpeaker)
-			corrected[i].SpeakerLabel = normAc
-			if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
+			if corrected[i].SpeakerLabel != normAc {
+				corrected[i].SpeakerLabel = normAc
+				// Synchronize SpeakerName so downstream consumers do not retain a mismatched identity
+				corrected[i].SpeakerName = normAc
+			} else if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
 				corrected[i].SpeakerName = normAc
 			}
 		} else if corrected[i].SpeakerLabel == "" && corrected[i].AcousticSpeaker != "" {

@@ -540,6 +540,16 @@ func TestDetectCompoundDialogueSplitPoints(t *testing.T) {
 			text:           "Apa kabar？ Baik, terima kasih.",
 			expectedPoints: []int{13},
 		},
+		{
+			name:           "Sentence followed by whitespace produces split point",
+			text:           "Hello there. How are you doing today?",
+			expectedPoints: []int{13},
+		},
+		{
+			name:           "Period without trailing whitespace must not split",
+			text:           "Hello.World this is one continuous token",
+			expectedPoints: nil,
+		},
 	}
 
 	for _, tc := range cases {
@@ -653,6 +663,29 @@ func TestEnforceDialogueRoleConsistency_CorrectsMislabeledTurns(t *testing.T) {
 	// Segment 5 should be corrected to Speaker 1 (anchored by acoustic confidence 0.90)
 	if corrected[5].SpeakerLabel != "Speaker 1" {
 		t.Errorf("expected segment 5 to be corrected to Speaker 1, got %q", corrected[5].SpeakerLabel)
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_PreventsNameMismatchWhenSpeakerCorrected(t *testing.T) {
+	// Segment has SpeakerLabel "Speaker 1", SpeakerName "Alice", but acoustic evidence strongly shows "Speaker 2"
+	segments := []dtos.SegmentResult{
+		{
+			ID:                 0,
+			SpeakerLabel:       "Speaker 1",
+			SpeakerName:        "Alice",
+			AcousticSpeaker:    "Speaker 2",
+			AcousticConfidence: 0.90,
+			Text:               "Hello there, this is another speaker speaking.",
+		},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+
+	if corrected[0].SpeakerLabel != "Speaker 2" {
+		t.Errorf("expected SpeakerLabel to be updated to Speaker 2, got %q", corrected[0].SpeakerLabel)
+	}
+	if corrected[0].SpeakerName != "Speaker 2" {
+		t.Errorf("expected SpeakerName to be synchronized to Speaker 2 to prevent mismatched Alice, got %q", corrected[0].SpeakerName)
 	}
 }
 

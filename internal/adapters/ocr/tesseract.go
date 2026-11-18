@@ -83,7 +83,7 @@ func (t *TesseractOCR) ExtractText(ctx context.Context, imgBytes []byte) (text s
 			if ctx.Err() != nil {
 				return "", 0.0, false, ctx.Err()
 			}
-			return "", 0.0, false, nil
+			return "", 0.0, false, fmt.Errorf("tesseract execution failed: %w", errFallback)
 		}
 	}
 

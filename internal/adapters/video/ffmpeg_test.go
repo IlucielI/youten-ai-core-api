@@ -35,16 +35,28 @@ func TestFFmpegVisualExtractor_MissingBinary(t *testing.T) {
 
 func TestParseShowinfoTimestamps(t *testing.T) {
 	sampleOutput := `
-[Parsed_showinfo_1 @ 0x55d7f0] n: 0 pts: 12000 pts_time: 12.500000 pos: 1024 fmt: yuv420p
-[Parsed_showinfo_1 @ 0x55d7f0] n: 1 pts: 48000 pts_time: 50.000000 pos: 2048 fmt: yuv420p
-[Parsed_showinfo_1 @ 0x55d7f0] n: 2 pts: 96000 pts_time: 100.25 pos: 4096 fmt: yuv420p
+[Parsed_showinfo_1 @ 0x55d7f0] n: 0 pts: -23 pts_time: -0.023000 pos: 512 fmt: yuv420p
+[Parsed_showinfo_1 @ 0x55d7f0] n: 1 pts: 12000 pts_time: 12.500000 pos: 1024 fmt: yuv420p
+[Parsed_showinfo_1 @ 0x55d7f0] n: 2 pts: 48000 pts_time: 50.000000 pos: 2048 fmt: yuv420p
+[Parsed_showinfo_1 @ 0x55d7f0] n: 3 pts: 96000 pts_time: 100.25 pos: 4096 fmt: yuv420p
 `
 	ts := parseShowinfoTimestamps(sampleOutput)
-	if len(ts) != 3 {
-		t.Fatalf("expected 3 timestamps, got %d", len(ts))
+	if len(ts) != 4 {
+		t.Fatalf("expected 4 timestamps, got %d", len(ts))
 	}
-	if ts[0] != 12.5 || ts[1] != 50.0 || ts[2] != 100.25 {
+	if ts[0] != -0.023 || ts[1] != 12.5 || ts[2] != 50.0 || ts[3] != 100.25 {
 		t.Errorf("unexpected parsed timestamps: %v", ts)
+	}
+}
+
+func TestFFmpegVisualExtractor_ContextCanceled(t *testing.T) {
+	extractor := &FFmpegVisualExtractor{binaryPath: "/bin/sleep"}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := extractor.ExtractKeyframes(ctx, strings.NewReader("dummy video content"), "test.mp4", dtos.KeyframeExtractionOptions{})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }
 

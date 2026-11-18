@@ -52,3 +52,11 @@ func TestTesseractOCR_MissingBinary(t *testing.T) {
 		t.Errorf("expected ErrTesseractNotFound, got %v", err)
 	}
 }
+
+func TestTesseractOCR_ExecutionFailure(t *testing.T) {
+	ocr := &TesseractOCR{binaryPath: "/bin/false"}
+	_, _, _, err := ocr.ExtractText(context.Background(), []byte("fake-bytes"))
+	if err == nil {
+		t.Fatalf("expected error on tesseract execution failure, got nil")
+	}
+}

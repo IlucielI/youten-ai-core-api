@@ -28,7 +28,7 @@ var (
 )
 
 var (
-	ptsTimeRegex = regexp.MustCompile(`pts_time:\s*([0-9.]+)`)
+	ptsTimeRegex = regexp.MustCompile(`pts_time:\s*(-?[0-9]+(?:\.[0-9]+)?)`)
 )
 
 // FFmpegVisualExtractor extracts visual keyframes using local FFmpeg and perceptual hash deduplication.
@@ -111,7 +111,9 @@ func (f *FFmpegVisualExtractor) ExtractKeyframes(ctx context.Context, input io.R
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
-	_ = cmd.Run() // FFmpeg may exit with non-zero if stream ends or EOF, so we inspect generated frames
+	if err := cmd.Run(); err != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	} // FFmpeg may exit with non-zero if stream ends or EOF, so we inspect generated frames when context is active
 
 	// Parse timestamps from showinfo stderr
 	timestamps := parseShowinfoTimestamps(stderrBuf.String())
@@ -148,6 +150,9 @@ func (f *FFmpegVisualExtractor) ExtractKeyframes(ctx context.Context, input io.R
 
 	// Step 2: Sample audio anchor timestamps if any anchor is not covered by scene frames
 	for _, anchorTs := range opts.AudioAnchors {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if anchorTs < 0 {
 			continue
 		}
@@ -165,7 +170,9 @@ func (f *FFmpegVisualExtractor) ExtractKeyframes(ctx context.Context, input io.R
 			"-q:v", "3",
 			anchorFile,
 		)
-		if err := anchorCmd.Run(); err == nil {
+		if err := anchorCmd.Run(); err != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		} else if err == nil {
 			if data, err := os.ReadFile(anchorFile); err == nil && len(data) > 0 {
 				if dh, err := phash.DHashFromBytes(data); err == nil {
 					candidates = append(candidates, dtos.ExtractedKeyframe{

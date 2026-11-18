@@ -1610,9 +1610,15 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	}
 
 	// Pass 3: Post-processing Ghost Speaker Pruning, Canonical Name Assignment, and Role Consistency.
-	// Role consistency only refines ambiguous dialogue turns while strictly preserving high-confidence acoustic diarization (>= 0.70).
 	pruneGhostSpeakers(segments, rosterMap)
-	segments = sttalign.EnforceDialogueRoleConsistency(segments)
+	roleConsistent := sttalign.EnforceDialogueRoleConsistency(segments)
+	for i := range segments {
+		// Strictly preserve high-confidence acoustic diarization evidence (>= 0.70)
+		if segments[i].AcousticConfidence >= 0.70 && segments[i].AcousticSpeaker != "" {
+			continue
+		}
+		segments[i] = roleConsistent[i]
+	}
 	return segments
 }
 

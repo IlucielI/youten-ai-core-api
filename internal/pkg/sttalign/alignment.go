@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"code-base-golang/internal/dtos"
@@ -1021,8 +1022,8 @@ func isGreeting(s string) bool {
 			if len(lower) == len(g) {
 				return true
 			}
-			nextChar := lower[len(g)]
-			if nextChar == ' ' || nextChar == ',' || nextChar == '.' || nextChar == '!' || nextChar == '?' {
+			nextChar := rune(lower[len(g)])
+			if unicode.IsSpace(nextChar) || nextChar == ',' || nextChar == '.' || nextChar == '!' || nextChar == '?' {
 				return true
 			}
 		}
@@ -1304,6 +1305,7 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 			if endTimes[i] <= startTimes[i] {
 				endTimes[i] = startTimes[i] + 0.1
 			}
+			currStart = endTimes[i]
 		} else {
 			pRunes := len([]rune(p))
 			pDur := (float64(pRunes) / float64(totalRunes)) * dur
@@ -1380,6 +1382,7 @@ func isCandidateResponseContent(lower string) bool {
 }
 
 func isInterviewerPromptMarker(lower string) bool {
+	trimmed := strings.TrimSpace(lower)
 	prompts := []string{
 		"perkenalkan diri kamu", "perkenalkan diri anda",
 		"gimana tadi perjalanannya", "sudah makan belum",
@@ -1396,7 +1399,7 @@ func isInterviewerPromptMarker(lower string) bool {
 		"apakah anda memiliki keterampilan lain", "apakah kamu memiliki keterampilan lain",
 	}
 	for _, p := range prompts {
-		if strings.Contains(lower, p) {
+		if strings.HasPrefix(trimmed, p) || strings.Contains(trimmed, ", "+p) || strings.Contains(trimmed, ". "+p) || strings.Contains(trimmed, "? "+p) {
 			return true
 		}
 	}

@@ -505,42 +505,52 @@ func TestIsNonSpeechToken_BracketedMarkers(t *testing.T) {
 
 func TestDetectCompoundDialogueSplitPoints(t *testing.T) {
 	cases := []struct {
-		name          string
-		text          string
-		expectedCount int
+		name           string
+		text           string
+		expectedPoints []int
 	}{
 		{
-			name:          "Question followed by answer",
-			text:          "sudah makan belum? Alhamdulillah sudah Pak",
-			expectedCount: 1,
+			name:           "Question followed by answer",
+			text:           "sudah makan belum? Alhamdulillah sudah Pak",
+			expectedPoints: []int{19},
 		},
 		{
-			name:          "Greeting followed by return greeting",
-			text:          "Selamat siang Pak, ini surat lamaran dan CV saya. Selamat siang saya terima surat lamaran CV-nya.",
-			expectedCount: 1,
+			name:           "Greeting followed by return greeting",
+			text:           "Selamat siang Pak, ini surat lamaran dan CV saya. Selamat siang saya terima surat lamaran CV-nya.",
+			expectedPoints: []int{50},
 		},
 		{
-			name:          "Candidate answer with interjected interviewer question and answer",
-			text:          "Karena sesuai dengan jurusan saya, yaitu akuntansi, saya tertarik melamar di bagian accounting. Lalu, kontribusi apa yang akan kamu lakukan di perusahaan ini? Saya berdedikasi tinggi untuk perusahaan dan saya mampu mengerjakan tugas-tugas akuntansi.",
-			expectedCount: 2,
+			name:           "Candidate answer with interjected interviewer question and answer",
+			text:           "Karena sesuai dengan jurusan saya, yaitu akuntansi, saya tertarik melamar di bagian accounting. Lalu, kontribusi apa yang akan kamu lakukan di perusahaan ini? Saya berdedikasi tinggi untuk perusahaan dan saya mampu mengerjakan tugas-tugas akuntansi.",
+			expectedPoints: []int{96, 159},
 		},
 		{
-			name:          "Meeting rapid exchange",
-			text:          "satu e-wallet. Nah, e-wallet-nya apa? Bebas. Bebas. Oke, nanti kredensial e-wallet-nya itu yang diproduksi itu gimana?",
-			expectedCount: 2,
+			name:           "Meeting rapid exchange",
+			text:           "satu e-wallet. Nah, e-wallet-nya apa? Bebas. Bebas. Oke, nanti kredensial e-wallet-nya itu yang diproduksi itu gimana?",
+			expectedPoints: []int{38, 52},
 		},
 		{
-			name:          "Single speaker question with self clarification",
-			text:          "Berarti ke mana ya? Berarti K224 atau K226 ya?",
-			expectedCount: 0,
+			name:           "Single speaker question with self clarification",
+			text:           "Berarti ke mana ya? Berarti K224 atau K226 ya?",
+			expectedPoints: nil,
+		},
+		{
+			name:           "Question with fullwidth question mark followed by answer",
+			text:           "Apa kabar？ Baik, terima kasih.",
+			expectedPoints: []int{13},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			points := sttalign.DetectCompoundDialogueSplitPoints(tc.text)
-			if len(points) != tc.expectedCount {
-				t.Errorf("expected %d split points, got %d (points: %v)", tc.expectedCount, len(points), points)
+			if len(points) != len(tc.expectedPoints) {
+				t.Fatalf("expected %d split points, got %d (points: %v)", len(tc.expectedPoints), len(points), points)
+			}
+			for i, want := range tc.expectedPoints {
+				if points[i] != want {
+					t.Errorf("split point %d: expected %d, got %d (points: %v)", i, want, points[i], points)
+				}
 			}
 			for _, p := range points {
 				if p <= 0 || p >= len(tc.text) {
@@ -612,7 +622,7 @@ func TestSplitCompoundDialogue_ThreeTurnsInterviewerInterjection(t *testing.T) {
 	}
 }
 
-func TestEnforceDialogueRoleConsistency(t *testing.T) {
+func TestEnforceDialogueRoleConsistency_CorrectsMislabeledTurns(t *testing.T) {
 	// A dialogue where Candidate self-introduces as Putri in segment 2.
 	// But segment 4 (an interviewer question) was mistakenly labeled as Speaker 1 (Putri),
 	// and segment 5 (candidate answer) was mistakenly labeled as Speaker 0.
@@ -694,8 +704,6 @@ func TestEnforceDialogueRoleConsistency_HighAcousticConfidencePreserved(t *testi
 		},
 	}
 
-	// Mistagged initial speaker label to verify acoustic anchor restoration
-	segments[2].SpeakerLabel = "Speaker 1"
 	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
 
 	// Segment 2 must NOT be overridden to Speaker 1 (candidate) because it is anchored by high acoustic confidence
@@ -729,7 +737,7 @@ func TestAlignSegments_CompoundDialoguePreservesSpeakerFallback(t *testing.T) {
 	}
 }
 
-func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence(t *testing.T) {
+func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence_Exclamation(t *testing.T) {
 	// Candidate introduces as Speaker 1, Interviewer speaks as Speaker 0
 	segments := []dtos.SegmentResult{
 		{ID: 0, SpeakerLabel: "Speaker 1", Text: "Perkenalkan nama saya Budi."},
@@ -852,5 +860,17 @@ func TestIsInterviewerPromptMarker_ReportedSpeechExcluded(t *testing.T) {
 	}
 	if !sttalign.IsInterviewerPromptMarker("Lalu, apakah anda bersedia bekerja lembur?") {
 		t.Errorf("expected true for conversational conjunction + interviewer question")
+	}
+}
+
+func TestIsInterviewerPromptMarker_BagaimanaDanKalauBolehTahu(t *testing.T) {
+	if !sttalign.IsInterviewerPromptMarker("Bagaimana pengalaman kerja Anda sebelumnya?") {
+		t.Errorf("expected true for prompt starting with 'Bagaimana'")
+	}
+	if sttalign.IsInterviewerPromptMarker("Saya menjelaskan bagaimana pengalaman kerja saya sebelumnya.") {
+		t.Errorf("expected false when 'bagaimana' is embedded inside narrative statement")
+	}
+	if !sttalign.IsInterviewerPromptMarker("Kalau boleh tahu, pengalaman kerja Anda bagaimana?") {
+		t.Errorf("expected true for prompt starting with 'Kalau boleh tahu'")
 	}
 }

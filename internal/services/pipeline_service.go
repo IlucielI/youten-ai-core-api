@@ -349,7 +349,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors.
 	if len(sttResult.Segments) > 0 && s.llm != nil {
-		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments)
+		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, nil)
 	}
 
 	var modelSegments []models.TranscriptSegment

@@ -1014,21 +1014,31 @@ func isAnswerPrefix(s string) bool {
 
 func isQuestionStarter(s string) bool {
 	lower := strings.ToLower(strings.TrimSpace(s))
-	for _, p := range dialogueQuestionStarters {
-		trimmedP := strings.TrimSpace(p)
-		if lower == trimmedP || strings.HasPrefix(lower, trimmedP+"?") || strings.HasPrefix(lower, p) {
-			return true
+	matchStarter := func(str string) bool {
+		for _, p := range dialogueQuestionStarters {
+			trimmedP := strings.TrimSpace(p)
+			if str == trimmedP ||
+				strings.HasPrefix(str, trimmedP+"?") ||
+				strings.HasPrefix(str, trimmedP+" ") ||
+				strings.HasPrefix(str, trimmedP+",") ||
+				strings.HasPrefix(str, trimmedP+".") ||
+				strings.HasPrefix(str, trimmedP+"!") {
+				return true
+			}
 		}
+		return false
 	}
+
+	if matchStarter(lower) {
+		return true
+	}
+
 	conjunctions := []string{"lalu, ", "lalu ", "kemudian, ", "kemudian ", "selanjutnya, ", "selanjutnya "}
 	for _, c := range conjunctions {
 		if strings.HasPrefix(lower, c) {
-			trimmed := strings.TrimPrefix(lower, c)
-			for _, p := range dialogueQuestionStarters {
-				trimmedP := strings.TrimSpace(p)
-				if trimmed == trimmedP || strings.HasPrefix(trimmed, trimmedP+"?") || strings.HasPrefix(trimmed, p) {
-					return true
-				}
+			trimmed := strings.TrimSpace(strings.TrimPrefix(lower, c))
+			if matchStarter(trimmed) {
+				return true
 			}
 		}
 	}
@@ -1081,8 +1091,14 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 
 	// 1. Scan for question marks followed by answer / response
 	for i := 0; i < len(text); i++ {
-		if text[i] == '?' {
-			nextIdx := i + 1
+		isQMark := text[i] == '?'
+		qLen := 1
+		if !isQMark && strings.HasPrefix(text[i:], "？") {
+			isQMark = true
+			qLen = len("？")
+		}
+		if isQMark {
+			nextIdx := i + qLen
 			for nextIdx < len(text) && (text[nextIdx] == ' ' || text[nextIdx] == '\t' || text[nextIdx] == '\n') {
 				nextIdx++
 			}
@@ -1106,8 +1122,12 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 			}
 			if nextIdx < len(text) {
 				after := text[nextIdx:]
+				qIdx := strings.Index(after, "?")
+				if uIdx := strings.Index(after, "？"); uIdx >= 0 && (qIdx < 0 || uIdx < qIdx) {
+					qIdx = uIdx
+				}
 				if isQuestionStarter(after) {
-					if qOffset := strings.Index(after, "?"); qOffset > 0 && strings.IndexAny(after[:qOffset], ".!\n") < 0 {
+					if qIdx > 0 && strings.IndexAny(after[:qIdx], ".!\n") < 0 {
 						if nextIdx >= 10 && len(text)-nextIdx >= 10 {
 							rawPoints = append(rawPoints, nextIdx)
 						}
@@ -1120,7 +1140,7 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 					if nextIdx >= 10 && len(text)-nextIdx >= 10 {
 						rawPoints = append(rawPoints, nextIdx)
 					}
-				} else if strings.Index(after, "?") > 0 && len(rawPoints) > 0 {
+				} else if qIdx > 0 && len(rawPoints) > 0 {
 					// If a previous split point marked an answer turn, and this sentence asks a new question
 					lastPoint := rawPoints[len(rawPoints)-1]
 					if nextIdx > lastPoint {
@@ -1475,6 +1495,7 @@ func isInterviewerPromptMarker(lower string) bool {
 		"apakah anda bersedia", "apakah kamu bersedia",
 		"rencana anda dalam", "rencana kamu dalam",
 		"apakah anda memiliki keterampilan lain", "apakah kamu memiliki keterampilan lain",
+		"bagaimana ", "kalau boleh tahu",
 	}
 	for _, p := range prompts {
 		if strings.HasPrefix(trimmed, p) || strings.Contains(trimmed, ". "+p) || strings.Contains(trimmed, "? "+p) || strings.Contains(trimmed, "! "+p) {
@@ -1532,9 +1553,11 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 		// Guard against overriding high-confidence acoustic diarization evidence
 		hasStrongAcousticAnchor := corrected[i].AcousticConfidence >= 0.70 && corrected[i].AcousticSpeaker != ""
 		if hasStrongAcousticAnchor && !isCandidateIdentityMarker(clean) {
-			corrected[i].SpeakerLabel = corrected[i].AcousticSpeaker
-			if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
-				corrected[i].SpeakerName = corrected[i].AcousticSpeaker
+			if corrected[i].SpeakerLabel == "" {
+				corrected[i].SpeakerLabel = NormalizeSpeakerLabel(corrected[i].AcousticSpeaker)
+				if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
+					corrected[i].SpeakerName = corrected[i].SpeakerLabel
+				}
 			}
 			continue
 		}

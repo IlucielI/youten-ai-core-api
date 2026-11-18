@@ -846,7 +846,7 @@ func IsAcousticallyAnchored(seg dtos.SegmentResult, proposedSpeaker string) bool
 
 	// Exception: explicit self-introduction or identity declaration
 	lowerText := strings.ToLower(seg.Text)
-	if isSelfIntroOrRoleDeclaration(lowerText) {
+	if strings.Contains(lowerText, "nama saya ") || strings.Contains(lowerText, "saya adalah ") || strings.Contains(lowerText, "perkenalkan nama saya") {
 		return false
 	}
 
@@ -1018,12 +1018,14 @@ func isGreeting(s string) bool {
 }
 
 func isSelfIntroOrRoleDeclaration(lower string) bool {
+	if strings.Contains(lower, "?") {
+		return false
+	}
 	markers := []string{
 		"nama saya ", "saya adalah ", "perkenalkan saya ", "perkenalkan, saya ",
 		"perkenalkan nama saya ", "perkenalkan, nama saya ",
 		"nama ku ", "namaku ", "panggil saja saya ", "panggil saya ",
-		"saya bernama ", "ini surat lamaran ", "surat lamaran dan cv saya",
-		"surat lamaran cv saya", "cv saya", "saya melamar ",
+		"saya bernama ", "saya melamar ",
 	}
 	for _, m := range markers {
 		if strings.Contains(lower, m) {
@@ -1076,7 +1078,7 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 						}
 					}
 				} else if isGreeting(after) {
-					if isGreeting(text) && nextIdx >= 10 && len(text)-nextIdx >= 10 {
+					if nextIdx >= 10 && len(text)-nextIdx >= 10 {
 						rawPoints = append(rawPoints, nextIdx)
 					}
 				} else if strings.Index(after, "?") > 0 && len(rawPoints) > 0 {
@@ -1175,12 +1177,14 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 	speakers := make([]string, len(parts))
 	allSameAcoustic := true
 	var firstAcoustic string
+	hasAcoustic := false
 
 	for i := range parts {
 		acSpk, maxOv, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
 		if maxOv > 0 && acSpk != "" {
 			normAc := NormalizeSpeakerLabel(acSpk)
 			speakers[i] = normAc
+			hasAcoustic = true
 			if firstAcoustic == "" {
 				firstAcoustic = normAc
 			} else if normAc != firstAcoustic {
@@ -1189,13 +1193,17 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 		}
 	}
 
-	if !allSameAcoustic && firstAcoustic != "" {
+	if hasAcoustic && !allSameAcoustic && firstAcoustic != "" {
 		for i := range speakers {
 			if speakers[i] == "" {
 				speakers[i] = normOrig
 			}
 		}
 		return speakers
+	}
+
+	if !hasAcoustic {
+		allSameAcoustic = false
 	}
 
 	currentSpeaker := normOrig
@@ -1226,7 +1234,9 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 				}
 			}
 		}
-		speakers[i] = currentSpeaker
+		if !allSameAcoustic {
+			speakers[i] = currentSpeaker
+		}
 	}
 
 	return speakers
@@ -1313,12 +1323,13 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 }
 
 func isCandidateIdentityMarker(lower string) bool {
+	if strings.Contains(lower, "?") {
+		return false
+	}
 	markers := []string{
 		"perkenalkan nama saya ", "perkenalkan, nama saya ", "nama saya ",
 		"perkenalkan saya ", "saya adalah ", "saya berasal dari ",
-		"surat lamaran dan cv saya", "surat lamaran cv saya", "cv saya",
-		"jurusan saya ", "pengalaman saya ", "kelebihan saya ",
-		"kekurangan saya ", "rumah saya di ", "saya melamar ",
+		"rumah saya di ", "saya melamar ",
 	}
 	for _, m := range markers {
 		if strings.Contains(lower, m) {
@@ -1329,13 +1340,19 @@ func isCandidateIdentityMarker(lower string) bool {
 }
 
 func isCandidateResponseContent(lower string) bool {
+	if strings.Contains(lower, "?") {
+		return false
+	}
 	prefixes := []string{
 		"alhamdulillah lancar", "alhamdulillah sudah", "alhamdulillah, sudah",
 		"saya berdedikasi tinggi", "saya mampu mengerjakan", "saya siap bekerja",
 		"ya, saya bersedia", "ya saya bersedia", "saya harus profesional",
 	}
 	for _, p := range prefixes {
-		if strings.HasPrefix(lower, p) || strings.Contains(lower, p) {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+		if strings.Contains(lower, ". "+p) || strings.Contains(lower, ", "+p) {
 			return true
 		}
 	}
@@ -1351,7 +1368,8 @@ func isInterviewerPromptMarker(lower string) bool {
 		"apa yang anda ketahui tentang perusahaan", "apa yang kamu ketahui tentang perusahaan",
 		"mengapa kamu tertarik", "mengapa anda tertarik",
 		"kontribusi apa yang akan kamu", "kontribusi apa yang akan anda",
-		"lingkungan kerja seperti apa yang anda sukai", "yang kamu sukai",
+		"lingkungan kerja seperti apa yang anda sukai",
+		"lingkungan kerja seperti apa yang kamu sukai",
 		"bisakah anda bekerja", "bisakah kamu bekerja",
 		"apakah anda bersedia", "apakah kamu bersedia",
 		"rencana anda dalam", "rencana kamu dalam",
@@ -1405,6 +1423,12 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 
 	for i := range corrected {
 		clean := strings.ToLower(strings.TrimSpace(corrected[i].Text))
+
+		// Guard against overriding high-confidence acoustic diarization evidence
+		hasStrongAcousticAnchor := corrected[i].AcousticConfidence >= 0.70 && corrected[i].AcousticSpeaker != ""
+		if hasStrongAcousticAnchor && !isCandidateIdentityMarker(clean) {
+			continue
+		}
 
 		if isCandidateIdentityMarker(clean) || isCandidateResponseContent(clean) {
 			if NormalizeSpeakerLabel(corrected[i].SpeakerLabel) != candidateSpeaker {

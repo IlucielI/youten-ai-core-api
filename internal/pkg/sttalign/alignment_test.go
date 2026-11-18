@@ -632,3 +632,67 @@ func TestEnforceDialogueRoleConsistency(t *testing.T) {
 		t.Errorf("expected segment 5 to be corrected to Speaker 1 (Putri), got spk=%q name=%q", corrected[5].SpeakerLabel, corrected[5].SpeakerName)
 	}
 }
+
+func TestDetectCompoundDialogueSplitPoints_GreetingAfterSentence(t *testing.T) {
+	text := "Saya ingin bertanya tentang pekerjaan Anda. Selamat pagi, apa kabar?"
+	pts := sttalign.DetectCompoundDialogueSplitPoints(text)
+	if len(pts) == 0 {
+		t.Fatalf("expected split point before greeting, got none")
+	}
+	// Verify split separates sentence and greeting
+	part1 := strings.TrimSpace(text[:pts[0]])
+	part2 := strings.TrimSpace(text[pts[0]:])
+	if !strings.HasPrefix(part2, "Selamat pagi") {
+		t.Errorf("expected part 2 to start with greeting, got %q (part 1=%q)", part2, part1)
+	}
+}
+
+func TestAssignDialogueTurnSpeakers_ConsistentAcousticPreserved(t *testing.T) {
+	// A compound dialogue where acoustic diarization firmly verified that both parts were spoken by Speaker 0
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          10.0,
+		Text:         "sudah makan belum? Alhamdulillah sudah Pak",
+		SpeakerLabel: "Speaker 0",
+	}
+
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 5.0, SpeakerLabel: "Speaker 0"},
+		{Start: 5.0, End: 10.0, SpeakerLabel: "Speaker 0"},
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, diarized)
+	if len(split) != 2 {
+		t.Fatalf("expected 2 split segments, got %d", len(split))
+	}
+
+	// Because all parts are acoustically attributed to Speaker 0 with acoustic diarization,
+	// the acoustic speaker must be preserved rather than flipped by text heuristic
+	if split[0].SpeakerLabel != "Speaker 0" || split[1].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected both parts to preserve acoustic Speaker 0, got [%s, %s]", split[0].SpeakerLabel, split[1].SpeakerLabel)
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_HighAcousticConfidencePreserved(t *testing.T) {
+	// Candidate introduction establishes Speaker 1 as candidate and Speaker 0 as interviewer
+	segments := []dtos.SegmentResult{
+		{ID: 0, SpeakerLabel: "Speaker 0", Text: "Perkenalkan diri anda secara singkat."},
+		{ID: 1, SpeakerLabel: "Speaker 1", Text: "Perkenalkan nama saya Putri Riskip Alokatimah."},
+		// Segment 2 is an interviewer remark with high acoustic confidence (>= 0.70)
+		{
+			ID:                 2,
+			SpeakerLabel:       "Speaker 0",
+			AcousticSpeaker:    "Speaker 0",
+			AcousticConfidence: 0.95,
+			Text:               "Ya, saya bersedia mendengar penjelasan Anda.", // Contains phrase "ya saya bersedia"
+		},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+
+	// Segment 2 must NOT be overridden to Speaker 1 (candidate) because it is anchored by high acoustic confidence
+	if corrected[2].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected high-confidence acoustic speaker to be preserved as Speaker 0, got %q", corrected[2].SpeakerLabel)
+	}
+}

@@ -177,8 +177,16 @@ func AlignSegments(whisperSegments []dtos.SegmentResult, diarizedSegments []dtos
 				if splitCompoundSegs[i].SpeakerLabel == "" {
 					splitCompoundSegs[i].SpeakerLabel = wSeg.SpeakerLabel
 				}
+				// If word timestamps are available and acoustic diarization exists, refine sub-segment with word alignment
+				if len(splitCompoundSegs[i].Words) > 0 && len(diarizedSegments) > 0 {
+					wordRefined := alignAndSplitByWords(splitCompoundSegs[i], diarizedSegments)
+					if len(wordRefined) > 0 {
+						aligned = append(aligned, wordRefined...)
+						continue
+					}
+				}
+				aligned = append(aligned, splitCompoundSegs[i])
 			}
-			aligned = append(aligned, splitCompoundSegs...)
 			continue
 		}
 
@@ -1022,7 +1030,7 @@ func isGreeting(s string) bool {
 			if len(lower) == len(g) {
 				return true
 			}
-			nextChar := rune(lower[len(g)])
+			nextChar, _ := utf8.DecodeRuneInString(lower[len(g):])
 			if unicode.IsSpace(nextChar) || nextChar == ',' || nextChar == '.' || nextChar == '!' || nextChar == '?' {
 				return true
 			}
@@ -1035,6 +1043,7 @@ func isSelfIntroOrRoleDeclaration(lower string) bool {
 	if strings.Contains(lower, "?") {
 		return false
 	}
+	trimmed := strings.TrimSpace(lower)
 	markers := []string{
 		"nama saya ", "saya adalah ", "perkenalkan saya ", "perkenalkan, saya ",
 		"perkenalkan nama saya ", "perkenalkan, nama saya ",
@@ -1042,7 +1051,7 @@ func isSelfIntroOrRoleDeclaration(lower string) bool {
 		"saya bernama ", "saya melamar ",
 	}
 	for _, m := range markers {
-		if strings.Contains(lower, m) {
+		if strings.HasPrefix(trimmed, m) || strings.Contains(trimmed, ". "+m) || strings.Contains(trimmed, ", "+m) {
 			return true
 		}
 	}
@@ -1328,14 +1337,28 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 			wordsList = partWords[i]
 		}
 
+		bestAcSpk, maxOv, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
+		realAcSpk := ""
+		acConf := 0.50
+		if maxOv > 0 && bestAcSpk != "" {
+			realAcSpk = NormalizeSpeakerLabel(bestAcSpk)
+			dur := endTimes[i] - startTimes[i]
+			if dur > 0 {
+				acConf = maxOv / dur
+				if acConf > 1.0 {
+					acConf = 1.0
+				}
+			}
+		}
+
 		results[i] = dtos.SegmentResult{
 			Start:              startTimes[i],
 			End:                endTimes[i],
 			Text:               p,
 			SpeakerLabel:       spk,
 			SpeakerName:        spk,
-			AcousticSpeaker:    spk,
-			AcousticConfidence: 0.50,
+			AcousticSpeaker:    realAcSpk,
+			AcousticConfidence: acConf,
 			Words:              wordsList,
 		}
 	}

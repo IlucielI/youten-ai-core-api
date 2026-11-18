@@ -333,9 +333,18 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 	if len(sttResult.DiarizedSegments) > 0 {
 		sttResult.Segments = sttalign.AlignSegments(sttResult.Segments, sttResult.DiarizedSegments)
 	} else if len(sttResult.Segments) > 0 {
-		// Even if separate acoustic diarized segments are not present (single STT model),
-		// perform compound dialogue turn splitting directly on the STT segments
-		sttResult.Segments = sttalign.AlignSegments(sttResult.Segments, sttResult.Segments)
+		// Single-model STT mode: no separate acoustic diarizer.
+		// Perform compound dialogue turn splitting directly without fabricating false acoustic overlap.
+		var splitSegs []dtos.SegmentResult
+		for _, seg := range sttResult.Segments {
+			turns := sttalign.SplitCompoundDialogue(seg, nil)
+			if len(turns) > 1 {
+				splitSegs = append(splitSegs, turns...)
+			} else {
+				splitSegs = append(splitSegs, seg)
+			}
+		}
+		sttResult.Segments = splitSegs
 	}
 
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors.

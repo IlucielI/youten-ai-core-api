@@ -723,17 +723,23 @@ func TestAlignSegments_CompoundDialoguePreservesSpeakerFallback(t *testing.T) {
 }
 
 func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence(t *testing.T) {
+	// Candidate introduces as Speaker 1, Interviewer speaks as Speaker 0
 	segments := []dtos.SegmentResult{
-		{ID: 0, SpeakerLabel: "Speaker 0", Text: "Perkenalkan nama saya Budi."},
-		{ID: 1, SpeakerLabel: "Speaker 1", Text: "Lingkungan kerja seperti apa yang anda sukai?"},
+		{ID: 0, SpeakerLabel: "Speaker 1", Text: "Perkenalkan nama saya Budi."},
+		{ID: 1, SpeakerLabel: "Speaker 0", Text: "Lingkungan kerja seperti apa yang anda sukai?"},
+		// Segment 2: candidate response mistakenly attributed to Interviewer (Speaker 0)
+		{ID: 2, SpeakerLabel: "Speaker 0", Text: "Saya berdedikasi tinggi untuk perusahaan."},
 	}
 
 	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
 
-	if corrected[0].SpeakerLabel != "Speaker 0" {
-		t.Errorf("expected segment 0 to be Candidate Speaker 0, got %q", corrected[0].SpeakerLabel)
+	if corrected[0].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 0 to be Candidate Speaker 1, got %q", corrected[0].SpeakerLabel)
 	}
-	if corrected[1].SpeakerLabel != "Speaker 1" {
-		t.Errorf("expected segment 1 to be Interviewer Speaker 1, got %q", corrected[1].SpeakerLabel)
+	if corrected[1].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 1 to be Interviewer Speaker 0, got %q", corrected[1].SpeakerLabel)
+	}
+	if corrected[2].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 2 to be corrected to Candidate Speaker 1, got %q", corrected[2].SpeakerLabel)
 	}
 }

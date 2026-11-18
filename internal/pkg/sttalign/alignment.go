@@ -1002,11 +1002,22 @@ func BuildSegmentsFromWords(words []dtos.WordResult, maxPauseSeconds float64, ma
 	return segments
 }
 
+// IsAnswerPrefix checks if the given text begins with an affirmative or direct answer prefix.
+func IsAnswerPrefix(text string) bool {
+	return isAnswerPrefix(text)
+}
+
 func isAnswerPrefix(s string) bool {
 	lower := strings.ToLower(strings.TrimSpace(s))
 	for _, p := range dialogueAnswerPrefixes {
-		if lower == p || strings.HasPrefix(lower, p+" ") || strings.HasPrefix(lower, p+",") || strings.HasPrefix(lower, p+".") || strings.HasPrefix(lower, p+"!") {
+		if lower == p {
 			return true
+		}
+		if strings.HasPrefix(lower, p) && len(lower) > len(p) {
+			nextRune, _ := utf8.DecodeRuneInString(lower[len(p):])
+			if unicode.IsSpace(nextRune) || strings.ContainsRune(",.!", nextRune) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1017,13 +1028,14 @@ func isQuestionStarter(s string) bool {
 	matchStarter := func(str string) bool {
 		for _, p := range dialogueQuestionStarters {
 			trimmedP := strings.TrimSpace(p)
-			if str == trimmedP ||
-				strings.HasPrefix(str, trimmedP+"?") ||
-				strings.HasPrefix(str, trimmedP+" ") ||
-				strings.HasPrefix(str, trimmedP+",") ||
-				strings.HasPrefix(str, trimmedP+".") ||
-				strings.HasPrefix(str, trimmedP+"!") {
+			if str == trimmedP {
 				return true
+			}
+			if strings.HasPrefix(str, trimmedP) && len(str) > len(trimmedP) {
+				nextRune, _ := utf8.DecodeRuneInString(str[len(trimmedP):])
+				if unicode.IsSpace(nextRune) || strings.ContainsRune("?,.!", nextRune) || nextRune == '？' {
+					return true
+				}
 			}
 		}
 		return false
@@ -1437,8 +1449,12 @@ func isCandidateIdentityMarker(lower string) bool {
 		s = strings.TrimLeft(s, `",':;`)
 		s = strings.TrimSpace(s)
 		for _, m := range markers {
-			if strings.HasPrefix(s, m) {
-				return true
+			if idx := strings.Index(s, m); idx >= 0 {
+				prefix := strings.TrimSpace(s[:idx])
+				trimmedPrefix := strings.TrimRight(prefix, ",:;- ")
+				if prefix == "" || strings.ContainsAny(prefix, ",:;-") || isGreeting(trimmedPrefix) {
+					return true
+				}
 			}
 		}
 	}

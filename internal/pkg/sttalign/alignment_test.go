@@ -777,8 +777,14 @@ func TestSplitCompoundDialogue_QuestionStarterWithoutQuestionMark(t *testing.T) 
 	if split[0].SpeakerLabel != "Speaker 0" {
 		t.Errorf("expected first turn to be questioner Speaker 0, got %q", split[0].SpeakerLabel)
 	}
+	if split[0].Text != "gimana tadi perjalanannya." {
+		t.Errorf("expected first turn text 'gimana tadi perjalanannya.', got %q", split[0].Text)
+	}
 	if split[1].SpeakerLabel != "Speaker 1" {
 		t.Errorf("expected second turn to alternate to respondent Speaker 1, got %q", split[1].SpeakerLabel)
+	}
+	if split[1].Text != "alhamdulillah lancar pak" {
+		t.Errorf("expected second turn text 'alhamdulillah lancar pak', got %q", split[1].Text)
 	}
 }
 
@@ -803,8 +809,14 @@ func TestSplitCompoundDialogue_AlternateSpeakerFromDiarization(t *testing.T) {
 	if split[0].SpeakerLabel != "Speaker 0" {
 		t.Errorf("expected first turn to be Speaker 0, got %q", split[0].SpeakerLabel)
 	}
+	if split[0].Text != "apakah anda bersedia?" {
+		t.Errorf("expected first turn text 'apakah anda bersedia?', got %q", split[0].Text)
+	}
 	if split[1].SpeakerLabel != "Speaker 2" {
 		t.Errorf("expected second turn to be alternate Speaker 2, got %q", split[1].SpeakerLabel)
+	}
+	if split[1].Text != "Ya saya bersedia" {
+		t.Errorf("expected second turn text 'Ya saya bersedia', got %q", split[1].Text)
 	}
 }
 
@@ -872,5 +884,35 @@ func TestIsInterviewerPromptMarker_BagaimanaDanKalauBolehTahu(t *testing.T) {
 	}
 	if !sttalign.IsInterviewerPromptMarker("Kalau boleh tahu, pengalaman kerja Anda bagaimana?") {
 		t.Errorf("expected true for prompt starting with 'Kalau boleh tahu'")
+	}
+}
+
+func TestIsAnswerPrefix_UnicodeAndWhitespace(t *testing.T) {
+	if !sttalign.IsAnswerPrefix("Ya, saya bersedia") {
+		t.Errorf("expected true for 'Ya, saya bersedia'")
+	}
+	if !sttalign.IsAnswerPrefix("Ya\nSaya bersedia") {
+		t.Errorf("expected true for 'Ya\\nSaya bersedia'")
+	}
+	if !sttalign.IsAnswerPrefix("Ya\tSaya bersedia") {
+		t.Errorf("expected true for 'Ya\\tSaya bersedia'")
+	}
+	if !sttalign.IsAnswerPrefix("Baik. Saya paham") {
+		t.Errorf("expected true for 'Baik. Saya paham'")
+	}
+	if sttalign.IsAnswerPrefix("Yakin") {
+		t.Errorf("expected false for 'Yakin' (not a standalone prefix)")
+	}
+}
+
+func TestIsCandidateIdentityMarker_GreetingPrefix(t *testing.T) {
+	if !sttalign.IsCandidateIdentityMarker("Selamat pagi, nama saya Budi.") {
+		t.Errorf("expected true for 'Selamat pagi, nama saya Budi.'")
+	}
+	if !sttalign.IsCandidateIdentityMarker("Halo, perkenalkan nama saya Andi.") {
+		t.Errorf("expected true for 'Halo, perkenalkan nama saya Andi.'")
+	}
+	if sttalign.IsCandidateIdentityMarker("Saya tahu nama saya bagus.") {
+		t.Errorf("expected false for 'Saya tahu nama saya bagus.'")
 	}
 }

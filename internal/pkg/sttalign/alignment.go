@@ -1352,7 +1352,13 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 		endTimes[len(endTimes)-1] = wSeg.End
 	}
 
-	assignedSpeakers := assignDialogueTurnSpeakers(parts, wSeg.SpeakerLabel, diarizedSegments, startTimes, endTimes)
+	relevantDiarizedSegments := make([]dtos.SegmentResult, 0, len(diarizedSegments))
+	for _, seg := range diarizedSegments {
+		if seg.End > wSeg.Start && seg.Start < wSeg.End {
+			relevantDiarizedSegments = append(relevantDiarizedSegments, seg)
+		}
+	}
+	assignedSpeakers := assignDialogueTurnSpeakers(parts, wSeg.SpeakerLabel, relevantDiarizedSegments, startTimes, endTimes)
 
 	results := make([]dtos.SegmentResult, len(parts))
 	for i, p := range parts {
@@ -1526,11 +1532,9 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 		// Guard against overriding high-confidence acoustic diarization evidence
 		hasStrongAcousticAnchor := corrected[i].AcousticConfidence >= 0.70 && corrected[i].AcousticSpeaker != ""
 		if hasStrongAcousticAnchor && !isCandidateIdentityMarker(clean) {
-			if corrected[i].SpeakerLabel == "" {
-				corrected[i].SpeakerLabel = corrected[i].AcousticSpeaker
-				if corrected[i].SpeakerName == "" {
-					corrected[i].SpeakerName = corrected[i].AcousticSpeaker
-				}
+			corrected[i].SpeakerLabel = corrected[i].AcousticSpeaker
+			if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
+				corrected[i].SpeakerName = corrected[i].AcousticSpeaker
 			}
 			continue
 		}

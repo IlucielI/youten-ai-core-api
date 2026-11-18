@@ -542,6 +542,11 @@ func TestDetectCompoundDialogueSplitPoints(t *testing.T) {
 			if len(points) != tc.expectedCount {
 				t.Errorf("expected %d split points, got %d (points: %v)", tc.expectedCount, len(points), points)
 			}
+			for _, p := range points {
+				if p <= 0 || p >= len(tc.text) {
+					t.Errorf("split point %d is outside valid boundary [1, %d)", p, len(tc.text))
+				}
+			}
 		})
 	}
 }
@@ -689,6 +694,8 @@ func TestEnforceDialogueRoleConsistency_HighAcousticConfidencePreserved(t *testi
 		},
 	}
 
+	// Mistagged initial speaker label to verify acoustic anchor restoration
+	segments[2].SpeakerLabel = "Speaker 1"
 	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
 
 	// Segment 2 must NOT be overridden to Speaker 1 (candidate) because it is anchored by high acoustic confidence

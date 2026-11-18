@@ -433,6 +433,68 @@ func TestService_HandleGoogleMeetWebhook(t *testing.T) {
 			t.Errorf("unfulfilled mock expectations: %v", err)
 		}
 	})
+
+	t.Run("completed with participants metadata", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		sessID := uuid.New()
+		recID := uuid.New()
+		audioURL := "s3://recordings/meet-with-participants.wav"
+		durationSec := 180
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "bot_sessions" WHERE external_session_id = $1 AND "bot_sessions"."deleted_at" IS NULL ORDER BY "bot_sessions"."id" LIMIT $2`)).
+			WithArgs("meet-part-1", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "external_session_id"}).AddRow(sessID, recID, "meet-part-1"))
+
+		// Update bot session status
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "bot_sessions" SET "ended_at"=$1,"status"=$2,"updated_at"=$3 WHERE id = $4`)).
+			WithArgs(sqlmock.AnyArg(), constants.BotSessionStatusCompleted, sqlmock.AnyArg(), sessID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// FindRecordingByID for metadata update
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "analytics_data"}).AddRow(recID, []byte("{}")))
+
+		// UpdateRecordingAnalytics
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "analytics_data"=$1,"updated_at"=$2 WHERE id = $3 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// Update recording audio url
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "audio_url"=$1,"duration_seconds"=$2,"updated_at"=$3 WHERE id = $4 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(audioURL, float64(durationSec), sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		// Update recording status to TRANSCRIBING
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "status"=$1,"updated_at"=$2 WHERE id = $3 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(models.RecordingStatusTranscribing, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.HandleGoogleMeetWebhook(ctx, dtos.GoogleMeetWebhookRequest{
+			ExternalSessionID: "meet-part-1",
+			Event:             "completed",
+			AudioURL:          &audioURL,
+			DurationSeconds:   &durationSec,
+			Participants: []dtos.MeetingParticipant{
+				{Name: "Bayu Anugerah", Email: "bayu@example.com"},
+				{Name: "Budi Santoso", Email: "budi@example.com"},
+			},
+		}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled mock expectations: %v", err)
+		}
+	})
 }
 
 func TestService_HandleMSTeamsWebhook(t *testing.T) {

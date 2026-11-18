@@ -89,3 +89,37 @@ func TestCorrelateVisualSpeakerNames_EmptyInputs(t *testing.T) {
 		t.Errorf("expected nil for empty inputs, got %v", res)
 	}
 }
+
+func TestExtractExternalRosterFromAnalytics(t *testing.T) {
+	t.Run("nil analytics returns nil", func(t *testing.T) {
+		if res := extractExternalRosterFromAnalytics(nil); res != nil {
+			t.Errorf("expected nil, got: %v", res)
+		}
+	})
+
+	t.Run("extracts participants and visual speakers deduplicated", func(t *testing.T) {
+		analytics := models.JSONMap{
+			"meeting_participants": []map[string]interface{}{
+				{"name": "Bayu Anugerah", "email": "bayu@example.com"},
+				{"name": "Budi Santoso", "email": "budi@example.com"},
+				{"name": "Speaker 1"}, // generic placeholder, should be ignored
+			},
+			"visual_speakers": map[string]string{
+				"Speaker 0": "Bayu Anugerah", // duplicate, should be skipped
+				"Speaker 2": "Citra Kirana",
+			},
+		}
+
+		names := extractExternalRosterFromAnalytics(analytics)
+		if len(names) != 3 {
+			t.Fatalf("expected 3 unique real names, got %d: %v", len(names), names)
+		}
+
+		expected := map[string]bool{"Bayu Anugerah": true, "Budi Santoso": true, "Citra Kirana": true}
+		for _, n := range names {
+			if !expected[n] {
+				t.Errorf("unexpected name extracted: %q", n)
+			}
+		}
+	})
+}

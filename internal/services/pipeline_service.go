@@ -349,7 +349,7 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 
 	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors.
 	if len(sttResult.Segments) > 0 && s.llm != nil {
-		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, nil)
+		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, nil, recording.AnalyticsData)
 	}
 
 	var modelSegments []models.TranscriptSegment
@@ -1460,6 +1460,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 	var rawRef string
 	var diarizedList []dtos.SegmentResult
+	var externalRoster []string
 
 	for _, arg := range extra {
 		switch v := arg.(type) {
@@ -1467,6 +1468,10 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			rawRef = strings.TrimSpace(v)
 		case []dtos.SegmentResult:
 			diarizedList = v
+		case models.JSONMap:
+			externalRoster = extractExternalRosterFromAnalytics(v)
+		case map[string]interface{}:
+			externalRoster = extractExternalRosterFromAnalytics(models.JSONMap(v))
 		}
 	}
 
@@ -1484,6 +1489,21 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	rosterMap := make(map[string]dtos.SpeakerRosterItem)
 	for _, r := range rosterList {
 		rosterMap[r.Label] = r
+	}
+
+	// Pre-seed roster with ground-truth meeting participants (Google Meet, Zoom, MS Teams)
+	for idx, name := range externalRoster {
+		lbl := fmt.Sprintf("Speaker %d", idx)
+		if existing, exists := rosterMap[lbl]; exists {
+			existing.Name = name
+			rosterMap[lbl] = existing
+		} else {
+			rosterMap[lbl] = dtos.SpeakerRosterItem{
+				Label: lbl,
+				Name:  name,
+				Role:  "Participant",
+			}
+		}
 	}
 
 	systemPrompt, err := templates.DefaultDiarizeSystemPrompt()
@@ -1706,6 +1726,50 @@ func isGenericSpeakerLabel(name string) bool {
 		return true
 	}
 	return strings.HasPrefix(trimmed, "speaker") || strings.HasPrefix(trimmed, "pembicara") || trimmed == "unknown"
+}
+
+// extractExternalRosterFromAnalytics extracts pre-identified meeting participants from bot webhooks or visual nametags.
+func extractExternalRosterFromAnalytics(analytics models.JSONMap) []string {
+	if analytics == nil {
+		return nil
+	}
+
+	var names []string
+	seen := make(map[string]bool)
+
+	// 1. Check meeting_participants (from Google Meet, Zoom, MS Teams bot webhooks)
+	if rawPart, ok := analytics["meeting_participants"]; ok {
+		if partBytes, err := json.Marshal(rawPart); err == nil {
+			var participants []dtos.MeetingParticipant
+			if err := json.Unmarshal(partBytes, &participants); err == nil {
+				for _, p := range participants {
+					trimmed := strings.TrimSpace(p.Name)
+					if trimmed != "" && !seen[trimmed] && !isGenericSpeakerLabel(trimmed) {
+						names = append(names, trimmed)
+						seen[trimmed] = true
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Check visual_speakers (from video nametag extraction)
+	if rawVis, ok := analytics["visual_speakers"]; ok {
+		if visBytes, err := json.Marshal(rawVis); err == nil {
+			var visMap map[string]string
+			if err := json.Unmarshal(visBytes, &visMap); err == nil {
+				for _, name := range visMap {
+					trimmed := strings.TrimSpace(name)
+					if trimmed != "" && !seen[trimmed] && !isGenericSpeakerLabel(trimmed) {
+						names = append(names, trimmed)
+						seen[trimmed] = true
+					}
+				}
+			}
+		}
+	}
+
+	return names
 }
 
 // mergeConsecutiveSegments combines consecutive segments spoken by the same speaker

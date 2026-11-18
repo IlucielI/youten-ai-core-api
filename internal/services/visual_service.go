@@ -241,14 +241,37 @@ func isVideoMedia(path, filename string) bool {
 	}
 }
 
-// extractObjectiveSegmentAnchors gathers timestamp anchors from segment boundaries without hardcoded language dictionaries.
+// extractObjectiveSegmentAnchors gathers timestamp anchors from segment boundaries and speaker turns
+// without hardcoded language dictionaries. It targets speech midpoints where meeting video UI
+// active speaker indicators (green/blue/purple borders) are fully rendered and stable.
 func extractObjectiveSegmentAnchors(segments []models.TranscriptSegment) []float64 {
 	if len(segments) == 0 {
 		return nil
 	}
+
 	var anchors []float64
+	speakerSampleCount := make(map[string]int)
+
 	for i, seg := range segments {
-		// Include start times for segments where acoustic speaker changes or speech pause >= 2.0s
+		duration := seg.EndTime - seg.StartTime
+		// Midpoint sample timestamp during active utterance (stable tile highlight)
+		sampleTs := seg.StartTime + (duration / 2.0)
+		if duration >= 2.0 {
+			sampleTs = seg.StartTime + 1.0
+		}
+
+		label := strings.TrimSpace(seg.SpeakerLabel)
+		if label == "" {
+			label = constants.DefaultSpeakerLabel
+		}
+
+		// Ensure up to 2 dedicated speech samples per speaker to capture active nametags
+		if speakerSampleCount[label] < 2 && duration >= 0.8 {
+			anchors = append(anchors, sampleTs)
+			speakerSampleCount[label]++
+		}
+
+		// Also sample scene boundaries or long speech pauses (>= 2.0s)
 		if i == 0 {
 			anchors = append(anchors, seg.StartTime)
 			continue
@@ -258,6 +281,7 @@ func extractObjectiveSegmentAnchors(segments []models.TranscriptSegment) []float
 			anchors = append(anchors, seg.StartTime)
 		}
 	}
+
 	return anchors
 }
 

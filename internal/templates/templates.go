@@ -67,6 +67,16 @@ type SummaryUserData struct {
 	Language       string
 	TranscriptBody string
 	CustomAngle    string
+	VisualCues     []VisualCueView
+}
+
+// VisualCueView represents a presentation slide or screen cue formatted for prompt ingestion.
+type VisualCueView struct {
+	TimestampFormatted string
+	CueType            string
+	Title              string
+	ExtractedText      string
+	VisualSummary      string
 }
 
 // FormatTimestamp converts seconds into a human-readable [MM:SS] or [HH:MM:SS] string.
@@ -153,11 +163,16 @@ func RenderSummaryUserPrompt(transcriptBody string, targetLanguage string, custo
 	if len(customAngle) > 0 {
 		angle = strings.TrimSpace(customAngle[0])
 	}
+	return RenderSummaryUserPromptWithCues(transcriptBody, targetLanguage, angle, nil)
+}
 
+// RenderSummaryUserPromptWithCues renders the user prompt containing transcript body and timestamped visual cues.
+func RenderSummaryUserPromptWithCues(transcriptBody string, targetLanguage string, customAngle string, cues []VisualCueView) (string, error) {
 	data := SummaryUserData{
 		Language:       strings.TrimSpace(targetLanguage),
 		TranscriptBody: strings.TrimSpace(transcriptBody),
-		CustomAngle:    angle,
+		CustomAngle:    strings.TrimSpace(customAngle),
+		VisualCues:     cues,
 	}
 	var buf bytes.Buffer
 	if err := parsedTemplates.ExecuteTemplate(&buf, "summary_user.tmpl", data); err != nil {

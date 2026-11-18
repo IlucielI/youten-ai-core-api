@@ -9,3 +9,10 @@ Focus Angle: {{.CustomAngle}}
 {{- end}}
 
 {{.TranscriptBody}}
+{{- if .VisualCues}}
+
+Visual Presentation & Screen Content (Timestamped):
+{{- range .VisualCues}}
+- [{{.TimestampFormatted}}] ({{.CueType}}) {{if .Title}}{{.Title}}: {{end}}{{if .ExtractedText}}{{.ExtractedText}} {{end}}{{if .VisualSummary}}({{.VisualSummary}}){{end}}
+{{- end}}
+{{- end}}

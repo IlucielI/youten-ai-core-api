@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,8 +58,18 @@ func NewOmniRoute(cfg config.Config, customClient ...*http.Client) *OmniRouteLLM
 }
 
 type openAIChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
+}
+
+type openAIMessageContentPart struct {
+	Type     string          `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	ImageURL *openAIImageURL `json:"image_url,omitempty"`
+}
+
+type openAIImageURL struct {
+	URL string `json:"url"`
 }
 
 type openAIResponseFormat struct {
@@ -628,5 +639,115 @@ func parseSSEChatResponse(respBytes []byte) (*openAIChatResponse, error) {
 	return chatResp, nil
 }
 
-// Ensure OmniRouteLLM satisfies services.LLMProvider at compile time.
-var _ services.LLMProvider = (*OmniRouteLLM)(nil)
+// AnalyzeKeyframe extracts structured visual information from a keyframe image.
+func (o *OmniRouteLLM) AnalyzeKeyframe(ctx context.Context, imgBytes []byte, mimeType string, prompt string) (*dtos.KeyframeAnalysisResult, error) {
+	if len(imgBytes) == 0 {
+		return nil, errors.New("empty image bytes for keyframe analysis")
+	}
+	if mimeType == "" {
+		mimeType = "image/jpeg"
+	}
+	dataURI := fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(imgBytes))
+
+	if strings.TrimSpace(prompt) == "" {
+		prompt = "Analyze this keyframe image extracted from a meeting or presentation video. Identify if it is a presentation slide, screen sharing demo, or camera shot. Extract all visible text, slide title/header, topic, bullet points, and speaker names if visible in video tiles."
+	}
+
+	systemPrompt := `You are an expert multimodal visual intelligence assistant.
+Analyze the provided video keyframe image carefully.
+Extract:
+1. cue_type: Exactly one of "SLIDE", "SCREEN_SHARE", "ACTIVE_SPEAKER", "DEMO_ACTION".
+2. title: The title, heading, or topic shown on the screen (or empty string if none).
+3. extracted_text: Full text, bullet points, code, or metrics legible on the slide/screen.
+4. visual_summary: A concise 1-2 sentence description of diagrams, charts, UI actions, or layout.
+5. visible_speakers: Any person/speaker names visible on screen (e.g. from Zoom/Teams/Meet video tiles).
+6. confidence: A float between 0.0 and 1.0 indicating clarity and confidence.
+
+Respond ONLY with valid JSON strictly conforming to this schema:
+{
+  "cue_type": "SLIDE",
+  "title": "Title here",
+  "extracted_text": "Text here",
+  "visual_summary": "Summary here",
+  "visible_speakers": [],
+  "confidence": 0.95
+}`
+
+	parts := []openAIMessageContentPart{
+		{Type: "text", Text: prompt},
+		{Type: "image_url", ImageURL: &openAIImageURL{URL: dataURI}},
+	}
+
+	messages := []openAIChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: parts},
+	}
+
+	temp := 0.1
+	reqPayload := openAIChatRequest{
+		Model:          o.model,
+		Messages:       messages,
+		Temperature:    &temp,
+		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
+	}
+
+	rawResp, err := o.executeChatRequest(ctx, reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("vision analysis request failed: %w", err)
+	}
+
+	if len(rawResp.Choices) == 0 {
+		return nil, fmt.Errorf("llm returned no choices for vision analysis")
+	}
+
+	cleanedJSON := jsonutil.CleanMarkdownJSON(rawResp.Choices[0].Message.Content)
+	var result dtos.KeyframeAnalysisResult
+	if err := json.Unmarshal([]byte(cleanedJSON), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse vision analysis JSON: %w", err)
+	}
+
+	if result.CueType == "" {
+		result.CueType = "SLIDE"
+	}
+	if result.Confidence <= 0 {
+		result.Confidence = 0.85
+	}
+
+	return &result, nil
+}
+
+// AnalyzeKeyframesBatch processes multiple keyframes sequentially or concurrently.
+func (o *OmniRouteLLM) AnalyzeKeyframesBatch(ctx context.Context, frames []dtos.KeyframeBatchInput) ([]dtos.KeyframeAnalysisResult, error) {
+	if len(frames) == 0 {
+		return nil, nil
+	}
+
+	results := make([]dtos.KeyframeAnalysisResult, 0, len(frames))
+	for _, f := range frames {
+		res, err := o.AnalyzeKeyframe(ctx, f.ImageBytes, f.MimeType, "")
+		if err != nil {
+			// Non-blocking error per frame: return low confidence placeholder rather than failing whole batch
+			results = append(results, dtos.KeyframeAnalysisResult{
+				SequenceOrder:    f.SequenceOrder,
+				TimestampSeconds: f.TimestampSeconds,
+				CueType:          "SLIDE",
+				Title:            "",
+				ExtractedText:    "",
+				VisualSummary:    "Visual frame analysis unavailable",
+				Confidence:       0.10,
+			})
+			continue
+		}
+		res.SequenceOrder = f.SequenceOrder
+		res.TimestampSeconds = f.TimestampSeconds
+		results = append(results, *res)
+	}
+
+	return results, nil
+}
+
+// Ensure OmniRouteLLM satisfies services.LLMProvider and services.VisionAnalyzer at compile time.
+var (
+	_ services.LLMProvider    = (*OmniRouteLLM)(nil)
+	_ services.VisionAnalyzer = (*OmniRouteLLM)(nil)
+)

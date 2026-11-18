@@ -12,6 +12,8 @@ type MockLLM struct {
 	GenerateStructuredFunc   func(ctx context.Context, systemPrompt string, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error)
 	GenerateChatResponseFunc func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error)
 	StreamChatResponseFunc   func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error)
+	AnalyzeKeyframeFunc      func(ctx context.Context, imgBytes []byte, mimeType string, prompt string) (*dtos.KeyframeAnalysisResult, error)
+	AnalyzeKeyframesBatchFunc func(ctx context.Context, frames []dtos.KeyframeBatchInput) ([]dtos.KeyframeAnalysisResult, error)
 }
 
 // NewMock creates a new MockLLM instance.
@@ -78,5 +80,40 @@ func (m *MockLLM) StreamChatResponse(ctx context.Context, systemPrompt string, m
 	return out, nil
 }
 
-// Ensure MockLLM satisfies services.LLMProvider at compile time.
-var _ services.LLMProvider = (*MockLLM)(nil)
+// AnalyzeKeyframe executes AnalyzeKeyframeFunc or returns a canned analysis result.
+func (m *MockLLM) AnalyzeKeyframe(ctx context.Context, imgBytes []byte, mimeType string, prompt string) (*dtos.KeyframeAnalysisResult, error) {
+	if m.AnalyzeKeyframeFunc != nil {
+		return m.AnalyzeKeyframeFunc(ctx, imgBytes, mimeType, prompt)
+	}
+	return &dtos.KeyframeAnalysisResult{
+		CueType:       "SLIDE",
+		Title:         "System Architecture Overview",
+		ExtractedText: "1. Client Web App\n2. Core Go API\n3. PostgreSQL & Vector Database",
+		VisualSummary: "Architecture diagram showing backend components.",
+		Confidence:    0.95,
+	}, nil
+}
+
+// AnalyzeKeyframesBatch executes AnalyzeKeyframesBatchFunc or maps AnalyzeKeyframe over frames.
+func (m *MockLLM) AnalyzeKeyframesBatch(ctx context.Context, frames []dtos.KeyframeBatchInput) ([]dtos.KeyframeAnalysisResult, error) {
+	if m.AnalyzeKeyframesBatchFunc != nil {
+		return m.AnalyzeKeyframesBatchFunc(ctx, frames)
+	}
+	var results []dtos.KeyframeAnalysisResult
+	for _, f := range frames {
+		res, err := m.AnalyzeKeyframe(ctx, f.ImageBytes, f.MimeType, "")
+		if err != nil {
+			return nil, err
+		}
+		res.SequenceOrder = f.SequenceOrder
+		res.TimestampSeconds = f.TimestampSeconds
+		results = append(results, *res)
+	}
+	return results, nil
+}
+
+// Ensure MockLLM satisfies services.LLMProvider and services.VisionAnalyzer at compile time.
+var (
+	_ services.LLMProvider    = (*MockLLM)(nil)
+	_ services.VisionAnalyzer = (*MockLLM)(nil)
+)

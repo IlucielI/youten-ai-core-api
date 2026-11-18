@@ -17,11 +17,13 @@ import (
 	"code-base-golang/internal/adapters/googlemeet"
 	"code-base-golang/internal/adapters/llm"
 	"code-base-golang/internal/adapters/msteams"
+	"code-base-golang/internal/adapters/ocr"
 	"code-base-golang/internal/adapters/rabbitmq"
 	"code-base-golang/internal/adapters/redis"
 	"code-base-golang/internal/adapters/s3"
 	"code-base-golang/internal/adapters/smtp"
 	"code-base-golang/internal/adapters/stt"
+	"code-base-golang/internal/adapters/video"
 	"code-base-golang/internal/adapters/youtube"
 	"code-base-golang/internal/adapters/zoom"
 	"code-base-golang/internal/config"
@@ -135,6 +137,14 @@ func main() {
 		audioExtractor = audio.NewMock()
 	}
 
+	var visualExtractor services.VisualExtractor = video.NewFFmpegVisualExtractor()
+	if !video.NewFFmpegVisualExtractor().IsAvailable() {
+		log.Println("[INFO] ffmpeg binary not found in PATH, using fallback visual extractor")
+		visualExtractor = video.NewMockVisualExtractor()
+	}
+	var localOCR services.LocalOCRExtractor = ocr.NewTesseractOCR()
+	var visionAnalyzer services.VisionAnalyzer = llmAdapter
+
 	ytExtractor, err := youtube.NewExtractorWithConfig(youtube.Config{
 		ProxyURL: cfg.YouTubeProxyURL,
 	})
@@ -193,6 +203,9 @@ func main() {
 		WithLLM(llmAdapter).
 		WithEmbedding(embeddingAdapter).
 		WithAudioExtractor(audioExtractor).
+		WithVisualExtractor(visualExtractor).
+		WithVisionAnalyzer(visionAnalyzer).
+		WithLocalOCR(localOCR).
 		WithBotProvider(discordBotAdapter).
 		WithBotProvider(meetBotAdapter).
 		WithBotProvider(teamsBotAdapter).

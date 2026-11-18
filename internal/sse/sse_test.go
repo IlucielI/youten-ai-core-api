@@ -112,6 +112,7 @@ func TestSSE_MapStatusToProgress(t *testing.T) {
 		{models.RecordingStatusSummarizing, "SUMMARIZING", 75},
 		{models.RecordingStatusIndexing, "INDEXING", 90},
 		{models.RecordingStatusCompleted, "COMPLETED", 100},
+		{models.RecordingStatusCompletedAudioOnly, "COMPLETED", 100},
 		{models.RecordingStatusFailed, "FAILED", 100},
 		{"CUSTOM", "CUSTOM", 0},
 	}
@@ -127,6 +128,9 @@ func TestSSE_MapStatusToProgress(t *testing.T) {
 func TestSSE_IsTerminalStatus(t *testing.T) {
 	if !IsTerminalStatus(models.RecordingStatusCompleted) {
 		t.Error("expected COMPLETED to be terminal")
+	}
+	if !IsTerminalStatus(models.RecordingStatusCompletedAudioOnly) {
+		t.Error("expected COMPLETED_AUDIO_ONLY to be terminal")
 	}
 	if !IsTerminalStatus(models.RecordingStatusFailed) {
 		t.Error("expected FAILED to be terminal")

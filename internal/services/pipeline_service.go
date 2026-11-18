@@ -449,6 +449,11 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		log.Printf("[PIPELINE WARN] recording %s: failed to update duration and language: %v", recording.ID.String(), err)
 	}
 
+	// Post-transcription visual context extraction for video recordings (non-blocking graceful degradation)
+	if err := s.ProcessVisualExtraction(ctx, recording, p, modelSegments); err != nil {
+		log.Printf("[PIPELINE WARN] recording %s: visual extraction error: %v", recording.ID.String(), err)
+	}
+
 	// Analysis fan-out: dispatch independent downstream stages. These are best-effort
 	// because transcription (paid STT) has already succeeded here; a failed dispatch is
 	// logged rather than returned so the worker does not re-run STT on retry.
@@ -532,7 +537,20 @@ func (s *Service) ProcessSummarization(ctx context.Context, p queue.RecordingPip
 		}
 	}
 
-	userPrompt, err := templates.RenderSummaryUserPrompt(transcriptBody, targetLang)
+	var visualCueViews []templates.VisualCueView
+	if keyframes, err := s.repo.ListVideoKeyframesByRecordingID(ctx, recording.ID); err == nil && len(keyframes) > 0 {
+		for _, kf := range keyframes {
+			visualCueViews = append(visualCueViews, templates.VisualCueView{
+				TimestampFormatted: FormatTimestamp(kf.TimestampSeconds),
+				CueType:            kf.CueType,
+				Title:              kf.Title,
+				ExtractedText:      kf.ExtractedText,
+				VisualSummary:      kf.VisualSummary,
+			})
+		}
+	}
+
+	userPrompt, err := templates.RenderSummaryUserPromptWithCues(transcriptBody, targetLang, "", visualCueViews)
 	if err != nil {
 		userPrompt = fmt.Sprintf("Please summarize the following meeting transcript:\n\n%s", transcriptBody)
 	}
@@ -666,6 +684,33 @@ func (s *Service) ProcessIndexing(ctx context.Context, p queue.RecordingPipeline
 		errMsg := "chunking produced 0 chunks"
 		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, errMsg)
 		return errors.New(errMsg)
+	}
+
+	// Index visual keyframe contexts into vector store for multimodal RAG retrieval
+	if keyframes, err := s.repo.ListVideoKeyframesByRecordingID(ctx, recording.ID); err == nil && len(keyframes) > 0 {
+		for _, kf := range keyframes {
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("[Visual %s @ %s]", kf.CueType, FormatTimestamp(kf.TimestampSeconds)))
+			if kf.Title != "" {
+				sb.WriteString(" " + kf.Title + ":")
+			}
+			if kf.ExtractedText != "" {
+				sb.WriteString("\n" + kf.ExtractedText)
+			}
+			if kf.VisualSummary != "" {
+				sb.WriteString("\n(" + kf.VisualSummary + ")")
+			}
+			content := strings.TrimSpace(sb.String())
+			if content == "" {
+				continue
+			}
+			chunks = append(chunks, dtos.TranscriptChunkData{
+				ChunkIndex: len(chunks) + 1,
+				Content:    content,
+				StartTime:  kf.TimestampSeconds,
+				EndTime:    kf.TimestampSeconds + 5.0,
+			})
+		}
 	}
 
 	chunkTexts := make([]string, len(chunks))

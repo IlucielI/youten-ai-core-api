@@ -1390,20 +1390,22 @@ func isCandidateIdentityMarker(lower string) bool {
 }
 
 func isCandidateResponseContent(lower string) bool {
-	if strings.Contains(lower, "?") {
-		return false
-	}
 	prefixes := []string{
 		"alhamdulillah lancar", "alhamdulillah sudah", "alhamdulillah, sudah",
 		"saya berdedikasi tinggi", "saya mampu mengerjakan", "saya siap bekerja",
 		"ya, saya bersedia", "ya saya bersedia", "saya harus profesional",
 	}
-	for _, p := range prefixes {
-		if strings.HasPrefix(lower, p) {
-			return true
-		}
-		if strings.Contains(lower, ". "+p) || strings.Contains(lower, ", "+p) {
-			return true
+	sentences := strings.FieldsFunc(lower, func(r rune) bool {
+		return r == '.' || r == '!' || r == '?'
+	})
+	for _, sentence := range sentences {
+		s := strings.TrimSpace(sentence)
+		s = strings.TrimLeft(s, `",':;`)
+		s = strings.TrimSpace(s)
+		for _, p := range prefixes {
+			if strings.HasPrefix(s, p) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1427,7 +1429,7 @@ func isInterviewerPromptMarker(lower string) bool {
 		"apakah anda memiliki keterampilan lain", "apakah kamu memiliki keterampilan lain",
 	}
 	for _, p := range prompts {
-		if strings.HasPrefix(trimmed, p) || strings.Contains(trimmed, ", "+p) || strings.Contains(trimmed, ". "+p) || strings.Contains(trimmed, "? "+p) {
+		if strings.HasPrefix(trimmed, p) || strings.Contains(trimmed, ", "+p) || strings.Contains(trimmed, ". "+p) || strings.Contains(trimmed, "? "+p) || strings.Contains(trimmed, "! "+p) {
 			return true
 		}
 	}

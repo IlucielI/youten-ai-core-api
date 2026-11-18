@@ -716,8 +716,8 @@ func TestAlignSegments_CompoundDialoguePreservesSpeakerFallback(t *testing.T) {
 	}
 
 	for i, seg := range aligned {
-		if seg.SpeakerLabel == "" {
-			t.Errorf("segment %d has empty SpeakerLabel", i)
+		if seg.SpeakerLabel != "Speaker 0" {
+			t.Errorf("segment %d expected SpeakerLabel 'Speaker 0', got %q", i, seg.SpeakerLabel)
 		}
 	}
 }
@@ -726,9 +726,10 @@ func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence(t *test
 	// Candidate introduces as Speaker 1, Interviewer speaks as Speaker 0
 	segments := []dtos.SegmentResult{
 		{ID: 0, SpeakerLabel: "Speaker 1", Text: "Perkenalkan nama saya Budi."},
-		{ID: 1, SpeakerLabel: "Speaker 0", Text: "Lingkungan kerja seperti apa yang anda sukai?"},
-		// Segment 2: candidate response mistakenly attributed to Interviewer (Speaker 0)
-		{ID: 2, SpeakerLabel: "Speaker 0", Text: "Saya berdedikasi tinggi untuk perusahaan."},
+		// Interviewer prompt preceded by exclamation mark
+		{ID: 1, SpeakerLabel: "Speaker 0", Text: "Terima kasih! Lingkungan kerja seperti apa yang anda sukai?"},
+		// Segment 2: candidate response with trailing question mistakenly attributed to Interviewer (Speaker 0)
+		{ID: 2, SpeakerLabel: "Speaker 0", Text: "Saya berdedikasi tinggi untuk perusahaan. Apakah ada tes teknikal berikutnya?"},
 		// Segment 3: segment containing both interviewer prompt and candidate response, mistakenly attributed to Speaker 1
 		{ID: 3, SpeakerLabel: "Speaker 1", Text: "Lingkungan kerja seperti apa yang anda sukai? Saya berdedikasi tinggi untuk perusahaan."},
 	}

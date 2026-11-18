@@ -1643,7 +1643,14 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 
 	// Pass 3: Post-processing Ghost Speaker Pruning, Canonical Name Assignment, and Role Consistency.
 	pruneGhostSpeakers(segments, rosterMap)
-	segments = sttalign.EnforceDialogueRoleConsistency(segments)
+	roleConsistent := sttalign.EnforceDialogueRoleConsistency(segments)
+	for i := range segments {
+		// Preserve trusted acoustic diarization evidence.
+		if segments[i].AcousticConfidence >= 0.70 && segments[i].AcousticSpeaker != "" && !sttalign.IsCandidateIdentityMarker(segments[i].Text) {
+			continue
+		}
+		segments[i] = roleConsistent[i]
+	}
 	return segments
 }
 

@@ -466,7 +466,7 @@ func findOptimalTextSplitPoint(text string, targetRatio float64) int {
 	targetIdx := int(targetRatio * float64(textLen))
 
 	// Priority 1: Sentence boundaries (split after punctuation)
-	if idx := findClosestPatternMatch(text, []string{"? ", "! ", ". ", "?\n", "!\n", ".\n", "？", "。"}, targetIdx, 0.15, 0.85, false); idx > 0 {
+	if idx := findClosestPatternMatch(text, []string{"? ", "! ", ". ", "?\n", "!\n", ".\n", "？", "！", "。"}, targetIdx, 0.15, 0.85, false); idx > 0 {
 		return idx
 	}
 
@@ -984,6 +984,9 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 		} else if strings.HasPrefix(text[i:], "？") {
 			isTerminator = true
 			termLen = len("？")
+		} else if strings.HasPrefix(text[i:], "！") {
+			isTerminator = true
+			termLen = len("！")
 		} else if strings.HasPrefix(text[i:], "。") {
 			isTerminator = true
 			termLen = len("。")
@@ -1186,7 +1189,7 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 					acConf = 1.0
 				}
 			} else {
-				acConf = 0.70
+				acConf = 0.50
 			}
 		}
 

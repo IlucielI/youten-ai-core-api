@@ -170,6 +170,13 @@ func AlignSegments(whisperSegments []dtos.SegmentResult, diarizedSegments []dtos
 		// Case 0: Compound dialogue turn splitting (Q&A pairs, greeting exchanges, conversation turn transitions)
 		splitCompoundSegs := SplitCompoundDialogue(wSeg, diarizedSegments)
 		if len(splitCompoundSegs) > 1 {
+			// Preserve the original Whisper speaker label for sub-segments
+			// that could not obtain a speaker from acoustic alignment.
+			for i := range splitCompoundSegs {
+				if splitCompoundSegs[i].SpeakerLabel == "" {
+					splitCompoundSegs[i].SpeakerLabel = wSeg.SpeakerLabel
+				}
+			}
 			aligned = append(aligned, splitCompoundSegs...)
 			continue
 		}
@@ -1011,7 +1018,13 @@ func isGreeting(s string) bool {
 	lower := strings.ToLower(strings.TrimSpace(s))
 	for _, g := range greetingStarters {
 		if strings.HasPrefix(lower, g) {
-			return true
+			if len(lower) == len(g) {
+				return true
+			}
+			nextChar := lower[len(g)]
+			if nextChar == ' ' || nextChar == ',' || nextChar == '.' || nextChar == '!' || nextChar == '?' {
+				return true
+			}
 		}
 	}
 	return false
@@ -1234,8 +1247,14 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 				}
 			}
 		}
-		if !allSameAcoustic {
+		if !allSameAcoustic || speakers[i] == "" {
 			speakers[i] = currentSpeaker
+		}
+	}
+
+	for i := range speakers {
+		if speakers[i] == "" {
+			speakers[i] = normOrig
 		}
 	}
 
@@ -1326,13 +1345,14 @@ func isCandidateIdentityMarker(lower string) bool {
 	if strings.Contains(lower, "?") {
 		return false
 	}
+	trimmed := strings.TrimSpace(lower)
 	markers := []string{
 		"perkenalkan nama saya ", "perkenalkan, nama saya ", "nama saya ",
 		"perkenalkan saya ", "saya adalah ", "saya berasal dari ",
 		"rumah saya di ", "saya melamar ",
 	}
 	for _, m := range markers {
-		if strings.Contains(lower, m) {
+		if strings.HasPrefix(trimmed, m) {
 			return true
 		}
 	}
@@ -1430,7 +1450,7 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 			continue
 		}
 
-		if isCandidateIdentityMarker(clean) || isCandidateResponseContent(clean) {
+		if isCandidateIdentityMarker(clean) {
 			if NormalizeSpeakerLabel(corrected[i].SpeakerLabel) != candidateSpeaker {
 				corrected[i].SpeakerLabel = candidateSpeaker
 				if candidateName != "" {
@@ -1446,6 +1466,15 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 					corrected[i].SpeakerName = interviewerName
 				} else {
 					corrected[i].SpeakerName = interviewerSpeaker
+				}
+			}
+		} else if isCandidateResponseContent(clean) {
+			if NormalizeSpeakerLabel(corrected[i].SpeakerLabel) != candidateSpeaker {
+				corrected[i].SpeakerLabel = candidateSpeaker
+				if candidateName != "" {
+					corrected[i].SpeakerName = candidateName
+				} else {
+					corrected[i].SpeakerName = candidateSpeaker
 				}
 			}
 		}

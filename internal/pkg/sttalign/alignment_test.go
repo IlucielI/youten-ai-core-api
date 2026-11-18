@@ -696,3 +696,44 @@ func TestEnforceDialogueRoleConsistency_HighAcousticConfidencePreserved(t *testi
 		t.Errorf("expected high-confidence acoustic speaker to be preserved as Speaker 0, got %q", corrected[2].SpeakerLabel)
 	}
 }
+
+func TestAlignSegments_CompoundDialoguePreservesSpeakerFallback(t *testing.T) {
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          8.0,
+		Text:         "sudah makan belum? Alhamdulillah sudah Pak",
+		SpeakerLabel: "Speaker 0",
+	}
+
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 8.0, SpeakerLabel: "Speaker 0"},
+	}
+
+	aligned := sttalign.AlignSegments([]dtos.SegmentResult{wSeg}, diarized)
+	if len(aligned) != 2 {
+		t.Fatalf("expected 2 aligned segments, got %d", len(aligned))
+	}
+
+	for i, seg := range aligned {
+		if seg.SpeakerLabel == "" {
+			t.Errorf("segment %d has empty SpeakerLabel", i)
+		}
+	}
+}
+
+func TestEnforceDialogueRoleConsistency_InterviewerPromptTakesPrecedence(t *testing.T) {
+	segments := []dtos.SegmentResult{
+		{ID: 0, SpeakerLabel: "Speaker 0", Text: "Perkenalkan nama saya Budi."},
+		{ID: 1, SpeakerLabel: "Speaker 1", Text: "Lingkungan kerja seperti apa yang anda sukai?"},
+	}
+
+	corrected := sttalign.EnforceDialogueRoleConsistency(segments)
+
+	if corrected[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected segment 0 to be Candidate Speaker 0, got %q", corrected[0].SpeakerLabel)
+	}
+	if corrected[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected segment 1 to be Interviewer Speaker 1, got %q", corrected[1].SpeakerLabel)
+	}
+}

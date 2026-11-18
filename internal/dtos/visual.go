@@ -44,6 +44,7 @@ type KeyframeAnalysisResult struct {
 	ExtractedText   string                 `json:"extracted_text"`
 	VisualSummary   string                 `json:"visual_summary"`
 	VisibleSpeakers []string               `json:"visible_speakers,omitempty"`
+	ActiveSpeaker   string                 `json:"active_speaker,omitempty"`
 	Confidence      float64                `json:"confidence"`
 	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }

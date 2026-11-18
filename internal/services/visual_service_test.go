@@ -193,6 +193,72 @@ func TestProcessVisualExtraction_ExtractorNotConfigured_Degrades(t *testing.T) {
 	}
 }
 
+func TestProcessVisualExtraction_ClearsStaleWarningOnSuccess(t *testing.T) {
+	svc, mock, _ := setupVisualTestService(t)
+
+	recID := uuid.New()
+	rec := &models.Recording{
+		BaseModel:        models.BaseModel{ID: recID},
+		OriginalFilename: "lecture_demo.mp4",
+		AnalyticsData: models.JSONMap{
+			"visual_warning": "previous failure",
+			"visual_status":  "FAILED",
+		},
+	}
+	p := queue.RecordingPipelinePayload{
+		RecordingID: recID,
+		SourcePath:  "recordings/test/lecture_demo.mp4",
+	}
+
+	extractor := &mockVisualExtractor{
+		extractFn: func(ctx context.Context, input io.Reader, filename string, opts dtos.KeyframeExtractionOptions) ([]dtos.ExtractedKeyframe, error) {
+			return []dtos.ExtractedKeyframe{
+				{
+					TimestampSeconds: 5.0,
+					SequenceOrder:    0,
+					ImageBytes:       []byte("fake-jpeg-data"),
+					MimeType:         "image/jpeg",
+				},
+			}, nil
+		},
+	}
+	svc.SetVisualExtractor(extractor)
+
+	// Expect DeleteVideoKeyframesByRecordingID
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "video_keyframes" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	// GORM query expectation for batch insert
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "video_keyframes"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "metadata", "created_at", "updated_at"}).
+			AddRow(uuid.New(), []byte(`{}`), time.Now(), time.Now()))
+	mock.ExpectCommit()
+
+	// Update recording analytics expectation
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.ProcessVisualExtraction(context.Background(), rec, p, nil)
+	if err != nil {
+		t.Fatalf("expected nil error on success, got: %v", err)
+	}
+
+	if _, exists := rec.AnalyticsData["visual_warning"]; exists {
+		t.Errorf("expected visual_warning to be deleted from analytics_data, but it still exists: %v", rec.AnalyticsData["visual_warning"])
+	}
+	if rec.AnalyticsData["visual_status"] != models.RecordingStatusCompleted {
+		t.Errorf("expected visual_status COMPLETED, got %v", rec.AnalyticsData["visual_status"])
+	}
+}
+
+
 func TestProcessVisualExtraction_Success_WithCascade(t *testing.T) {
 	svc, mock, storage := setupVisualTestService(t)
 
@@ -322,3 +388,4 @@ func TestProcessVisualExtraction_KeyframeExtractionFails_Degrades(t *testing.T) 
 		t.Errorf("expected visual_status %s, got %v", models.RecordingStatusCompletedAudioOnly, rec.AnalyticsData["visual_status"])
 	}
 }
+

@@ -197,6 +197,7 @@ func (s *Service) recordVisualSuccess(ctx context.Context, recording *models.Rec
 	if recording.AnalyticsData == nil {
 		recording.AnalyticsData = make(models.JSONMap)
 	}
+	delete(recording.AnalyticsData, "visual_warning")
 	recording.AnalyticsData["visual_status"] = models.RecordingStatusCompleted
 	recording.AnalyticsData["keyframes_count"] = keyframeCount
 
@@ -244,8 +245,9 @@ func extractFirstLine(text string) string {
 	for _, l := range lines {
 		trim := strings.TrimSpace(l)
 		if len(trim) > 0 {
-			if len(trim) > 80 {
-				return trim[:80] + "..."
+			runes := []rune(trim)
+			if len(runes) > 80 {
+				return string(runes[:80]) + "..."
 			}
 			return trim
 		}

@@ -72,11 +72,17 @@ func (t *TesseractOCR) ExtractText(ctx context.Context, imgBytes []byte) (text s
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", 0.0, false, ctx.Err()
+		}
 		// Fallback to default language if ind is missing
 		cmdFallback := exec.CommandContext(ctx, t.binaryPath, imgPath, "stdout", "--psm", "6")
 		stdoutBuf.Reset()
 		cmdFallback.Stdout = &stdoutBuf
 		if errFallback := cmdFallback.Run(); errFallback != nil {
+			if ctx.Err() != nil {
+				return "", 0.0, false, ctx.Err()
+			}
 			return "", 0.0, false, nil
 		}
 	}

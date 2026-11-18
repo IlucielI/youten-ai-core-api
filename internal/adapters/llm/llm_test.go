@@ -3,6 +3,7 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -472,6 +473,16 @@ func TestOmniRouteLLM_AnalyzeKeyframe(t *testing.T) {
 	}
 	if batchResults[0].SequenceOrder != 1 || batchResults[0].TimestampSeconds != 15.0 {
 		t.Errorf("unexpected batch result metadata: %+v", batchResults[0])
+	}
+
+	// Context cancellation check
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = adapter.AnalyzeKeyframesBatch(cancelCtx, []dtos.KeyframeBatchInput{
+		{TimestampSeconds: 20.0, ImageBytes: []byte("frame2"), SequenceOrder: 2},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got: %v", err)
 	}
 }
 

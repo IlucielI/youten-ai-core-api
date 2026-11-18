@@ -107,3 +107,4 @@ func TestRepositories_DeleteVideoKeyframesByRecordingID(t *testing.T) {
 		t.Fatalf("unexpected error deleting keyframes: %v", err)
 	}
 }
+

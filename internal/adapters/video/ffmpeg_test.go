@@ -81,6 +81,15 @@ func TestDownsampleKeyframes(t *testing.T) {
 	if downsampled[len(downsampled)-1].TimestampSeconds != 990 {
 		t.Errorf("expected last frame at 990s, got %.1fs", downsampled[len(downsampled)-1].TimestampSeconds)
 	}
+
+	// Test downsampling to 1 frame (division by zero guardrail)
+	single := downsampleKeyframes(frames, 1)
+	if len(single) != 1 {
+		t.Fatalf("expected 1 frame, got %d", len(single))
+	}
+	if single[0].TimestampSeconds != 0 {
+		t.Errorf("expected frame at 0s, got %.1fs", single[0].TimestampSeconds)
+	}
 }
 
 func TestMockVisualExtractor(t *testing.T) {

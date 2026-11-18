@@ -264,6 +264,9 @@ func downsampleKeyframes(frames []dtos.ExtractedKeyframe, targetCount int) []dto
 	if len(frames) <= targetCount || targetCount <= 0 {
 		return frames
 	}
+	if targetCount == 1 {
+		return []dtos.ExtractedKeyframe{frames[0]}
+	}
 	step := float64(len(frames)-1) / float64(targetCount-1)
 	result := make([]dtos.ExtractedKeyframe, 0, targetCount)
 	for i := 0; i < targetCount; i++ {

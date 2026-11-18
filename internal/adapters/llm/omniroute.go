@@ -724,8 +724,14 @@ func (o *OmniRouteLLM) AnalyzeKeyframesBatch(ctx context.Context, frames []dtos.
 
 	results := make([]dtos.KeyframeAnalysisResult, 0, len(frames))
 	for _, f := range frames {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		res, err := o.AnalyzeKeyframe(ctx, f.ImageBytes, f.MimeType, "")
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			// Non-blocking error per frame: return low confidence placeholder rather than failing whole batch
 			results = append(results, dtos.KeyframeAnalysisResult{
 				SequenceOrder:    f.SequenceOrder,

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"code-base-golang/internal/dtos"
@@ -39,30 +38,6 @@ var (
 		"....":             true,
 		"batuk":            true,
 		"cough":            true,
-	}
-
-	// Conversational answer prefixes after a question in dialogue
-	dialogueAnswerPrefixes = []string{
-		"alhamdulillah", "terima kasih", "terimakasih", "ya", "iya", "tentu",
-		"betul", "bisa", "siap", "tidak", "nggak", "enggak", "bukan",
-		"bebas", "boleh", "oke", "baik", "nah", "saya", "aku", "kami", "kita",
-		"rumah saya", "pengalaman saya", "kelebihan saya", "kekurangan saya",
-		"nama saya", "akun sendiri", "di situ", "perusahaan ini", "itu bernama",
-	}
-
-	// Interviewer question and prompt turn starters
-	dialogueQuestionStarters = []string{
-		"sebelumnya,", "sebelumnya ", "gimana ", "bagaimana ", "kalau boleh tahu",
-		"apakah anda ", "apakah kamu ", "bisakah anda ", "bisakah kamu ",
-		"mengapa anda ", "mengapa kamu ", "kenapa anda ", "kenapa kamu ",
-		"apa yang anda ", "apa yang kamu ", "menurut anda ", "menurut kamu ",
-		"sudah makan belum", "gimana tadi perjalanannya", "kontribusi apa ",
-	}
-
-	// Conversational greeting turn starters
-	greetingStarters = []string{
-		"selamat siang", "selamat pagi", "selamat sore", "selamat malam",
-		"halo", "hai", "assalamu'alaikum", "assalamualaikum",
 	}
 )
 
@@ -167,29 +142,19 @@ func AlignSegments(whisperSegments []dtos.SegmentResult, diarizedSegments []dtos
 			continue
 		}
 
-		// Case 0: Compound dialogue turn splitting (Q&A pairs, greeting exchanges, conversation turn transitions)
+		// Case 0: Compound dialogue turn splitting at sentence punctuation boundaries
 		splitCompoundSegs := SplitCompoundDialogue(wSeg, diarizedSegments)
 		if len(splitCompoundSegs) > 1 {
-			// Preserve the original Whisper speaker label for sub-segments
-			// that could not obtain a speaker from acoustic alignment.
 			for i := range splitCompoundSegs {
 				if splitCompoundSegs[i].SpeakerLabel == "" {
 					splitCompoundSegs[i].SpeakerLabel = wSeg.SpeakerLabel
-				}
-				// If word timestamps are available and acoustic diarization exists, refine sub-segment with word alignment
-				if len(splitCompoundSegs[i].Words) > 0 && len(diarizedSegments) > 0 {
-					wordRefined := alignAndSplitByWords(splitCompoundSegs[i], diarizedSegments)
-					if len(wordRefined) > 0 {
-						aligned = append(aligned, wordRefined...)
-						continue
-					}
 				}
 				aligned = append(aligned, splitCompoundSegs[i])
 			}
 			continue
 		}
 
-		// Case 1: Word-level alignment and speaker turn splitting
+		// Case 1: Word-level acoustic alignment and speaker turn splitting
 		if len(wSeg.Words) > 0 {
 			splitWordSegs := alignAndSplitByWords(wSeg, diarizedSegments)
 			if len(splitWordSegs) > 0 {
@@ -250,6 +215,9 @@ func alignAndSplitByWords(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segme
 	tagged := make([]taggedWord, len(wSeg.Words))
 	for i, w := range wSeg.Words {
 		spk, _, _ := FindBestAcousticSpeaker(w.Start, w.End, diarizedSegments)
+		if spk == "" && strings.TrimSpace(w.Speaker) != "" {
+			spk = NormalizeSpeakerLabel(w.Speaker)
+		}
 		tagged[i] = taggedWord{word: w, speaker: spk}
 	}
 
@@ -498,30 +466,20 @@ func findOptimalTextSplitPoint(text string, targetRatio float64) int {
 	targetIdx := int(targetRatio * float64(textLen))
 
 	// Priority 1: Sentence boundaries (split after punctuation)
-	if idx := findClosestPatternMatch(text, []string{"? ", "! ", ". ", "?\n", "!\n", ".\n"}, targetIdx, 0.15, 0.85, false); idx > 0 {
+	if idx := findClosestPatternMatch(text, []string{"? ", "! ", ". ", "?\n", "!\n", ".\n", "？", "！", "。"}, targetIdx, 0.15, 0.85, false); idx > 0 {
 		return idx
 	}
 
-	// Priority 2: Conversational discourse turn markers (split before turn marker so it starts the new turn)
-	turnMarkers := []string{
-		" terima kasih ", " terimakasih ", " silakan ", " silahkan ",
-		" ya ", " iya ", " oke ", " baik ", " halo ", " selamat ",
-		" tapi ", " nah ", " betul ", " tentu ", " yes ", " thank you ",
-	}
-	if idx := findClosestPatternMatch(text, turnMarkers, targetIdx, 0.18, 0.82, true); idx > 0 {
-		return idx
-	}
-
-	// Priority 3: Clause commas (split after comma)
+	// Priority 2: Clause boundaries (split after comma, semicolon, colon)
 	if idx := findClosestPatternMatch(text, []string{", ", "; ", ": "}, targetIdx, 0.20, 0.80, false); idx > 0 {
 		return idx
 	}
 
-	// Priority 4: Word boundary space closest to targetIdx
+	// Priority 3: Word boundary space closest to targetIdx
 	bestSpace := -1
 	minDist := textLen
-	minBound := int(0.20 * float64(textLen))
-	maxBound := int(0.80 * float64(textLen))
+	minBound := int(0.15 * float64(textLen))
+	maxBound := int(0.85 * float64(textLen))
 
 	for i := minBound; i <= maxBound; i++ {
 		if text[i] == ' ' {
@@ -855,17 +813,7 @@ func IsAcousticallyAnchored(seg dtos.SegmentResult, proposedSpeaker string) bool
 	}
 
 	// High confidence acoustic threshold (>= 70% duration overlap)
-	if seg.AcousticConfidence < 0.70 {
-		return false
-	}
-
-	// Exception: explicit self-introduction or identity declaration
-	lowerText := strings.ToLower(seg.Text)
-	if strings.Contains(lowerText, "nama saya ") || strings.Contains(lowerText, "saya adalah ") || strings.Contains(lowerText, "perkenalkan nama saya") {
-		return false
-	}
-
-	return true
+	return seg.AcousticConfidence >= 0.70
 }
 
 // ResolveSpeakerLabelAndName maps raw speaker inputs (e.g. "Putri", "Speaker 0", "speaker_1", "0")
@@ -1002,166 +950,59 @@ func BuildSegmentsFromWords(words []dtos.WordResult, maxPauseSeconds float64, ma
 	return segments
 }
 
-// IsAnswerPrefix checks if the given text begins with an affirmative or direct answer prefix.
+// IsAnswerPrefix is deprecated and retained only for backward compatibility.
 func IsAnswerPrefix(text string) bool {
-	return isAnswerPrefix(text)
-}
-
-func isAnswerPrefix(s string) bool {
-	lower := strings.ToLower(strings.TrimSpace(s))
-	for _, p := range dialogueAnswerPrefixes {
-		if lower == p {
-			return true
-		}
-		if strings.HasPrefix(lower, p) && len(lower) > len(p) {
-			nextRune, _ := utf8.DecodeRuneInString(lower[len(p):])
-			if unicode.IsSpace(nextRune) || strings.ContainsRune(",.!", nextRune) {
-				return true
-			}
-		}
-	}
 	return false
 }
 
-func isQuestionStarter(s string) bool {
-	lower := strings.ToLower(strings.TrimSpace(s))
-	matchStarter := func(str string) bool {
-		for _, p := range dialogueQuestionStarters {
-			trimmedP := strings.TrimSpace(p)
-			if str == trimmedP {
-				return true
-			}
-			if strings.HasPrefix(str, trimmedP) && len(str) > len(trimmedP) {
-				nextRune, _ := utf8.DecodeRuneInString(str[len(trimmedP):])
-				if unicode.IsSpace(nextRune) || strings.ContainsRune("?,.!", nextRune) || nextRune == '？' {
-					return true
-				}
-			}
-		}
-		return false
-	}
-
-	if matchStarter(lower) {
-		return true
-	}
-
-	conjunctions := []string{"lalu, ", "lalu ", "kemudian, ", "kemudian ", "selanjutnya, ", "selanjutnya "}
-	for _, c := range conjunctions {
-		if strings.HasPrefix(lower, c) {
-			trimmed := strings.TrimSpace(strings.TrimPrefix(lower, c))
-			if matchStarter(trimmed) {
-				return true
-			}
-		}
-	}
+// IsCandidateIdentityMarker is deprecated and retained only for backward compatibility.
+// Conversational context and role resolution is handled dynamically by LLM prompts.
+func IsCandidateIdentityMarker(text string) bool {
 	return false
 }
 
-func isGreeting(s string) bool {
-	lower := strings.ToLower(strings.TrimSpace(s))
-	for _, g := range greetingStarters {
-		if strings.HasPrefix(lower, g) {
-			if len(lower) == len(g) {
-				return true
-			}
-			nextChar, _ := utf8.DecodeRuneInString(lower[len(g):])
-			if unicode.IsSpace(nextChar) || nextChar == ',' || nextChar == '.' || nextChar == '!' || nextChar == '?' {
-				return true
-			}
-		}
-	}
+// IsInterviewerPromptMarker is deprecated and retained only for backward compatibility.
+// Conversational context and role resolution is handled dynamically by LLM prompts.
+func IsInterviewerPromptMarker(text string) bool {
 	return false
 }
 
-func isSelfIntroOrRoleDeclaration(lower string) bool {
-	if strings.Contains(lower, "?") {
-		return false
-	}
-	trimmed := strings.TrimSpace(lower)
-	markers := []string{
-		"nama saya ", "saya adalah ", "perkenalkan saya ", "perkenalkan, saya ",
-		"perkenalkan nama saya ", "perkenalkan, nama saya ",
-		"nama ku ", "namaku ", "panggil saja saya ", "panggil saya ",
-		"saya bernama ",
-	}
-	for _, m := range markers {
-		if strings.HasPrefix(trimmed, m) || strings.Contains(trimmed, ". "+m) || strings.Contains(trimmed, ", "+m) {
-			return true
-		}
-	}
-	return false
-}
-
-// DetectCompoundDialogueSplitPoints returns character indices where dialogue turn transitions occur.
+// DetectCompoundDialogueSplitPoints returns character indices where sentence punctuation boundaries occur.
+// It is strictly language-agnostic and relies on standard punctuation marks followed by whitespace.
 func DetectCompoundDialogueSplitPoints(text string) []int {
 	trimmed := strings.TrimSpace(text)
-	if len(trimmed) < 15 {
+	if len(trimmed) < 10 {
 		return nil
 	}
 
 	var rawPoints []int
-
-	// 1. Scan for question marks followed by answer / response
 	for i := 0; i < len(text); i++ {
-		isQMark := text[i] == '?'
-		qLen := 1
-		if !isQMark && strings.HasPrefix(text[i:], "？") {
-			isQMark = true
-			qLen = len("？")
+		isTerminator := false
+		termLen := 1
+		if text[i] == '?' || text[i] == '!' || text[i] == '.' {
+			isTerminator = true
+		} else if strings.HasPrefix(text[i:], "？") {
+			isTerminator = true
+			termLen = len("？")
+		} else if strings.HasPrefix(text[i:], "！") {
+			isTerminator = true
+			termLen = len("！")
+		} else if strings.HasPrefix(text[i:], "。") {
+			isTerminator = true
+			termLen = len("。")
 		}
-		if isQMark {
-			nextIdx := i + qLen
-			for nextIdx < len(text) && (text[nextIdx] == ' ' || text[nextIdx] == '\t' || text[nextIdx] == '\n') {
-				nextIdx++
-			}
-			if nextIdx < len(text) {
-				after := text[nextIdx:]
-				if isAnswerPrefix(after) || isGreeting(after) || isQuestionStarter(after) {
-					if i >= 6 && len(text)-nextIdx >= 6 {
-						rawPoints = append(rawPoints, nextIdx)
-					}
-				}
-			}
-		}
-	}
 
-	// 2. Scan for mid-sentence question starters or greetings after sentence terminator (". ", "! ")
-	for i := 0; i < len(text)-2; i++ {
-		if (text[i] == '.' || text[i] == '!') && (text[i+1] == ' ' || text[i+1] == '\n') {
-			nextIdx := i + 2
+		if isTerminator {
+			nextIdx := i + termLen
+			hasTrailingSpace := false
 			for nextIdx < len(text) && (text[nextIdx] == ' ' || text[nextIdx] == '\t' || text[nextIdx] == '\n') {
+				hasTrailingSpace = true
 				nextIdx++
 			}
-			if nextIdx < len(text) {
-				after := text[nextIdx:]
-				qIdx := strings.Index(after, "?")
-				if uIdx := strings.Index(after, "？"); uIdx >= 0 && (qIdx < 0 || uIdx < qIdx) {
-					qIdx = uIdx
-				}
-				if isQuestionStarter(after) {
-					if qIdx > 0 && strings.IndexAny(after[:qIdx], ".!\n") < 0 {
-						if nextIdx >= 10 && len(text)-nextIdx >= 10 {
-							rawPoints = append(rawPoints, nextIdx)
-						}
-					}
-				} else if isGreeting(after) {
-					if nextIdx >= 10 && len(text)-nextIdx >= 10 {
-						rawPoints = append(rawPoints, nextIdx)
-					}
-				} else if isAnswerPrefix(after) && isQuestionStarter(strings.TrimSpace(text[:i])) {
-					if nextIdx >= 10 && len(text)-nextIdx >= 10 {
-						rawPoints = append(rawPoints, nextIdx)
-					}
-				} else if qIdx > 0 && len(rawPoints) > 0 {
-					// If a previous split point marked an answer turn, and this sentence asks a new question
-					lastPoint := rawPoints[len(rawPoints)-1]
-					if nextIdx > lastPoint {
-						middleClause := strings.TrimSpace(text[lastPoint:i])
-						if isAnswerPrefix(middleClause) && nextIdx >= 10 && len(text)-nextIdx >= 10 {
-							rawPoints = append(rawPoints, nextIdx)
-						}
-					}
-				}
+			// Sentence terminators must be followed by whitespace, or be fullwidth East Asian punctuation.
+			isFullwidth := termLen > 1
+			if (hasTrailingSpace || isFullwidth) && nextIdx < len(text) && nextIdx >= 4 && len(text)-nextIdx >= 4 {
+				rawPoints = append(rawPoints, nextIdx)
 			}
 		}
 	}
@@ -1174,17 +1015,11 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 	var points []int
 	for _, p := range rawPoints {
 		if len(points) == 0 {
-			if p >= 8 && p <= len(text)-8 {
-				points = append(points, p)
-			}
-		} else {
-			last := points[len(points)-1]
-			if p-last >= 8 && p <= len(text)-8 {
-				points = append(points, p)
-			}
+			points = append(points, p)
+		} else if p-points[len(points)-1] >= 4 {
+			points = append(points, p)
 		}
 	}
-
 	return points
 }
 
@@ -1239,92 +1074,21 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 		normOrig = "Speaker 0"
 	}
 
-	var alternate string
-	for _, seg := range diarizedSegments {
-		spk := NormalizeSpeakerLabel(seg.SpeakerLabel)
-		if spk != "" && spk != normOrig {
-			alternate = spk
-			break
-		}
-	}
-	if alternate == "" {
-		alternate = "Speaker 1"
-		if normOrig == "Speaker 1" {
-			alternate = "Speaker 0"
-		}
-	}
-
 	speakers := make([]string, len(parts))
-	allSameAcoustic := true
-	var firstAcoustic string
-	hasAcoustic := false
-
 	for i := range parts {
-		acSpk, maxOv, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
-		if maxOv > 0 && acSpk != "" {
-			normAc := NormalizeSpeakerLabel(acSpk)
-			speakers[i] = normAc
-			hasAcoustic = true
-			if firstAcoustic == "" {
-				firstAcoustic = normAc
-			} else if normAc != firstAcoustic {
-				allSameAcoustic = false
+		if len(startTimes) > i && len(endTimes) > i {
+			acSpk, _, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
+			if acSpk != "" {
+				speakers[i] = NormalizeSpeakerLabel(acSpk)
+				continue
 			}
 		}
-	}
-
-	if hasAcoustic && !allSameAcoustic && firstAcoustic != "" {
-		for i := range speakers {
-			if speakers[i] == "" {
-				speakers[i] = normOrig
-			}
-		}
-		return speakers
-	}
-
-	if !hasAcoustic {
-		allSameAcoustic = false
-	}
-
-	currentSpeaker := normOrig
-	for i, p := range parts {
-		isQ := isQuestionStarter(p) || (strings.HasSuffix(strings.TrimSpace(p), "?") && !isAnswerPrefix(p))
-		isAns := isAnswerPrefix(p)
-
-		if i == 0 {
-			if isAns {
-				currentSpeaker = alternate
-			} else {
-				currentSpeaker = normOrig
-			}
+		if i > 0 && speakers[i-1] != "" {
+			speakers[i] = speakers[i-1]
 		} else {
-			prev := parts[i-1]
-			prevIsQ := isQuestionStarter(prev) || (strings.HasSuffix(strings.TrimSpace(prev), "?") && !isAnswerPrefix(prev))
-			if prevIsQ && isAns {
-				if speakers[i-1] == normOrig {
-					currentSpeaker = alternate
-				} else {
-					currentSpeaker = normOrig
-				}
-			} else if isQ {
-				if speakers[i-1] == normOrig {
-					currentSpeaker = alternate
-				} else {
-					currentSpeaker = normOrig
-				}
-			}
-		}
-		if !allSameAcoustic || speakers[i] == "" {
-			speakers[i] = currentSpeaker
-		}
-	}
-
-	for i := range speakers {
-		if speakers[i] == "" {
 			speakers[i] = normOrig
 		}
 	}
-
 	return speakers
 }
 
@@ -1332,10 +1096,27 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 // into multiple sub-segments with interpolated timestamps and attributed speakers.
 func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.SegmentResult) []dtos.SegmentResult {
 	dur := wSeg.End - wSeg.Start
-	if dur < 1.0 || len(wSeg.Text) < 15 {
+	if dur < 1.0 || len(wSeg.Text) < 10 {
 		return nil
 	}
 
+	// 1. If word-level timestamps are present, word alignment handles turn splitting directly
+	if len(wSeg.Words) > 0 {
+		wordSplits := alignAndSplitByWords(wSeg, diarizedSegments)
+		if len(wordSplits) > 1 {
+			return wordSplits
+		}
+	}
+
+	// 2. If diarized segments indicate speaker transition, try clause splitting
+	if len(diarizedSegments) > 0 {
+		clauseSplits := trySplitByClause(wSeg, diarizedSegments)
+		if len(clauseSplits) > 1 {
+			return clauseSplits
+		}
+	}
+
+	// 3. Punctuation boundary splitting when multiple acoustic speakers overlap
 	splitPoints := DetectCompoundDialogueSplitPoints(wSeg.Text)
 	if len(splitPoints) == 0 {
 		return nil
@@ -1403,14 +1184,16 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 		bestAcSpk, maxOv, _ := FindBestAcousticSpeaker(startTimes[i], endTimes[i], diarizedSegments)
 		realAcSpk := ""
 		acConf := 0.50
-		if maxOv > 0 && bestAcSpk != "" {
+		if bestAcSpk != "" {
 			realAcSpk = NormalizeSpeakerLabel(bestAcSpk)
 			dur := endTimes[i] - startTimes[i]
-			if dur > 0 {
+			if dur > 0 && maxOv > 0 {
 				acConf = maxOv / dur
 				if acConf > 1.0 {
 					acConf = 1.0
 				}
+			} else {
+				acConf = 0.50
 			}
 		}
 
@@ -1429,134 +1212,10 @@ func SplitCompoundDialogue(wSeg dtos.SegmentResult, diarizedSegments []dtos.Segm
 	return results
 }
 
-// IsCandidateIdentityMarker checks if the given text contains a candidate self-introduction or identity declaration.
-func IsCandidateIdentityMarker(text string) bool {
-	return isCandidateIdentityMarker(strings.ToLower(strings.TrimSpace(text)))
-}
-
-func isCandidateIdentityMarker(lower string) bool {
-	trimmed := strings.TrimSpace(lower)
-	markers := []string{
-		"perkenalkan nama saya ", "perkenalkan, nama saya ", "nama saya ",
-		"perkenalkan saya ", "perkenalkan, saya ", "saya adalah ", "saya berasal dari ",
-		"rumah saya di ",
-	}
-	sentences := strings.FieldsFunc(trimmed, func(r rune) bool {
-		return r == '.' || r == '!' || r == '?'
-	})
-	for _, sentence := range sentences {
-		s := strings.TrimSpace(sentence)
-		s = strings.TrimLeft(s, `",':;`)
-		s = strings.TrimSpace(s)
-		for _, m := range markers {
-			if idx := strings.Index(s, m); idx >= 0 {
-				prefix := strings.TrimSpace(s[:idx])
-				trimmedPrefix := strings.TrimRight(prefix, ",:;- ")
-				if prefix == "" || strings.ContainsAny(prefix, ",:;-") || isGreeting(trimmedPrefix) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func isCandidateResponseContent(lower string) bool {
-	prefixes := []string{
-		"alhamdulillah lancar", "alhamdulillah sudah", "alhamdulillah, sudah",
-		"saya berdedikasi tinggi", "saya mampu mengerjakan", "saya siap bekerja",
-		"ya, saya bersedia", "ya saya bersedia", "saya harus profesional",
-	}
-	sentences := strings.FieldsFunc(lower, func(r rune) bool {
-		return r == '.' || r == '!' || r == '?'
-	})
-	for _, sentence := range sentences {
-		s := strings.TrimSpace(sentence)
-		s = strings.TrimLeft(s, `",':;`)
-		s = strings.TrimSpace(s)
-		for _, p := range prefixes {
-			if strings.HasPrefix(s, p) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// IsInterviewerPromptMarker checks if the given text begins with or contains an interviewer prompt question.
-func IsInterviewerPromptMarker(text string) bool {
-	return isInterviewerPromptMarker(strings.ToLower(strings.TrimSpace(text)))
-}
-
-func isInterviewerPromptMarker(lower string) bool {
-	trimmed := strings.TrimSpace(lower)
-	conjunctions := []string{"lalu, ", "lalu ", "kemudian, ", "kemudian ", "selanjutnya, ", "selanjutnya ", "sebelumnya, ", "sebelumnya "}
-	for _, c := range conjunctions {
-		if strings.HasPrefix(trimmed, c) {
-			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, c))
-			break
-		}
-	}
-	prompts := []string{
-		"perkenalkan diri kamu", "perkenalkan diri anda",
-		"gimana tadi perjalanannya", "sudah makan belum",
-		"rumahnya di mana", "rumah kamu di mana", "rumah anda di mana",
-		"kelebihan dan kekurangan kamu", "kelebihan dan kekurangan anda",
-		"apa yang anda ketahui tentang perusahaan", "apa yang kamu ketahui tentang perusahaan",
-		"mengapa kamu tertarik", "mengapa anda tertarik",
-		"kontribusi apa yang akan kamu", "kontribusi apa yang akan anda",
-		"lingkungan kerja seperti apa yang anda sukai",
-		"lingkungan kerja seperti apa yang kamu sukai",
-		"bisakah anda bekerja", "bisakah kamu bekerja",
-		"apakah anda bersedia", "apakah kamu bersedia",
-		"rencana anda dalam", "rencana kamu dalam",
-		"apakah anda memiliki keterampilan lain", "apakah kamu memiliki keterampilan lain",
-		"bagaimana ", "kalau boleh tahu",
-	}
-	for _, p := range prompts {
-		if strings.HasPrefix(trimmed, p) || strings.Contains(trimmed, ". "+p) || strings.Contains(trimmed, "? "+p) || strings.Contains(trimmed, "! "+p) {
-			return true
-		}
-	}
-	return false
-}
-
-// EnforceDialogueRoleConsistency ensures that conversational roles (Interviewer vs Candidate / Q&A)
-// maintain consistent identity attribution across the entire recording, preventing identity flips.
+// EnforceDialogueRoleConsistency ensures that acoustic speaker evidence is strictly respected
+// and empty speaker labels are populated from acoustic diarization without hardcoded text guessing.
 func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.SegmentResult {
 	if len(segments) == 0 {
-		return segments
-	}
-
-	var candidateSpeaker string
-	var candidateName string
-	var interviewerSpeaker string
-	var interviewerName string
-
-	for _, seg := range segments {
-		clean := strings.ToLower(strings.TrimSpace(seg.Text))
-		spk := strings.TrimSpace(seg.SpeakerLabel)
-		if spk == "" && seg.AcousticSpeaker != "" {
-			spk = strings.TrimSpace(seg.AcousticSpeaker)
-		}
-		normSpk := NormalizeSpeakerLabel(spk)
-
-		if isCandidateIdentityMarker(clean) && candidateSpeaker == "" {
-			candidateSpeaker = normSpk
-			if !isGenericSpeaker(seg.SpeakerName) {
-				candidateName = seg.SpeakerName
-			}
-		}
-
-		if isInterviewerPromptMarker(clean) && interviewerSpeaker == "" {
-			interviewerSpeaker = normSpk
-			if !isGenericSpeaker(seg.SpeakerName) {
-				interviewerName = seg.SpeakerName
-			}
-		}
-	}
-
-	if candidateSpeaker == "" || interviewerSpeaker == "" || candidateSpeaker == interviewerSpeaker {
 		return segments
 	}
 
@@ -1564,59 +1223,20 @@ func EnforceDialogueRoleConsistency(segments []dtos.SegmentResult) []dtos.Segmen
 	copy(corrected, segments)
 
 	for i := range corrected {
-		clean := strings.ToLower(strings.TrimSpace(corrected[i].Text))
-
-		// Guard against overriding high-confidence acoustic diarization evidence
-		hasStrongAcousticAnchor := corrected[i].AcousticConfidence >= 0.70 && corrected[i].AcousticSpeaker != ""
-		if hasStrongAcousticAnchor && !isCandidateIdentityMarker(clean) {
-			if corrected[i].SpeakerLabel == "" {
-				corrected[i].SpeakerLabel = NormalizeSpeakerLabel(corrected[i].AcousticSpeaker)
-				if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
-					corrected[i].SpeakerName = corrected[i].SpeakerLabel
-				}
+		if corrected[i].AcousticConfidence >= 0.70 && corrected[i].AcousticSpeaker != "" {
+			normAc := NormalizeSpeakerLabel(corrected[i].AcousticSpeaker)
+			if corrected[i].SpeakerLabel != normAc {
+				corrected[i].SpeakerLabel = normAc
+				// Synchronize SpeakerName so downstream consumers do not retain a mismatched identity
+				corrected[i].SpeakerName = normAc
+			} else if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
+				corrected[i].SpeakerName = normAc
 			}
-			continue
-		}
-
-		currentSpk := strings.TrimSpace(corrected[i].SpeakerLabel)
-		if currentSpk == "" && corrected[i].AcousticSpeaker != "" {
-			currentSpk = strings.TrimSpace(corrected[i].AcousticSpeaker)
-		}
-		normCurrentSpk := NormalizeSpeakerLabel(currentSpk)
-
-		if isCandidateIdentityMarker(clean) {
-			if corrected[i].SpeakerLabel == "" || normCurrentSpk != candidateSpeaker {
-				corrected[i].SpeakerLabel = candidateSpeaker
-				if candidateName != "" {
-					corrected[i].SpeakerName = candidateName
-				} else {
-					corrected[i].SpeakerName = candidateSpeaker
-				}
-			}
-		} else if isInterviewerPromptMarker(clean) {
-			if corrected[i].SpeakerLabel == "" || normCurrentSpk != interviewerSpeaker {
-				corrected[i].SpeakerLabel = interviewerSpeaker
-				if interviewerName != "" {
-					corrected[i].SpeakerName = interviewerName
-				} else {
-					corrected[i].SpeakerName = interviewerSpeaker
-				}
-			}
-		} else if isCandidateResponseContent(clean) {
-			if corrected[i].SpeakerLabel == "" || normCurrentSpk != candidateSpeaker {
-				corrected[i].SpeakerLabel = candidateSpeaker
-				if candidateName != "" {
-					corrected[i].SpeakerName = candidateName
-				} else {
-					corrected[i].SpeakerName = candidateSpeaker
-				}
-			}
-		}
-
-		if corrected[i].SpeakerLabel == "" && corrected[i].AcousticSpeaker != "" {
-			corrected[i].SpeakerLabel = NormalizeSpeakerLabel(corrected[i].AcousticSpeaker)
-			if corrected[i].SpeakerName == "" {
-				corrected[i].SpeakerName = corrected[i].SpeakerLabel
+		} else if corrected[i].SpeakerLabel == "" && corrected[i].AcousticSpeaker != "" {
+			normAc := NormalizeSpeakerLabel(corrected[i].AcousticSpeaker)
+			corrected[i].SpeakerLabel = normAc
+			if corrected[i].SpeakerName == "" || isGenericSpeaker(corrected[i].SpeakerName) {
+				corrected[i].SpeakerName = normAc
 			}
 		}
 	}

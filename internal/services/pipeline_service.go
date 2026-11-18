@@ -1645,7 +1645,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	pruneGhostSpeakers(segments, rosterMap)
 	roleConsistent := sttalign.EnforceDialogueRoleConsistency(segments)
 	for i := range segments {
-		// Strictly preserve high-confidence acoustic diarization evidence (>= 0.70)
+		// Preserve trusted acoustic diarization evidence.
 		if segments[i].AcousticConfidence >= 0.70 && segments[i].AcousticSpeaker != "" && !sttalign.IsCandidateIdentityMarker(segments[i].Text) {
 			continue
 		}

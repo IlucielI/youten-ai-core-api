@@ -148,6 +148,18 @@ This document defines the architectural invariants, clean code conventions, anti
 - When handling callbacks from multiple external providers (Google Meet, MS Teams, Zoom), do NOT duplicate identical database update flows across three separate 60-line methods.
 - Unify event mapping and database persistence into shared service helpers (e.g., `processBotWebhook`).
 
+### 3.7. Strictly Forbidden: Heuristic Guessing, Hardcoded Dictionaries & Magic Content Rules
+- **NEVER** hardcode keyword dictionaries, phrase lists, or language-specific string heuristics (e.g. question starters, answer prefixes, greeting lists, or identity markers in Indonesian, English, or any other language) inside core processing engines (`sttalign`, services, controllers).
+- **Universal, Language-Agnostic Audio & STT Alignment**:
+  - Turn decomposition and speaker attribution **MUST** be driven by objective mathematical and acoustic data:
+    1. Word-level start/end timestamps from Whisper (`WordResult`).
+    2. Acoustic time intervals and overlap scores from PyAnnote/Diarization.
+    3. Acoustic silence/pause thresholds (e.g. inter-word gap $\ge 0.3s$ or $\ge 0.5s$).
+    4. Diarization boundary shifts (where acoustic speaker transitions to another speaker in the same segment).
+  - Core alignment and pipeline logic must remain 100% agnostic to language, domain, and recording type (whether an English engineering standup, a medical consultation, a legal deposition, a podcast, or a job interview).
+- **Dynamic Semantic Intelligence via LLM Prompts**:
+  - Contextual understanding (such as recognizing roles, correcting phonetic errors, or inferring conversational dynamics) belongs strictly in prompt engineering (`internal/templates/prompts/`), not hardcoded Go logic.
+
 ---
 
 ## 4. Core Coding Conventions

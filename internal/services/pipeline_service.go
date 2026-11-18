@@ -389,16 +389,39 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		if fallbackDuration <= 0 {
 			fallbackDuration = recording.DurationSeconds
 		}
-		modelSegments = append(modelSegments, models.TranscriptSegment{
-			RecordingID:   recording.ID,
-			SpeakerLabel:  constants.DefaultSpeakerLabel,
-			SpeakerName:   constants.DefaultSpeakerLabel,
-			StartTime:     0,
-			EndTime:       fallbackDuration,
-			Text:          sttResult.Text,
-			WordsData:     json.RawMessage("[]"),
-			SequenceOrder: 1,
-		})
+		fallbackSeg := dtos.SegmentResult{
+			Start:        0,
+			End:          fallbackDuration,
+			Text:         sttResult.Text,
+			SpeakerLabel: constants.DefaultSpeakerLabel,
+			SpeakerName:  constants.DefaultSpeakerLabel,
+		}
+		turns := sttalign.SplitCompoundDialogue(fallbackSeg, nil)
+		if len(turns) > 1 {
+			for idx, turn := range turns {
+				modelSegments = append(modelSegments, models.TranscriptSegment{
+					RecordingID:   recording.ID,
+					SpeakerLabel:  turn.SpeakerLabel,
+					SpeakerName:   turn.SpeakerName,
+					StartTime:     turn.Start,
+					EndTime:       turn.End,
+					Text:          turn.Text,
+					WordsData:     json.RawMessage("[]"),
+					SequenceOrder: idx + 1,
+				})
+			}
+		} else {
+			modelSegments = append(modelSegments, models.TranscriptSegment{
+				RecordingID:   recording.ID,
+				SpeakerLabel:  constants.DefaultSpeakerLabel,
+				SpeakerName:   constants.DefaultSpeakerLabel,
+				StartTime:     0,
+				EndTime:       fallbackDuration,
+				Text:          sttResult.Text,
+				WordsData:     json.RawMessage("[]"),
+				SequenceOrder: 1,
+			})
+		}
 	}
 
 	// Merge consecutive segments from the same speaker to prevent sentence fragmentation

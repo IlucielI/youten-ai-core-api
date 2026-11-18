@@ -52,12 +52,11 @@ var (
 
 	// Interviewer question and prompt turn starters
 	dialogueQuestionStarters = []string{
-		"lalu,", "lalu ", "kemudian,", "kemudian ", "selanjutnya,", "selanjutnya ",
 		"sebelumnya,", "sebelumnya ", "gimana ", "bagaimana ", "kalau boleh tahu",
 		"apakah anda ", "apakah kamu ", "bisakah anda ", "bisakah kamu ",
 		"mengapa anda ", "mengapa kamu ", "kenapa anda ", "kenapa kamu ",
 		"apa yang anda ", "apa yang kamu ", "menurut anda ", "menurut kamu ",
-		"sudah makan belum", "gimana tadi perjalanannya",
+		"sudah makan belum", "gimana tadi perjalanannya", "kontribusi apa ",
 	}
 
 	// Conversational greeting turn starters
@@ -1020,6 +1019,17 @@ func isQuestionStarter(s string) bool {
 			return true
 		}
 	}
+	conjunctions := []string{"lalu, ", "lalu ", "kemudian, ", "kemudian ", "selanjutnya, ", "selanjutnya "}
+	for _, c := range conjunctions {
+		if strings.HasPrefix(lower, c) {
+			trimmed := strings.TrimPrefix(lower, c)
+			for _, p := range dialogueQuestionStarters {
+				if strings.HasPrefix(trimmed, p) {
+					return true
+				}
+			}
+		}
+	}
 	return false
 }
 
@@ -1095,7 +1105,7 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 			if nextIdx < len(text) {
 				after := text[nextIdx:]
 				if isQuestionStarter(after) {
-					if qOffset := strings.Index(after, "?"); qOffset > 0 {
+					if qOffset := strings.Index(after, "?"); qOffset > 0 && strings.IndexAny(after[:qOffset], ".!\n") < 0 {
 						if nextIdx >= 10 && len(text)-nextIdx >= 10 {
 							rawPoints = append(rawPoints, nextIdx)
 						}

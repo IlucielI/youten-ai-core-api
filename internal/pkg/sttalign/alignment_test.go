@@ -770,3 +770,51 @@ func TestEnforceDialogueRoleConsistency_CandidateSpeakerFromAcousticFallback(t *
 		t.Errorf("expected segment 2 to be corrected to Candidate 'Speaker 1', got %q", corrected[2].SpeakerLabel)
 	}
 }
+
+func TestSplitCompoundDialogue_QuestionStarterWithoutQuestionMark(t *testing.T) {
+	// ASR omitted question mark (used period), but previous turn has a clear question starter
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          8.0,
+		Text:         "gimana tadi perjalanannya. alhamdulillah lancar pak",
+		SpeakerLabel: "Speaker 0",
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, nil)
+	if len(split) != 2 {
+		t.Fatalf("expected 2 split turns, got %d", len(split))
+	}
+	if split[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected first turn to be questioner Speaker 0, got %q", split[0].SpeakerLabel)
+	}
+	if split[1].SpeakerLabel != "Speaker 1" {
+		t.Errorf("expected second turn to alternate to respondent Speaker 1, got %q", split[1].SpeakerLabel)
+	}
+}
+
+func TestSplitCompoundDialogue_AlternateSpeakerFromDiarization(t *testing.T) {
+	// Diarization has Speaker 0 and Speaker 2
+	wSeg := dtos.SegmentResult{
+		ID:           1,
+		Start:        0.0,
+		End:          8.0,
+		Text:         "apakah anda bersedia? Ya saya bersedia",
+		SpeakerLabel: "Speaker 0",
+	}
+	diarized := []dtos.SegmentResult{
+		{Start: 0.0, End: 4.0, SpeakerLabel: "Speaker 0"},
+		{Start: 4.0, End: 8.0, SpeakerLabel: "Speaker 2"},
+	}
+
+	split := sttalign.SplitCompoundDialogue(wSeg, diarized)
+	if len(split) != 2 {
+		t.Fatalf("expected 2 split turns, got %d", len(split))
+	}
+	if split[0].SpeakerLabel != "Speaker 0" {
+		t.Errorf("expected first turn to be Speaker 0, got %q", split[0].SpeakerLabel)
+	}
+	if split[1].SpeakerLabel != "Speaker 2" {
+		t.Errorf("expected second turn to be alternate Speaker 2, got %q", split[1].SpeakerLabel)
+	}
+}

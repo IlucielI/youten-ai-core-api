@@ -57,7 +57,7 @@ var (
 		"apakah anda ", "apakah kamu ", "bisakah anda ", "bisakah kamu ",
 		"mengapa anda ", "mengapa kamu ", "kenapa anda ", "kenapa kamu ",
 		"apa yang anda ", "apa yang kamu ", "menurut anda ", "menurut kamu ",
-		"sudah makan belum", "gimana tadi perjalanannya", "paling gini sih",
+		"sudah makan belum", "gimana tadi perjalanannya",
 	}
 
 	// Conversational greeting turn starters
@@ -1104,6 +1104,10 @@ func DetectCompoundDialogueSplitPoints(text string) []int {
 					if nextIdx >= 10 && len(text)-nextIdx >= 10 {
 						rawPoints = append(rawPoints, nextIdx)
 					}
+				} else if isAnswerPrefix(after) && isQuestionStarter(strings.TrimSpace(text[:i])) {
+					if nextIdx >= 10 && len(text)-nextIdx >= 10 {
+						rawPoints = append(rawPoints, nextIdx)
+					}
 				} else if strings.Index(after, "?") > 0 && len(rawPoints) > 0 {
 					// If a previous split point marked an answer turn, and this sentence asks a new question
 					lastPoint := rawPoints[len(rawPoints)-1]
@@ -1179,9 +1183,11 @@ func splitWordsByTextParts(words []dtos.WordResult, parts []string) [][]dtos.Wor
 			}
 		}
 	}
-	for wIdx < len(words) {
-		result[len(parts)-1] = append(result[len(parts)-1], words[wIdx])
-		wIdx++
+	if len(parts) > 0 && wIdx < len(words) {
+		remaining := len(words) - wIdx
+		if remaining == len(strings.Fields(parts[len(parts)-1])) {
+			result[len(parts)-1] = append(result[len(parts)-1], words[wIdx:]...)
+		}
 	}
 	return result
 }
@@ -1192,9 +1198,19 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 		normOrig = "Speaker 0"
 	}
 
-	alternate := "Speaker 1"
-	if normOrig == "Speaker 1" {
-		alternate = "Speaker 0"
+	var alternate string
+	for _, seg := range diarizedSegments {
+		spk := NormalizeSpeakerLabel(seg.SpeakerLabel)
+		if spk != "" && spk != normOrig {
+			alternate = spk
+			break
+		}
+	}
+	if alternate == "" {
+		alternate = "Speaker 1"
+		if normOrig == "Speaker 1" {
+			alternate = "Speaker 0"
+		}
 	}
 
 	speakers := make([]string, len(parts))
@@ -1242,7 +1258,7 @@ func assignDialogueTurnSpeakers(parts []string, originalSpeaker string, diarized
 			}
 		} else {
 			prev := parts[i-1]
-			prevIsQ := strings.HasSuffix(strings.TrimSpace(prev), "?")
+			prevIsQ := isQuestionStarter(prev) || (strings.HasSuffix(strings.TrimSpace(prev), "?") && !isAnswerPrefix(prev))
 			if prevIsQ && isAns {
 				if speakers[i-1] == normOrig {
 					currentSpeaker = alternate

@@ -89,23 +89,35 @@ func renderDiscussionTopics(sb *strings.Builder, structMap map[string]interface{
 		var topicBuilder strings.Builder
 		processedCount := 0
 		for _, raw := range rawTopics {
+			if raw == nil {
+				continue
+			}
 			topicMap, ok := raw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			processedCount++
-			topicName, _ := topicMap["topic"].(string)
-			if strings.TrimSpace(topicName) == "" {
-				topicName = fmt.Sprintf("Topik %d", processedCount)
-			}
-			topicBuilder.WriteString(fmt.Sprintf("### %d. %s\n", processedCount, strings.TrimSpace(topicName)))
-
-			if rawPoints, ok := topicMap["key_points"].([]interface{}); ok && len(rawPoints) > 0 {
+			topicName := extractFirstString(topicMap, "topic", "title", "name")
+			var validPoints []string
+			if rawPoints, ok := topicMap["key_points"].([]interface{}); ok {
 				for _, p := range rawPoints {
+					if p == nil {
+						continue
+					}
 					if str := strings.TrimSpace(fmt.Sprintf("%v", p)); str != "" {
-						topicBuilder.WriteString(fmt.Sprintf("- %s\n", str))
+						validPoints = append(validPoints, str)
 					}
 				}
+			}
+			if topicName == "" && len(validPoints) == 0 {
+				continue
+			}
+			processedCount++
+			if topicName == "" {
+				topicName = fmt.Sprintf("Topik %d", processedCount)
+			}
+			topicBuilder.WriteString(fmt.Sprintf("### %d. %s\n", processedCount, topicName))
+			for _, pt := range validPoints {
+				topicBuilder.WriteString(fmt.Sprintf("- %s\n", pt))
 			}
 			topicBuilder.WriteString("\n")
 		}
@@ -122,23 +134,35 @@ func renderDiscussionTopics(sb *strings.Builder, structMap map[string]interface{
 		var themeBuilder strings.Builder
 		processedCount := 0
 		for _, raw := range rawThemes {
+			if raw == nil {
+				continue
+			}
 			themeMap, ok := raw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			processedCount++
-			themeName, _ := themeMap["theme"].(string)
-			if strings.TrimSpace(themeName) == "" {
-				themeName = fmt.Sprintf("Topik %d", processedCount)
-			}
-			themeBuilder.WriteString(fmt.Sprintf("### %d. %s\n", processedCount, strings.TrimSpace(themeName)))
-
-			if rawPoints, ok := themeMap["summary_points"].([]interface{}); ok && len(rawPoints) > 0 {
+			themeName := extractFirstString(themeMap, "theme", "title", "name")
+			var validPoints []string
+			if rawPoints, ok := themeMap["summary_points"].([]interface{}); ok {
 				for _, p := range rawPoints {
+					if p == nil {
+						continue
+					}
 					if str := strings.TrimSpace(fmt.Sprintf("%v", p)); str != "" {
-						themeBuilder.WriteString(fmt.Sprintf("- %s\n", str))
+						validPoints = append(validPoints, str)
 					}
 				}
+			}
+			if themeName == "" && len(validPoints) == 0 {
+				continue
+			}
+			processedCount++
+			if themeName == "" {
+				themeName = fmt.Sprintf("Topik %d", processedCount)
+			}
+			themeBuilder.WriteString(fmt.Sprintf("### %d. %s\n", processedCount, themeName))
+			for _, pt := range validPoints {
+				themeBuilder.WriteString(fmt.Sprintf("- %s\n", pt))
 			}
 			themeBuilder.WriteString("\n")
 		}
@@ -152,38 +176,60 @@ func renderDiscussionTopics(sb *strings.Builder, structMap map[string]interface{
 
 func renderKeyDecisions(sb *strings.Builder, structMap map[string]interface{}) {
 	if rawDecisions, ok := structMap["key_decisions"].([]interface{}); ok && len(rawDecisions) > 0 {
-		sb.WriteString("## Keputusan Kunci (Key Decisions)\n\n")
+		var decBuilder strings.Builder
 		for _, raw := range rawDecisions {
+			if raw == nil {
+				continue
+			}
 			if decMap, ok := raw.(map[string]interface{}); ok {
-				dec, _ := decMap["decision"].(string)
-				app, _ := decMap["approved_by"].(string)
+				dec := extractFirstString(decMap, "decision", "text")
+				if dec == "" {
+					continue
+				}
+				app := extractFirstString(decMap, "approved_by")
 				if app != "" {
-					sb.WriteString(fmt.Sprintf("- %s *(Disetujui oleh: %s)*\n", dec, app))
+					decBuilder.WriteString(fmt.Sprintf("- %s *(Disetujui oleh: %s)*\n", dec, app))
 				} else {
-					sb.WriteString(fmt.Sprintf("- %s\n", dec))
+					decBuilder.WriteString(fmt.Sprintf("- %s\n", dec))
 				}
 			} else {
-				sb.WriteString(fmt.Sprintf("- %v\n", raw))
+				if str := strings.TrimSpace(fmt.Sprintf("%v", raw)); str != "" {
+					decBuilder.WriteString(fmt.Sprintf("- %s\n", str))
+				}
 			}
 		}
-		sb.WriteString("\n")
-		return
+		if decBuilder.Len() > 0 {
+			sb.WriteString("## Keputusan Kunci (Key Decisions)\n\n")
+			sb.WriteString(decBuilder.String())
+			sb.WriteString("\n")
+			return
+		}
 	}
 
 	if rawAdopted, ok := structMap["decisions_adopted"].([]interface{}); ok && len(rawAdopted) > 0 {
-		sb.WriteString("## Keputusan Diadopsi\n\n")
+		var adoptedBuilder strings.Builder
 		for _, raw := range rawAdopted {
+			if raw == nil {
+				continue
+			}
 			if decMap, ok := raw.(map[string]interface{}); ok {
-				dec, _ := decMap["decision"].(string)
-				just, _ := decMap["technical_justification"].(string)
+				dec := extractFirstString(decMap, "decision", "text")
+				if dec == "" {
+					continue
+				}
+				just := extractFirstString(decMap, "technical_justification", "justification")
 				if just != "" {
-					sb.WriteString(fmt.Sprintf("- **%s**: %s\n", dec, just))
+					adoptedBuilder.WriteString(fmt.Sprintf("- **%s**: %s\n", dec, just))
 				} else {
-					sb.WriteString(fmt.Sprintf("- %s\n", dec))
+					adoptedBuilder.WriteString(fmt.Sprintf("- %s\n", dec))
 				}
 			}
 		}
-		sb.WriteString("\n")
+		if adoptedBuilder.Len() > 0 {
+			sb.WriteString("## Keputusan Diadopsi\n\n")
+			sb.WriteString(adoptedBuilder.String())
+			sb.WriteString("\n")
+		}
 	}
 }
 
@@ -196,6 +242,9 @@ func renderOpenPoints(sb *strings.Builder, structMap map[string]interface{}) {
 			return
 		}
 		for _, raw := range rawList {
+			if raw == nil {
+				continue
+			}
 			str := strings.TrimSpace(fmt.Sprintf("%v", raw))
 			if str == "" {
 				continue
@@ -231,6 +280,9 @@ func renderActionItems(sb *strings.Builder, structMap map[string]interface{}) {
 
 	var renderedItems strings.Builder
 	for _, raw := range rawItems {
+		if raw == nil {
+			continue
+		}
 		itemMap, ok := raw.(map[string]interface{})
 		if !ok {
 			if str := strings.TrimSpace(fmt.Sprintf("%v", raw)); str != "" {
@@ -283,6 +335,9 @@ func renderKeyTakeaways(sb *strings.Builder, structMap map[string]interface{}) {
 
 	sb.WriteString("## Poin Kunci (Key Takeaways)\n\n")
 	for _, raw := range rawTakeaways {
+		if raw == nil {
+			continue
+		}
 		if str := strings.TrimSpace(fmt.Sprintf("%v", raw)); str != "" {
 			sb.WriteString(fmt.Sprintf("- %s\n", str))
 		}

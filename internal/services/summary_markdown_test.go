@@ -175,5 +175,69 @@ func TestAssembleStructuredMarkdown(t *testing.T) {
 			t.Errorf("should not render action items header when all items are empty/invalid, got:\n%s", res)
 		}
 	})
+
+	t.Run("falls back to core_themes when discussion_topics contains only empty maps", func(t *testing.T) {
+		data := map[string]interface{}{
+			"executive_overview": "Empty maps topics test",
+			"discussion_topics": []interface{}{
+				map[string]interface{}{},
+			},
+			"core_themes": []interface{}{
+				map[string]interface{}{
+					"theme": "Fallback From Empty Map",
+					"summary_points": []interface{}{
+						"Point 1",
+					},
+				},
+			},
+		}
+		res := services.AssembleStructuredMarkdown(data, "fallback")
+		if !strings.Contains(res, "## Sub Pembahasan") || !strings.Contains(res, "Fallback From Empty Map") {
+			t.Errorf("expected fallback to core_themes on empty map discussion_topics, got:\n%s", res)
+		}
+	})
+
+	t.Run("handles nil elements gracefully across sections without emitting <nil>", func(t *testing.T) {
+		data := map[string]interface{}{
+			"meeting_title": "Nil Filtering Test",
+			"discussion_topics": []interface{}{
+				nil,
+				map[string]interface{}{
+					"topic": "Clean Topic",
+					"key_points": []interface{}{
+						nil,
+						"Valid point",
+					},
+				},
+			},
+			"open_points": []interface{}{
+				nil,
+				"Valid open point",
+			},
+			"action_items": []interface{}{
+				nil,
+				map[string]interface{}{
+					"task": "Valid task",
+				},
+			},
+			"key_decisions": []interface{}{
+				nil,
+				map[string]interface{}{
+					"decision": "Valid decision",
+				},
+			},
+			"key_takeaways": []interface{}{
+				nil,
+				"Valid takeaway",
+			},
+		}
+		res := services.AssembleStructuredMarkdown(data, "fallback")
+		if strings.Contains(res, "<nil>") {
+			t.Errorf("expected no '<nil>' rendered in markdown, got:\n%s", res)
+		}
+		if !strings.Contains(res, "Clean Topic") || !strings.Contains(res, "Valid point") {
+			t.Errorf("expected clean topic and valid point rendered, got:\n%s", res)
+		}
+	})
 }
 

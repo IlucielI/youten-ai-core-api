@@ -364,19 +364,27 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 			res.Overview = fmt.Sprintf("Tujuan Rapat: %s\n\n%s", mg, res.Overview)
 		}
 	}
-	if es, ok := data["executive_summary"].(string); ok && strings.TrimSpace(es) != "" {
-		if res.Overview == "" {
-			res.Overview = strings.TrimSpace(es)
-		} else if !strings.Contains(res.Overview, strings.TrimSpace(es)) {
-			res.Overview = res.Overview + "\n\n" + strings.TrimSpace(es)
+	appendOverviewParagraph := func(p string) {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			return
 		}
+		if res.Overview == "" {
+			res.Overview = trimmed
+			return
+		}
+		for _, existing := range strings.Split(res.Overview, "\n\n") {
+			if strings.TrimSpace(existing) == trimmed {
+				return
+			}
+		}
+		res.Overview = res.Overview + "\n\n" + trimmed
 	}
-	if eo, ok := data["executive_overview"].(string); ok && strings.TrimSpace(eo) != "" {
-		if res.Overview == "" {
-			res.Overview = strings.TrimSpace(eo)
-		} else if !strings.Contains(res.Overview, strings.TrimSpace(eo)) {
-			res.Overview = res.Overview + "\n\n" + strings.TrimSpace(eo)
-		}
+	if es, ok := data["executive_summary"].(string); ok {
+		appendOverviewParagraph(es)
+	}
+	if eo, ok := data["executive_overview"].(string); ok {
+		appendOverviewParagraph(eo)
 	}
 	// Discussion Topics & Core Themes
 	if dt, ok := data["discussion_topics"].([]interface{}); ok && len(dt) > 0 {

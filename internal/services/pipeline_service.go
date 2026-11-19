@@ -371,12 +371,10 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments, recording.AnalyticsData, recording.ID)
 		refinedSegments := s.buildModelTranscriptSegments(recording.ID, sttResult.Segments, sttResult.Text, durationToSave)
 		if len(refinedSegments) > 0 {
-			if err := s.repo.DeleteTranscriptSegmentsByRecordingID(ctx, recording.ID); err == nil {
-				if err := s.repo.SaveTranscriptSegments(ctx, refinedSegments); err != nil {
-					log.Printf("[PIPELINE WARN] recording %s: failed to save refined transcript segments: %v", recording.ID.String(), err)
-				} else {
-					modelSegments = refinedSegments
-				}
+			if err := s.repo.ReplaceTranscriptSegments(ctx, recording.ID, refinedSegments); err != nil {
+				log.Printf("[PIPELINE WARN] recording %s: failed to atomically replace with refined transcript segments: %v", recording.ID.String(), err)
+			} else {
+				modelSegments = refinedSegments
 			}
 		}
 	}

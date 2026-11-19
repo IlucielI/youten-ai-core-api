@@ -135,6 +135,19 @@ func (r *Repositories) DeleteTranscriptSegmentsByRecordingID(ctx context.Context
 	return r.db.WithContext(ctx).Where("recording_id = ?", recordingID).Delete(&models.TranscriptSegment{}).Error
 }
 
+// ReplaceTranscriptSegments atomically replaces transcript segments for a recording in a database transaction.
+func (r *Repositories) ReplaceTranscriptSegments(ctx context.Context, recordingID uuid.UUID, segments []models.TranscriptSegment) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("recording_id = ?", recordingID).Delete(&models.TranscriptSegment{}).Error; err != nil {
+			return err
+		}
+		if len(segments) == 0 {
+			return nil
+		}
+		return tx.Create(&segments).Error
+	})
+}
+
 // DeleteTranscriptChunksByRecordingID deletes all transcript vector chunks for a recording.
 func (r *Repositories) DeleteTranscriptChunksByRecordingID(ctx context.Context, recordingID uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("recording_id = ?", recordingID).Delete(&models.TranscriptChunk{}).Error

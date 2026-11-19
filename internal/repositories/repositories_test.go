@@ -976,10 +976,63 @@ func TestRepositories_TemplatesPaginated(t *testing.T) {
 	}
 }
 
+func TestRepositories_ReplaceTranscriptSegments(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
 
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm: %v", err)
+	}
 
+	repo := New(gormDB)
+	recID := uuid.New()
 
+	t.Run("success atomic replacement in transaction", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM "transcript_segments" WHERE recording_id = $1`)).
+			WithArgs(recID).
+			WillReturnResult(sqlmock.NewResult(0, 5))
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "transcript_segments"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+				AddRow(uuid.New(), time.Now(), time.Now()))
+		mock.ExpectCommit()
 
+		segments := []models.TranscriptSegment{
+			{RecordingID: recID, SpeakerLabel: "Speaker 0", SpeakerName: "Budi", StartTime: 0, EndTime: 5, Text: "Test segment", SequenceOrder: 1},
+		}
 
+		err := repo.ReplaceTranscriptSegments(context.Background(), recID, segments)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("rollback on delete error", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM "transcript_segments" WHERE recording_id = $1`)).
+			WithArgs(recID).
+			WillReturnError(errors.New("db delete failed"))
+		mock.ExpectRollback()
+
+		segments := []models.TranscriptSegment{
+			{RecordingID: recID, SpeakerLabel: "Speaker 0", SpeakerName: "Budi", StartTime: 0, EndTime: 5, Text: "Test segment", SequenceOrder: 1},
+		}
+
+		err := repo.ReplaceTranscriptSegments(context.Background(), recID, segments)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
 
 

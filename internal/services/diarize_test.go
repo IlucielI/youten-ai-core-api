@@ -906,6 +906,12 @@ func TestService_DiarizeAndCorrectSegmentsWithLLM_ParallelPoolLargeMeeting(t *te
 		t.Errorf("expected segment 120 corrected, got %s", result[120].Text)
 	}
 
+	// Verify that chunks were actually executed concurrently across multiple workers
+	maxWorkers := atomic.LoadInt32(&maxObservedWorkers)
+	if maxWorkers < 2 {
+		t.Errorf("expected at least 2 concurrent workers for 3 large chunks, got %d", maxWorkers)
+	}
+
 	// Verify canonical name propagation across chunks
 	for i, seg := range result {
 		if seg.SpeakerLabel == "Speaker 0" && seg.SpeakerName != "Budi" {

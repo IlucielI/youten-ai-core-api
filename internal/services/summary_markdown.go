@@ -35,33 +35,38 @@ func AssembleStructuredMarkdown(structMap map[string]interface{}, fallbackRaw st
 	return res
 }
 
+func hasRenderableItems(raw []interface{}) bool {
+	for _, item := range raw {
+		if item == nil {
+			continue
+		}
+		if m, ok := item.(map[string]interface{}); ok && len(m) == 0 {
+			continue
+		}
+		if str, ok := item.(string); ok && strings.TrimSpace(str) == "" {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func hasStructuredSections(structMap map[string]interface{}) bool {
-	if raw, ok := structMap["discussion_topics"].([]interface{}); ok && len(raw) > 0 {
-		return true
+	keys := []string{
+		"discussion_topics",
+		"core_themes",
+		"key_decisions",
+		"decisions_adopted",
+		"open_points",
+		"open_issues",
+		"action_items",
+		"next_steps",
+		"key_takeaways",
 	}
-	if raw, ok := structMap["core_themes"].([]interface{}); ok && len(raw) > 0 {
-		return true
-	}
-	if raw, ok := structMap["key_decisions"].([]interface{}); ok && len(raw) > 0 {
-		return true
-	}
-	if raw, ok := structMap["decisions_adopted"].([]interface{}); ok && len(raw) > 0 {
-		return true
-	}
-	if raw, ok := structMap["open_points"].([]interface{}); ok && len(raw) > 0 {
-		return true
-	}
-	if raw, ok := structMap["open_issues"].([]interface{}); ok && len(raw) > 0 {
-		return true
-	}
-	if raw, ok := structMap["action_items"].([]interface{}); ok && len(raw) > 0 {
-		return true
-	}
-	if raw, ok := structMap["next_steps"].([]interface{}); ok && len(raw) > 0 {
-		return true
-	}
-	if raw, ok := structMap["key_takeaways"].([]interface{}); ok && len(raw) > 0 {
-		return true
+	for _, k := range keys {
+		if raw, ok := structMap[k].([]interface{}); ok && hasRenderableItems(raw) {
+			return true
+		}
 	}
 	return false
 }
@@ -333,15 +338,22 @@ func renderKeyTakeaways(sb *strings.Builder, structMap map[string]interface{}) {
 		return
 	}
 
-	sb.WriteString("## Poin Kunci (Key Takeaways)\n\n")
+	var takeawaysBuilder strings.Builder
 	for _, raw := range rawTakeaways {
 		if raw == nil {
 			continue
 		}
 		if str := strings.TrimSpace(fmt.Sprintf("%v", raw)); str != "" {
-			sb.WriteString(fmt.Sprintf("- %s\n", str))
+			takeawaysBuilder.WriteString(fmt.Sprintf("- %s\n", str))
 		}
 	}
+
+	if takeawaysBuilder.Len() == 0 {
+		return
+	}
+
+	sb.WriteString("## Poin Kunci (Key Takeaways)\n\n")
+	sb.WriteString(takeawaysBuilder.String())
 	sb.WriteString("\n")
 }
 

@@ -239,5 +239,32 @@ func TestAssembleStructuredMarkdown(t *testing.T) {
 			t.Errorf("expected clean topic and valid point rendered, got:\n%s", res)
 		}
 	})
+
+	t.Run("returns fallbackRaw when all structured sections contain only nil or empty maps", func(t *testing.T) {
+		data := map[string]interface{}{
+			"discussion_topics": []interface{}{nil, map[string]interface{}{}},
+			"open_points":       []interface{}{nil, "   "},
+			"key_takeaways":     []interface{}{nil, ""},
+		}
+		res := services.AssembleStructuredMarkdown(data, "expected fallback raw")
+		if res != "expected fallback raw" {
+			t.Errorf("expected fallback raw on unrenderable data, got:\n%s", res)
+		}
+	})
+
+	t.Run("does not render key takeaways header when takeaways are all whitespace or nil", func(t *testing.T) {
+		data := map[string]interface{}{
+			"executive_overview": "Overview with empty takeaways",
+			"key_takeaways": []interface{}{
+				nil,
+				"   ",
+				"",
+			},
+		}
+		res := services.AssembleStructuredMarkdown(data, "fallback")
+		if strings.Contains(res, "## Poin Kunci (Key Takeaways)") {
+			t.Errorf("expected no key takeaways header when all items are whitespace or nil, got:\n%s", res)
+		}
+	})
 }
 

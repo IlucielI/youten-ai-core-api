@@ -3,7 +3,7 @@
 -- 1. Update MOM Template
 UPDATE templates
 SET description = 'Ekstraksi agenda, daftar kehadiran, sub pembahasan per topik, dinamika rapat, keputusan final, isu terbuka, dan tabel action items ber-deadline.',
-    prompt = 'Analisis transkrip percakapan berikut ke format Minutes of Meeting (MOM) terstruktur dengan agenda, daftar hadir, sub pembahasan dan poin kunci per topik (discussion_topics), konsensus dan keputusan final (key_decisions), isu-isu terbuka (open_points/open_issues), tabel action items ber-assignee dan deadline, dinamika rapat (meeting_dynamics) yang mencakup speaker_talk_time, consensus_score, dan sentiment_trajectory, serta perspektif pemangku kepentingan (stakeholder_perspectives) yang mencakup executive_brief, engineering_focus, dan product_delivery. Pastikan seluruh properti wajib tersebut dihasilkan sesuai struktur schema MOM.',
+    prompt = 'Analisis transkrip percakapan berikut ke format Minutes of Meeting (MOM) terstruktur dengan agenda, daftar hadir, sub pembahasan dan poin kunci per topik (discussion_topics), konsensus dan keputusan final (key_decisions), isu-isu terbuka (open_points/open_issues), tabel action items dengan properti task, pic, due_date, priority, definition_of_done, dan cost_of_inaction, dinamika rapat (meeting_dynamics) yang mencakup speaker_talk_time, consensus_score, dan sentiment_trajectory, serta perspektif pemangku kepentingan (stakeholder_perspectives) yang mencakup executive_brief, engineering_focus, dan product_delivery. Pastikan seluruh properti wajib tersebut dihasilkan sesuai struktur schema MOM.',
     output_schema = $${
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",

@@ -703,3 +703,103 @@ func TestProcessVisualExtraction_ScreenShare_StrictVisualFallback(t *testing.T) 
 	}
 }
 
+func TestProcessVisualExtraction_GoogleMeet_FirstFrameNil_TriageSucceedsOnSecondFrame(t *testing.T) {
+	svc, mock, storage := setupVisualTestService(t)
+
+	recID := uuid.New()
+	rec := &models.Recording{
+		BaseModel:        models.BaseModel{ID: recID},
+		OriginalFilename: "meet-initial-frame-nil.mp4",
+		AnalyticsData:    make(models.JSONMap),
+	}
+
+	p := queue.RecordingPipelinePayload{
+		RecordingID: recID,
+		SourcePath:  "recordings/meet-initial-frame-nil.mp4",
+	}
+
+	segments := []models.TranscriptSegment{
+		{StartTime: 0.0, EndTime: 10.0, SpeakerLabel: "Speaker 1"},
+	}
+
+	// 2 keyframes: Frame 1 will fail VLM analysis; Frame 2 will succeed
+	extractor := &mockVisualExtractor{
+		extractFn: func(ctx context.Context, input io.Reader, filename string, opts dtos.KeyframeExtractionOptions) ([]dtos.ExtractedKeyframe, error) {
+			return []dtos.ExtractedKeyframe{
+				{SequenceOrder: 1, TimestampSeconds: 1.0, ImageBytes: []byte("frame-1-corrupt"), MimeType: "image/jpeg"},
+				{SequenceOrder: 2, TimestampSeconds: 5.0, ImageBytes: []byte("frame-2-ok"), MimeType: "image/jpeg"},
+			}, nil
+		},
+	}
+	svc.SetVisualExtractor(extractor)
+
+	visionAnalyzer := &mockVisionAnalyzer{
+		analyzeFn: func(ctx context.Context, imgBytes []byte, mimeType string, prompt string) (*dtos.KeyframeAnalysisResult, error) {
+			if string(imgBytes) == "frame-1-corrupt" {
+				return nil, errors.New("temporary analysis failure")
+			}
+			return &dtos.KeyframeAnalysisResult{
+				CueType:         constants.VisualCueTypeActiveSpeaker,
+				MeetingPlatform: constants.MeetingPlatformGoogleMeet,
+				Title:           "Team Standup",
+				ExtractedText:   "Weekly Sync",
+				VisualSummary:   "Participant tiles with active speaker highlighted",
+				ActiveSpeaker:   "Bayu Anugerah",
+				VisibleSpeakers: []string{"Bayu Anugerah"},
+				Confidence:      0.95,
+			}, nil
+		},
+	}
+	svc.SetVisionAnalyzer(visionAnalyzer)
+
+	// DB Expectations:
+	// 1. Delete stale keyframes
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "video_keyframes" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	// 2. SaveVideoKeyframes (1 row for frame 2)
+	mock.ExpectBegin()
+	rows := sqlmock.NewRows([]string{"id", "metadata", "created_at", "updated_at"}).
+		AddRow(uuid.New(), []byte("{}"), time.Now(), time.Now())
+	mock.ExpectQuery(`INSERT INTO "video_keyframes"`).WillReturnRows(rows)
+	mock.ExpectCommit()
+
+	// 3. UpdateTranscriptSpeakerNames
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments"`).
+		WithArgs("Bayu Anugerah", sqlmock.AnyArg(), recID, "Speaker 1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. UpdateRecordingAnalytics
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.ProcessVisualExtraction(context.Background(), rec, p, segments)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Frame 1 uploaded to storage, but analysis failed; Frame 2 succeeded
+	if storage.uploadCalls != 2 {
+		t.Errorf("expected 2 thumbnail uploads, got %d", storage.uploadCalls)
+	}
+
+	// Meeting layout triage must have succeeded on frame 2
+	if rec.AnalyticsData["meeting_platform"] != constants.MeetingPlatformGoogleMeet {
+		t.Errorf("expected meeting_platform google_meet on second frame triage, got %v", rec.AnalyticsData["meeting_platform"])
+	}
+
+	visualSpeakers, ok := rec.AnalyticsData["visual_speakers"].(map[string]string)
+	if !ok || visualSpeakers["Speaker 1"] != "Bayu Anugerah" {
+		t.Errorf("expected Speaker 1 to be bound to Bayu Anugerah, got %v", rec.AnalyticsData["visual_speakers"])
+	}
+}
+
+

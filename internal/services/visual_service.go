@@ -138,10 +138,11 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 			continue
 		}
 
-		// Tahap 1: Triage layout on initial frame
-		if idx == 0 {
-			isMeetingUI, meetingPlatform = triageMeetingLayout(analysis)
-			if isMeetingUI {
+		// Tahap 1: Triage layout on the first successfully analyzed frame
+		if !isMeetingUI {
+			if detectedUI, platform := triageMeetingLayout(analysis); detectedUI {
+				isMeetingUI = true
+				meetingPlatform = platform
 				log.Printf("[PIPELINE INFO] recording %s: detected meeting layout (%s); enabling active speaker tile extraction", recording.ID.String(), meetingPlatform)
 			}
 		}

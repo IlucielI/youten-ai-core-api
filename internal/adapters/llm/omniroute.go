@@ -440,8 +440,9 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("llm api returned status %d: %s", resp.StatusCode, string(respBytes))
-			if resp.StatusCode >= 500 && attempt < maxRetries && ctx.Err() == nil {
+			respStr := string(respBytes)
+			lastErr = fmt.Errorf("llm api returned status %d: %s", resp.StatusCode, respStr)
+			if resp.StatusCode >= 500 && !isPayloadTooLargeError(respStr) && attempt < maxRetries && ctx.Err() == nil {
 				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
 					return nil, waitErr
 				}
@@ -495,6 +496,16 @@ func waitBackoff(ctx context.Context, attempt int) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func isPayloadTooLargeError(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "message you submitted was too long") ||
+		strings.Contains(lower, "context_length_exceeded") ||
+		strings.Contains(lower, "maximum context length") ||
+		strings.Contains(lower, "prompt is too long") ||
+		strings.Contains(lower, "request too large") ||
+		strings.Contains(lower, "string_above_max_length")
 }
 
 // parseSSEChatResponse reconstructs a full chat completion response from an SSE event stream payload.

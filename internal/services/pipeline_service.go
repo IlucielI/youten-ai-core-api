@@ -493,11 +493,6 @@ func (s *Service) ProcessSummarization(ctx context.Context, p queue.RecordingPip
 		}
 	}
 
-	userPrompt, err := templates.RenderSummaryUserPromptWithCues(transcriptBody, targetLang, "", visualCueViews)
-	if err != nil {
-		userPrompt = fmt.Sprintf("Please summarize the following meeting transcript:\n\n%s", transcriptBody)
-	}
-
 	var schema map[string]interface{}
 	if template != nil && len(template.OutputSchema) > 0 {
 		schema = map[string]interface{}(template.OutputSchema)
@@ -511,28 +506,21 @@ func (s *Service) ProcessSummarization(ctx context.Context, p queue.RecordingPip
 		return errors.New(errMsg)
 	}
 
-	var structuredRes *dtos.StructuredResponse
-	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
-		if lastErr == nil && structuredRes != nil {
-			break
-		}
-		if lastErr == nil && structuredRes == nil {
-			lastErr = errors.New("empty structured response from llm")
-		}
-		log.Printf("[PIPELINE WARN] recording %s: summarization attempt %d failed: %v", recording.ID.String(), attempt, lastErr)
-		if attempt < 3 {
-			select {
-			case <-ctx.Done():
-				err := ctx.Err()
-				s.failAndLog(context.Background(), recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation cancelled: %v", err))
-				return err
-			case <-time.After(time.Duration(attempt) * time.Second):
-			}
-		}
-	}
+	structuredRes, lastErr := s.generateStructuredSummary(
+		ctx,
+		recording.ID,
+		systemPrompt,
+		transcriptBody,
+		targetLang,
+		"",
+		visualCueViews,
+		schema,
+	)
 	if lastErr != nil {
+		if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
+			s.failAndLog(context.Background(), recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation cancelled: %v", lastErr))
+			return lastErr
+		}
 		s.failAndLog(ctx, recording.ID, models.ErrCodeSummarizationFail, fmt.Sprintf("llm generation failed: %v", lastErr))
 		return fmt.Errorf("llm generation failed: %w", lastErr)
 	}

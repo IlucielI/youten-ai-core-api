@@ -492,5 +492,28 @@ func TestOmniRouteLLM_AnalyzeKeyframe(t *testing.T) {
 	}
 }
 
+func TestOmniRouteLLM_NoRetryOnMessageTooLong502(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":{"message":"[chatgpt-web/gpt-5.6-thinking] [502]: The message you submitted was too long, please edit it and resubmit."}}`))
+	}))
+	defer server.Close()
+
+	cfg := config.Config{LLMBaseURL: server.URL}
+	adapter := llm.NewOmniRoute(cfg)
+
+	_, err := adapter.GenerateStructured(context.Background(), "System", "Oversized prompt", nil)
+	if err == nil {
+		t.Fatal("expected error for oversized prompt, got nil")
+	}
+	if attempts != 1 {
+		t.Errorf("expected exactly 1 attempt without futile retry on oversized 502 error, got %d", attempts)
+	}
+}
+
+
 
 

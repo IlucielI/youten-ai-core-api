@@ -246,7 +246,7 @@ func renderActionItems(sb *strings.Builder, structMap map[string]interface{}) {
 
 		pic := extractFirstString(itemMap, "pic", "assignee", "owner")
 		due := extractFirstString(itemMap, "due_date", "target_date", "target_sprint", "timeline")
-		priority, _ := itemMap["priority"].(string)
+		priority := extractFirstString(itemMap, "priority")
 
 		var meta []string
 		if pic != "" {

@@ -656,15 +656,15 @@ func extractActionItems(summary *models.Summary) []string {
 				if task, ok := v["task"].(string); ok && strings.TrimSpace(task) != "" {
 					pic, _ := v["pic"].(string)
 					assignee, _ := v["assignee"].(string)
-					owner := pic
+					owner := strings.TrimSpace(pic)
 					if owner == "" {
-						owner = assignee
+						owner = strings.TrimSpace(assignee)
 					}
 					dueDate, _ := v["due_date"].(string)
 					targetSprint, _ := v["target_sprint"].(string)
-					target := dueDate
+					target := strings.TrimSpace(dueDate)
 					if target == "" {
-						target = targetSprint
+						target = strings.TrimSpace(targetSprint)
 					}
 					var meta []string
 					if owner != "" {

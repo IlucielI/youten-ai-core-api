@@ -193,4 +193,15 @@ func TestTriageMeetingLayout(t *testing.T) {
 			t.Errorf("expected false and none, got %v, %s", isMeeting, platform)
 		}
 	})
+
+	t.Run("whitespace only speakers and active speaker returns none", func(t *testing.T) {
+		analysis := &dtos.KeyframeAnalysisResult{
+			VisibleSpeakers: []string{"", "   ", "\t\n"},
+			ActiveSpeaker:   "   ",
+		}
+		isMeeting, platform := triageMeetingLayout(analysis)
+		if isMeeting || platform != constants.MeetingPlatformNone {
+			t.Errorf("expected false and none for whitespace speakers, got %v, %s", isMeeting, platform)
+		}
+	})
 }

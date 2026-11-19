@@ -87,6 +87,7 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 
 		isMeetingUI     bool
 		meetingPlatform = constants.MeetingPlatformNone
+		layoutTriaged   bool
 
 		speakerMap      = make(map[string]string)
 		speakerConf     = make(map[string]float64)
@@ -130,6 +131,9 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 			meetingPrompt := ""
 			if isMeetingUI {
 				meetingPrompt = fmt.Sprintf("Analyze meeting frame (%s). Identify active speaker tile with blue outline, audio waves, or green/purple border, and read nametag. If screenshare dominates and tiles are too small/blurry, leave active_speaker empty.", meetingPlatform)
+			} else if !layoutTriaged {
+				// Initial triage requires Multimodal Vision LLM to evaluate video meeting UI layout
+				meetingPrompt = "Analyze this frame for meeting UI layout. Identify whether it is a video meeting interface, the meeting platform, visible speaker tiles, and the active speaker tile using visual indicators such as blue outlines, audio waves, or colored borders. Read visible nametags. If screenshare dominates and tiles are too small or blurry, leave active_speaker empty."
 			}
 			analysis = s.analyzeKeyframeCascade(ctx, kf, meetingPrompt)
 		}
@@ -139,7 +143,8 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 		}
 
 		// Tahap 1: Triage layout on the first successfully analyzed frame
-		if !isMeetingUI {
+		if !layoutTriaged && (analysis.Metadata == nil || analysis.Metadata["engine"] != "fallback") {
+			layoutTriaged = true
 			if detectedUI, platform := triageMeetingLayout(analysis); detectedUI {
 				isMeetingUI = true
 				meetingPlatform = platform
@@ -262,7 +267,14 @@ func triageMeetingLayout(analysis *dtos.KeyframeAnalysisResult) (bool, string) {
 	if isMeetingPlatform(analysis.MeetingPlatform) {
 		return true, analysis.MeetingPlatform
 	}
-	if len(analysis.VisibleSpeakers) > 0 || analysis.ActiveSpeaker != "" {
+	hasVisibleSpeaker := false
+	for _, speaker := range analysis.VisibleSpeakers {
+		if strings.TrimSpace(speaker) != "" {
+			hasVisibleSpeaker = true
+			break
+		}
+	}
+	if hasVisibleSpeaker || strings.TrimSpace(analysis.ActiveSpeaker) != "" {
 		return true, constants.MeetingPlatformOther
 	}
 	return false, constants.MeetingPlatformNone

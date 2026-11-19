@@ -611,22 +611,7 @@ func (s *Service) ProcessSummarization(ctx context.Context, p queue.RecordingPip
 		log.Printf("[PIPELINE WARN] recording %s: failed to unmarshal structured summary JSON: %v", recording.ID.String(), err)
 	}
 
-	markdownContent := ""
-	if md, ok := structMap["markdown_content"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["executive_summary"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["executive_overview"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["show_notes"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["course_summary"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["abstract_or_summary"].(string); ok && md != "" {
-		markdownContent = md
-	} else {
-		markdownContent = cleanedJSON
-	}
+	markdownContent := AssembleStructuredMarkdown(structMap, cleanedJSON)
 
 	summary := models.Summary{
 		RecordingID:      recording.ID,

@@ -256,6 +256,12 @@ func TestTemplates_DefaultPromptForTemplate(t *testing.T) {
 		category string
 		expected string
 	}{
+		{"GENERAL", "Executive Memo"},
+		{"general", "Executive Memo"},
+		{"MOM", "Minutes of Meeting (MOM)"},
+		{"mom", "Minutes of Meeting (MOM)"},
+		{"TECH_REVIEW", "RFC/ADR"},
+		{"tech_review", "RFC/ADR"},
 		{"PODCAST", "show notes terstruktur"},
 		{"podcast", "show notes terstruktur"},
 		{"LECTURE", "materi pembelajaran"},
@@ -280,6 +286,13 @@ func TestTemplates_DefaultSchemaForTemplate(t *testing.T) {
 		category     string
 		requiredProp string
 	}{
+		{"GENERAL", "discussion_topics"},
+		{"GENERAL", "open_points"},
+		{"GENERAL", "action_items"},
+		{"MOM", "discussion_topics"},
+		{"MOM", "open_points"},
+		{"TECH_REVIEW", "discussion_topics"},
+		{"TECH_REVIEW", "open_points"},
 		{"PODCAST", "episode_title"},
 		{"LECTURE", "lecture_title"},
 		{"MUSIC_LYRICS", "song_title"},

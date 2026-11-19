@@ -578,5 +578,75 @@ func TestService_ExportRecordingMOM_ExtendedTemplates(t *testing.T) {
 	}
 }
 
+func TestService_ExportRecordingMOM_EnrichedDiscussionTopicsAndOpenPoints(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	userID := uuid.New()
+	sumID := uuid.New()
+	now := time.Now()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	enrichedJSON := `{
+		"executive_overview": "Overview of strategic discussion.",
+		"discussion_topics": [
+			{
+				"topic": "Microservice Architecture",
+				"key_points": ["Decouple auth service", "Event-driven sync via RabbitMQ"]
+			}
+		],
+		"open_points": [
+			"SLA guarantee for third-party webhook ingestion"
+		],
+		"action_items": [
+			{
+				"task": "Benchmark RabbitMQ throughput",
+				"pic": "Charlie",
+				"due_date": "2026-12-01"
+			}
+		]
+	}`
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "duration_seconds", "status", "created_at", "user_id", "ownership_token", "is_share_enabled"}).
+			AddRow(recID, "Architecture Sync", 1800.0, "COMPLETED", now, &userID, "token", false))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE ORDER BY version DESC.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "is_active", "markdown_content", "structured_data"}).
+			AddRow(sumID, recID, 1, true, "Enriched Markdown", enrichedJSON))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "markdown", "")
+	if err != nil {
+		t.Fatalf("unexpected export error: %v", err)
+	}
+
+	content := string(res.Data)
+	if !strings.Contains(content, "Sub Pembahasan & Poin Kunci") {
+		t.Errorf("expected Sub Pembahasan & Poin Kunci in export, got: %s", content)
+	}
+	if !strings.Contains(content, "Microservice Architecture") || !strings.Contains(content, "Decouple auth service") {
+		t.Errorf("expected discussion topics and points in export, got: %s", content)
+	}
+	if !strings.Contains(content, "Isu Terbuka (Open Points)") || !strings.Contains(content, "SLA guarantee") {
+		t.Errorf("expected open points in export, got: %s", content)
+	}
+	if !strings.Contains(content, "Benchmark RabbitMQ throughput (PIC: Charlie, Target: 2026-12-01)") {
+		t.Errorf("expected formatted action items with PIC and target, got: %s", content)
+	}
+}
+
 
 

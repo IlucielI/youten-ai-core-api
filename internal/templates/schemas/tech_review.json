@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["context", "discussion_topics", "decisions_adopted", "rejected_alternatives", "nfr_assessment", "open_points", "action_items"],
+  "properties": {
+    "context": {"type": "string"},
+    "discussion_topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "key_points"],
+        "properties": {
+          "topic": {"type": "string"},
+          "key_points": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "decisions_adopted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["decision", "technical_justification"],
+        "properties": {
+          "decision": {"type": "string"},
+          "technical_justification": {"type": "string"}
+        }
+      }
+    },
+    "rejected_alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["alternative", "rejection_reason"],
+        "properties": {
+          "alternative": {"type": "string"},
+          "rejection_reason": {"type": "string"}
+        }
+      }
+    },
+    "nfr_assessment": {
+      "type": "object",
+      "required": ["security", "performance_scalability", "reliability_resilience"],
+      "properties": {
+        "security": {"type": "string"},
+        "performance_scalability": {"type": "string"},
+        "reliability_resilience": {"type": "string"}
+      }
+    },
+    "technical_debt_impact": {"type": "string"},
+    "open_points": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "action_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["task", "assignee", "target_sprint"],
+        "properties": {
+          "task": {"type": "string"},
+          "assignee": {"type": "string"},
+          "target_sprint": {"type": "string"},
+          "due_date": {"type": "string"},
+          "priority": {"type": "string", "enum": ["P0", "P1", "P2"]}
+        }
+      }
+    }
+  }
+}

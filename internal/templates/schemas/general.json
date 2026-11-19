@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["executive_overview", "discussion_topics", "open_points", "action_items", "key_takeaways"],
+  "properties": {
+    "executive_overview": {"type": "string"},
+    "discussion_topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "key_points"],
+        "properties": {
+          "topic": {"type": "string"},
+          "key_points": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "open_points": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "action_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["task", "pic", "due_date"],
+        "properties": {
+          "task": {"type": "string"},
+          "pic": {"type": "string"},
+          "due_date": {"type": "string"},
+          "priority": {"type": "string", "enum": ["P0", "P1", "P2"]}
+        }
+      }
+    },
+    "core_themes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["theme", "summary_points"],
+        "properties": {
+          "theme": {"type": "string"},
+          "summary_points": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "key_takeaways": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "notable_quotes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["quote", "speaker", "context"],
+        "properties": {
+          "quote": {"type": "string"},
+          "speaker": {"type": "string"},
+          "context": {"type": "string"}
+        }
+      }
+    },
+    "referenced_resources": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

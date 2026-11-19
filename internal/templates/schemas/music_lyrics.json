@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["song_title", "structured_lyrics", "emotional_tone", "core_message"],
+  "properties": {
+    "song_title": {"type": "string"},
+    "artist_or_performers": {"type": "string"},
+    "musical_style": {"type": "string"},
+    "structured_lyrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["section", "lyrics"],
+        "properties": {
+          "section": {"type": "string"},
+          "lyrics": {"type": "string"}
+        }
+      }
+    },
+    "emotional_tone": {
+      "type": "object",
+      "required": ["primary_mood", "energy_level"],
+      "properties": {
+        "primary_mood": {"type": "string"},
+        "energy_level": {"type": "string"},
+        "sentiment_analysis": {"type": "string"}
+      }
+    },
+    "core_message": {"type": "string"}
+  }
+}

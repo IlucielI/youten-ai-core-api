@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["episode_title", "show_notes", "guest_overview", "topic_chapters", "key_takeaways", "golden_quotes"],
+  "properties": {
+    "episode_title": {"type": "string"},
+    "show_notes": {"type": "string"},
+    "guest_overview": {
+      "type": "object",
+      "properties": {
+        "guest_name": {"type": "string"},
+        "guest_title": {"type": "string"},
+        "bio_or_background": {"type": "string"}
+      }
+    },
+    "topic_chapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "topic", "summary"],
+        "properties": {
+          "timestamp": {"type": "string"},
+          "topic": {"type": "string"},
+          "summary": {"type": "string"}
+        }
+      }
+    },
+    "key_takeaways": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "golden_quotes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["quote", "speaker"],
+        "properties": {
+          "quote": {"type": "string"},
+          "speaker": {"type": "string"},
+          "context": {"type": "string"}
+        }
+      }
+    }
+  }
+}

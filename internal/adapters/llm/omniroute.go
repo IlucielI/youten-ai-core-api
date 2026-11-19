@@ -660,9 +660,10 @@ Extract:
 2. title: The title, heading, or topic shown on the screen (or empty string if none).
 3. extracted_text: Full text, bullet points, code, or metrics legible on the slide/screen.
 4. visual_summary: A concise 1-2 sentence description of diagrams, charts, UI actions, or layout.
-5. visible_speakers: Any person/speaker names visible on screen (e.g. from Zoom/Teams/Meet video tiles).
-6. active_speaker: The exact display name of the participant who currently has an active speaker indicator (e.g. green border in Zoom, blue ring in Google Meet, purple outline in MS Teams, or speech waveform icon next to their tile). Leave as empty string "" if no active speaker indicator is visible or if this is not a meeting tile layout.
-7. confidence: A float between 0.0 and 1.0 indicating clarity and confidence.
+5. meeting_platform: Exactly one of "google_meet", "zoom", "ms_teams", "other_meeting", or "none". Identify whether this image displays a video conferencing UI.
+6. visible_speakers: Any person/speaker names visible on screen (e.g. from Zoom/Teams/Meet video tiles).
+7. active_speaker: The exact display name of the participant who currently has an active speaker indicator (e.g. green border in Zoom, blue ring/dots waveform in Google Meet, purple outline in MS Teams). If screen sharing dominates and participant tiles are too small, blurry, or lack a clear active indicator, leave as empty string "" (strict visual confirmation only).
+8. confidence: A float between 0.0 and 1.0 indicating clarity and confidence.
 
 Respond ONLY with valid JSON strictly conforming to this schema:
 {
@@ -670,6 +671,7 @@ Respond ONLY with valid JSON strictly conforming to this schema:
   "title": "Title here",
   "extracted_text": "Text here",
   "visual_summary": "Summary here",
+  "meeting_platform": "none",
   "visible_speakers": [],
   "active_speaker": "",
   "confidence": 0.95

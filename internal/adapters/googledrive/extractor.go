@@ -39,6 +39,7 @@ const (
 var AllowedDomains = []string{
 	"drive.google.com",
 	"docs.google.com",
+	"drive.usercontent.google.com",
 }
 
 var (
@@ -48,6 +49,14 @@ var (
 	gdrivePathRegex = regexp.MustCompile(`^/(?:file/)?d/([a-zA-Z0-9_-]{10,})`)
 	// confirmTokenRegex extracts Google Drive virus-scan bypass confirmation tokens.
 	confirmTokenRegex = regexp.MustCompile(`(?:confirm=([a-zA-Z0-9_-]+)|download_warning_([a-zA-Z0-9_-]+))`)
+	// formActionRegex extracts form action URL from Google Drive HTML warning page.
+	formActionRegex = regexp.MustCompile(`(?i)<form[^>]+action=["']([^"']+)["']`)
+	// inputFieldRegex extracts name and value attributes from HTML input tags.
+	inputFieldRegex = regexp.MustCompile(`(?i)<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']*)["']`)
+	// inputFieldReverseRegex extracts value and name attributes in reverse order.
+	inputFieldReverseRegex = regexp.MustCompile(`(?i)<input[^>]+value=["']([^"']*)["'][^>]+name=["']([^"']+)["']`)
+	// warningPageFilenameRegex extracts filename displayed on virus warning page.
+	warningPageFilenameRegex = regexp.MustCompile(`(?i)class=["']uc-name-size["'][^>]*><a[^>]*>([^<]+)</a>`)
 	// filenameHeaderRegex parses filename parameter from Content-Disposition headers.
 	filenameHeaderRegex = regexp.MustCompile(`filename[*]?=(?:UTF-8'')?["']?([^"';]+)["']?`)
 )
@@ -238,6 +247,13 @@ func (e *Extractor) FetchMetadata(ctx context.Context, rawURL string) (*dtos.Med
 
 	title := parseFilenameFromHeader(resp.Header.Get("Content-Disposition"))
 	if title == "" {
+		if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+			if parsedTitle := e.peekFilenameFromWarningPage(metaCtx, downloadURL); parsedTitle != "" {
+				title = parsedTitle
+			}
+		}
+	}
+	if title == "" {
 		title = fmt.Sprintf("Google Drive (%s)", id)
 	}
 
@@ -305,8 +321,12 @@ func (e *Extractor) ExtractAudio(ctx context.Context, rawURL string) (*dtos.Extr
 		}
 		contentType = strings.ToLower(resp.Header.Get("Content-Type"))
 		if strings.Contains(contentType, "text/html") {
+			bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
 			resp.Body.Close()
-			return nil, services.ErrMediaAccessDenied
+			if containsAccessDeniedKeywords(string(bodyBytes)) {
+				return nil, services.ErrMediaAccessDenied
+			}
+			return nil, fmt.Errorf("unexpected html response from google drive during media download")
 		}
 	}
 
@@ -423,6 +443,30 @@ func (e *Extractor) handleConfirmToken(resp *http.Response, fileID string) (stri
 		return "", services.ErrMediaAccessDenied
 	}
 
+	// 1. Modern Google Drive virus scan warning form (<form id="download-form" action="..." method="get">)
+	if formActionMatch := formActionRegex.FindStringSubmatch(bodyStr); len(formActionMatch) > 1 {
+		action := strings.ReplaceAll(formActionMatch[1], "&amp;", "&")
+		targetURL, parseErr := e.resolveTargetURL(action)
+		if parseErr == nil && targetURL != nil {
+			q := targetURL.Query()
+			inputs := extractFormInputs(bodyStr)
+			for k, v := range inputs {
+				q.Set(k, v)
+			}
+			if q.Get("id") == "" {
+				q.Set("id", fileID)
+			}
+			if q.Get("export") == "" {
+				q.Set("export", "download")
+			}
+			if q.Get("confirm") != "" || q.Get("uuid") != "" {
+				targetURL.RawQuery = q.Encode()
+				return targetURL.String(), nil
+			}
+		}
+	}
+
+	// 2. Legacy link / query string confirmation token
 	matches := confirmTokenRegex.FindStringSubmatch(bodyStr)
 	var token string
 	if len(matches) > 1 && matches[1] != "" {
@@ -431,23 +475,87 @@ func (e *Extractor) handleConfirmToken(resp *http.Response, fileID string) (stri
 		token = matches[2]
 	}
 
-	if token == "" {
-		// If neither confirm token nor download warning token is present,
-		// and it is an HTML page, this is an inaccessible or private file.
-		return "", services.ErrMediaAccessDenied
+	if token != "" {
+		u, err := url.Parse(fmt.Sprintf("%s/uc", e.baseURL))
+		if err != nil {
+			return "", fmt.Errorf("failed to parse base URL: %w", err)
+		}
+		q := u.Query()
+		q.Set("export", "download")
+		q.Set("confirm", token)
+		q.Set("id", fileID)
+		u.RawQuery = q.Encode()
+		return u.String(), nil
 	}
 
-	u, err := url.Parse(fmt.Sprintf("%s/uc", e.baseURL))
+	return "", services.ErrMediaAccessDenied
+}
+
+func (e *Extractor) resolveTargetURL(action string) (*url.URL, error) {
+	if strings.HasPrefix(action, "http://") || strings.HasPrefix(action, "https://") {
+		parsed, err := url.Parse(action)
+		if err != nil {
+			return nil, err
+		}
+		if e.isTest {
+			base, err := url.Parse(e.baseURL)
+			if err == nil {
+				parsed.Scheme = base.Scheme
+				parsed.Host = base.Host
+			}
+		}
+		return parsed, nil
+	}
+
+	base, err := url.Parse(e.baseURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse base URL: %w", err)
+		return nil, err
 	}
-	q := u.Query()
-	q.Set("export", "download")
-	q.Set("confirm", token)
-	q.Set("id", fileID)
-	u.RawQuery = q.Encode()
+	ref, err := url.Parse(action)
+	if err != nil {
+		return nil, err
+	}
+	return base.ResolveReference(ref), nil
+}
 
-	return u.String(), nil
+func extractFormInputs(html string) map[string]string {
+	inputs := make(map[string]string)
+	for _, m := range inputFieldRegex.FindAllStringSubmatch(html, -1) {
+		if len(m) > 2 {
+			inputs[m[1]] = strings.ReplaceAll(m[2], "&amp;", "&")
+		}
+	}
+	for _, m := range inputFieldReverseRegex.FindAllStringSubmatch(html, -1) {
+		if len(m) > 2 {
+			if _, exists := inputs[m[2]]; !exists {
+				inputs[m[2]] = strings.ReplaceAll(m[1], "&amp;", "&")
+			}
+		}
+	}
+	return inputs
+}
+
+func (e *Extractor) peekFilenameFromWarningPage(ctx context.Context, downloadURL string) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", "Youten-AI-MediaFetcher/1.0")
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
+	if err != nil {
+		return ""
+	}
+	matches := warningPageFilenameRegex.FindStringSubmatch(string(bodyBytes))
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	return ""
 }
 
 func isAccessDeniedResponse(resp *http.Response) bool {

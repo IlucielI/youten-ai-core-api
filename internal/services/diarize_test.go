@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
@@ -323,21 +327,16 @@ func TestService_DiarizeAndCorrectSegmentsWithLLM_RelativeIndexChunk(t *testing.
 	// Chunk 0 is segments [0..25). Chunk 1 is segments [25..30).
 	// In Chunk 1, the LLM returns 0-based relative indices [{"index": 0, ...}, {"index": 1, ...}]
 	// instead of [{"index": 25, ...}, {"index": 26, ...}].
-	callCount := 0
 	mockLLM := &dummyLLM{
 		generateChatFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
-			callCount++
-			if callCount == 1 {
+			userContent := messages[0].Content
+			if !strings.Contains(userContent, "ROSTER PEMBICARA RESMI") {
 				// Pass 1: Roster discovery
 				return &dtos.ChatResponse{
 					Content: `[{"label": "Speaker 0", "name": "Host", "role": "Host"}, {"label": "Speaker 1", "name": "Budi", "role": "Guest"}]`,
 				}, nil
-			} else if callCount == 2 {
-				// Pass 2, Chunk 0 [0..25)
-				return &dtos.ChatResponse{
-					Content: `[{"index": 0, "speaker": "Speaker 0", "speaker_name": "Host", "text": "Selamat datang"}]`,
-				}, nil
-			} else {
+			}
+			if strings.Contains(userContent, "25 [") {
 				// Pass 2, Chunk 1 [25..30): LLM outputs 0-based relative index for index 25!
 				return &dtos.ChatResponse{
 					Content: `[
@@ -346,6 +345,10 @@ func TestService_DiarizeAndCorrectSegmentsWithLLM_RelativeIndexChunk(t *testing.
 					]`,
 				}, nil
 			}
+			// Pass 2, Chunk 0 [0..25)
+			return &dtos.ChatResponse{
+				Content: `[{"index": 0, "speaker": "Speaker 0", "speaker_name": "Host", "text": "Selamat datang"}]`,
+			}, nil
 		},
 	}
 
@@ -829,7 +832,128 @@ func TestMergeConsecutiveSegments_DifferentSpeakerLabelsNeverMerge(t *testing.T)
 	}
 }
 
+func TestService_DiarizeAndCorrectSegmentsWithLLM_ParallelPoolLargeMeeting(t *testing.T) {
+	// 150 segments triggers large-meeting chunking (chunkSize = 60 => 3 parallel chunks)
+	segments := make([]dtos.SegmentResult, 150)
+	for i := range segments {
+		segments[i] = dtos.SegmentResult{
+			ID:           i,
+			Start:        float64(i * 5),
+			End:          float64(i*5 + 4),
+			SpeakerLabel: fmt.Sprintf("Speaker %d", i%2),
+			Text:         fmt.Sprintf("Original speech turn segment %d", i),
+		}
+	}
 
+	var activeWorkers int32
+	var maxObservedWorkers int32
 
+	mockLLM := &dummyLLM{
+		generateChatFunc: func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+			content := messages[0].Content
+			if !strings.Contains(content, "ROSTER PEMBICARA RESMI") {
+				// Pass 1: Roster discovery
+				return &dtos.ChatResponse{
+					Content: `[{"label": "Speaker 0", "name": "Budi", "role": "Host"}, {"label": "Speaker 1", "name": "Dewi", "role": "Guest"}]`,
+				}, nil
+			}
 
+			// Pass 2: Track concurrent worker execution
+			cur := atomic.AddInt32(&activeWorkers, 1)
+			for {
+				old := atomic.LoadInt32(&maxObservedWorkers)
+				if cur <= old || atomic.CompareAndSwapInt32(&maxObservedWorkers, old, cur) {
+					break
+				}
+			}
+			time.Sleep(20 * time.Millisecond) // simulate short LLM inference latency
+			atomic.AddInt32(&activeWorkers, -1)
+
+			// Determine chunk by looking at segment index markers at line starts in prompt
+			if strings.Contains(content, "\n120 [") {
+				return &dtos.ChatResponse{
+					Content: `[{"index": 120, "speaker": "Speaker 0", "speaker_name": "Budi", "text": "Corrected speech turn segment 120"}]`,
+				}, nil
+			} else if strings.Contains(content, "\n60 [") {
+				return &dtos.ChatResponse{
+					Content: `[{"index": 60, "speaker": "Speaker 1", "speaker_name": "Dewi", "text": "Corrected speech turn segment 60"}]`,
+				}, nil
+			} else if strings.Contains(content, "\n0 [") {
+				return &dtos.ChatResponse{
+					Content: `[{"index": 0, "speaker": "Speaker 0", "speaker_name": "Budi", "text": "Corrected speech turn segment 0"}]`,
+				}, nil
+			}
+
+			return &dtos.ChatResponse{Content: "[]"}, nil
+		},
+	}
+
+	svc := &Service{llm: mockLLM}
+	result := svc.diarizeAndCorrectSegmentsWithLLM(context.Background(), segments)
+
+	if len(result) != 150 {
+		t.Fatalf("expected 150 segments returned, got %d", len(result))
+	}
+
+	// Verify corrected segments
+	if result[0].Text != "Corrected speech turn segment 0" {
+		t.Errorf("expected segment 0 corrected, got %s", result[0].Text)
+	}
+	if result[60].Text != "Corrected speech turn segment 60" {
+		t.Errorf("expected segment 60 corrected, got %s", result[60].Text)
+	}
+	if result[120].Text != "Corrected speech turn segment 120" {
+		t.Errorf("expected segment 120 corrected, got %s", result[120].Text)
+	}
+
+	// Verify that chunks were actually executed concurrently across multiple workers
+	maxWorkers := atomic.LoadInt32(&maxObservedWorkers)
+	if maxWorkers < 2 {
+		t.Errorf("expected at least 2 concurrent workers for 3 large chunks, got %d", maxWorkers)
+	}
+
+	// Verify canonical name propagation across chunks
+	for i, seg := range result {
+		if seg.SpeakerLabel == "Speaker 0" && seg.SpeakerName != "Budi" {
+			t.Errorf("expected segment %d SpeakerName Budi, got %s", i, seg.SpeakerName)
+		}
+		if seg.SpeakerLabel == "Speaker 1" && seg.SpeakerName != "Dewi" {
+			t.Errorf("expected segment %d SpeakerName Dewi, got %s", i, seg.SpeakerName)
+		}
+	}
+}
+
+func TestService_BuildModelTranscriptSegments(t *testing.T) {
+	recID := uuid.New()
+	svc := &Service{}
+
+	t.Run("converts valid segments and ignores music/noise", func(t *testing.T) {
+		input := []dtos.SegmentResult{
+			{Start: 0.0, End: 2.0, SpeakerLabel: "Speaker 0", Text: "Halo dunia"},
+			{Start: 2.1, End: 4.0, SpeakerLabel: "Speaker 0", Text: "[Musik]"},
+			{Start: 4.5, End: 7.0, SpeakerLabel: "Speaker 1", SpeakerName: "Andi", Text: "Halo juga"},
+		}
+
+		res := svc.buildModelTranscriptSegments(recID, input, "", 10.0)
+		if len(res) != 2 {
+			t.Fatalf("expected 2 segments after noise filter, got %d", len(res))
+		}
+		if res[0].Text != "Halo dunia" || res[0].SpeakerLabel != "Speaker 0" {
+			t.Errorf("unexpected segment 0: %+v", res[0])
+		}
+		if res[1].Text != "Halo juga" || res[1].SpeakerName != "Andi" {
+			t.Errorf("unexpected segment 1: %+v", res[1])
+		}
+	})
+
+	t.Run("fallback to single segment when segments empty", func(t *testing.T) {
+		res := svc.buildModelTranscriptSegments(recID, nil, "Ini adalah teks tanpa segmen waktu.", 15.0)
+		if len(res) != 1 {
+			t.Fatalf("expected 1 fallback segment, got %d", len(res))
+		}
+		if res[0].Text != "Ini adalah teks tanpa segmen waktu." || res[0].EndTime != 15.0 {
+			t.Errorf("unexpected fallback segment: %+v", res[0])
+		}
+	})
+}
 

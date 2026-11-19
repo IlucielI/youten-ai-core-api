@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -348,89 +350,33 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		sttResult.Segments = splitSegs
 	}
 
-	// If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors.
+	durationToSave := sttResult.Duration
+	if durationToSave <= 0 && recording.DurationSeconds > 0 {
+		durationToSave = recording.DurationSeconds
+	}
+
+	// 1. Build and persist baseline transcript segments immediately so downstream stages
+	// and UI have access to raw acoustic segments even if subsequent LLM processing fails or times out.
+	modelSegments := s.buildModelTranscriptSegments(recording.ID, sttResult.Segments, sttResult.Text, durationToSave)
+	if len(modelSegments) > 0 {
+		if err := s.repo.SaveTranscriptSegments(ctx, modelSegments); err != nil {
+			s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to save baseline transcript segments: %v", err))
+			return fmt.Errorf("failed to save baseline transcript segments: %w", err)
+		}
+	}
+
+	// 2. If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors in parallel.
 	if len(sttResult.Segments) > 0 && s.llm != nil {
-		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, nil, recording.AnalyticsData)
-	}
-
-	var modelSegments []models.TranscriptSegment
-	for _, seg := range sttResult.Segments {
-		cleanText := strings.TrimSpace(seg.Text)
-		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
-		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" || norm == "intro" {
-			continue
-		}
-
-		wordsJSON, _ := json.Marshal(seg.Words)
-		speaker := seg.SpeakerLabel
-		if speaker == "" {
-			speaker = constants.DefaultSpeakerLabel
-		} else {
-			speaker = sttalign.NormalizeSpeakerLabel(speaker)
-		}
-		speakerName := seg.SpeakerName
-		if speakerName == "" {
-			speakerName = speaker
-		}
-		modelSegments = append(modelSegments, models.TranscriptSegment{
-			RecordingID:   recording.ID,
-			SpeakerLabel:  speaker,
-			SpeakerName:   speakerName,
-			StartTime:     seg.Start,
-			EndTime:       seg.End,
-			Text:          cleanText,
-			WordsData:     json.RawMessage(wordsJSON),
-			SequenceOrder: len(modelSegments) + 1,
-		})
-	}
-
-	// If no segments provided by STT, fallback to a single segment from full text
-	if len(modelSegments) == 0 && strings.TrimSpace(sttResult.Text) != "" {
-		fallbackDuration := sttResult.Duration
-		if fallbackDuration <= 0 {
-			fallbackDuration = recording.DurationSeconds
-		}
-		fallbackSeg := dtos.SegmentResult{
-			Start:        0,
-			End:          fallbackDuration,
-			Text:         sttResult.Text,
-			SpeakerLabel: constants.DefaultSpeakerLabel,
-			SpeakerName:  constants.DefaultSpeakerLabel,
-		}
-		turns := sttalign.SplitCompoundDialogue(fallbackSeg, nil)
-		if len(turns) > 1 {
-			for idx, turn := range turns {
-				modelSegments = append(modelSegments, models.TranscriptSegment{
-					RecordingID:   recording.ID,
-					SpeakerLabel:  turn.SpeakerLabel,
-					SpeakerName:   turn.SpeakerName,
-					StartTime:     turn.Start,
-					EndTime:       turn.End,
-					Text:          turn.Text,
-					WordsData:     json.RawMessage("[]"),
-					SequenceOrder: idx + 1,
-				})
+		s.publishCustomProgress(recording.ID, models.RecordingStatusTranscribing, "TRANSCRIBING", 35)
+		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments, recording.AnalyticsData, recording.ID)
+		refinedSegments := s.buildModelTranscriptSegments(recording.ID, sttResult.Segments, sttResult.Text, durationToSave)
+		if len(refinedSegments) > 0 {
+			if err := s.repo.ReplaceTranscriptSegments(ctx, recording.ID, refinedSegments); err != nil {
+				log.Printf("[PIPELINE WARN] recording %s: failed to atomically replace with refined transcript segments: %v", recording.ID.String(), err)
+			} else {
+				modelSegments = refinedSegments
 			}
-		} else {
-			modelSegments = append(modelSegments, models.TranscriptSegment{
-				RecordingID:   recording.ID,
-				SpeakerLabel:  constants.DefaultSpeakerLabel,
-				SpeakerName:   constants.DefaultSpeakerLabel,
-				StartTime:     0,
-				EndTime:       fallbackDuration,
-				Text:          sttResult.Text,
-				WordsData:     json.RawMessage("[]"),
-				SequenceOrder: 1,
-			})
 		}
-	}
-
-	// Merge consecutive segments from the same speaker to prevent sentence fragmentation
-	modelSegments = mergeConsecutiveSegments(modelSegments, 1.5, 20.0)
-
-	if err := s.repo.SaveTranscriptSegments(ctx, modelSegments); err != nil {
-		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("failed to save transcript segments: %v", err))
-		return fmt.Errorf("failed to save transcript segments: %w", err)
 	}
 
 	rawLang := strings.TrimSpace(sttResult.Language)
@@ -442,10 +388,6 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		detectedLang = "id"
 	}
 
-	durationToSave := sttResult.Duration
-	if durationToSave <= 0 && recording.DurationSeconds > 0 {
-		durationToSave = recording.DurationSeconds
-	}
 	if err := s.repo.UpdateRecordingDurationAndLanguage(ctx, recording.ID, durationToSave, detectedLang); err != nil {
 		log.Printf("[PIPELINE WARN] recording %s: failed to update duration and language: %v", recording.ID.String(), err)
 	}
@@ -1148,6 +1090,92 @@ func (s *Service) publishProgress(recordingID uuid.UUID, status string, errCode,
 	})
 }
 
+func (s *Service) publishCustomProgress(recordingID uuid.UUID, status, stage string, progress int) {
+	if s.sseHub == nil {
+		return
+	}
+	s.sseHub.Publish(recordingID, sse.ProgressEvent{
+		RecordingID:  recordingID.String(),
+		Status:       status,
+		Stage:        stage,
+		Progress:     progress,
+		UpdatedAt:    time.Now().UTC(),
+	})
+}
+
+// buildModelTranscriptSegments converts STT segment results or fallback text into persistence-ready TranscriptSegment models.
+func (s *Service) buildModelTranscriptSegments(recordingID uuid.UUID, segments []dtos.SegmentResult, fallbackText string, fallbackDuration float64) []models.TranscriptSegment {
+	var modelSegments []models.TranscriptSegment
+	for _, seg := range segments {
+		cleanText := strings.TrimSpace(seg.Text)
+		norm := strings.ToLower(strings.Trim(cleanText, "[]() "))
+		if cleanText == "" || norm == "musik" || norm == "music" || norm == "instrumental" || norm == "background music" || norm == "intro" {
+			continue
+		}
+
+		wordsJSON, _ := json.Marshal(seg.Words)
+		speaker := seg.SpeakerLabel
+		if speaker == "" {
+			speaker = constants.DefaultSpeakerLabel
+		} else {
+			speaker = sttalign.NormalizeSpeakerLabel(speaker)
+		}
+		speakerName := seg.SpeakerName
+		if speakerName == "" {
+			speakerName = speaker
+		}
+		modelSegments = append(modelSegments, models.TranscriptSegment{
+			RecordingID:   recordingID,
+			SpeakerLabel:  speaker,
+			SpeakerName:   speakerName,
+			StartTime:     seg.Start,
+			EndTime:       seg.End,
+			Text:          cleanText,
+			WordsData:     json.RawMessage(wordsJSON),
+			SequenceOrder: len(modelSegments) + 1,
+		})
+	}
+
+	// If no segments provided by STT, fallback to a single segment from full text
+	if len(modelSegments) == 0 && strings.TrimSpace(fallbackText) != "" {
+		fallbackSeg := dtos.SegmentResult{
+			Start:        0,
+			End:          fallbackDuration,
+			Text:         fallbackText,
+			SpeakerLabel: constants.DefaultSpeakerLabel,
+			SpeakerName:  constants.DefaultSpeakerLabel,
+		}
+		turns := sttalign.SplitCompoundDialogue(fallbackSeg, nil)
+		if len(turns) > 1 {
+			for idx, turn := range turns {
+				modelSegments = append(modelSegments, models.TranscriptSegment{
+					RecordingID:   recordingID,
+					SpeakerLabel:  turn.SpeakerLabel,
+					SpeakerName:   turn.SpeakerName,
+					StartTime:     turn.Start,
+					EndTime:       turn.End,
+					Text:          turn.Text,
+					WordsData:     json.RawMessage("[]"),
+					SequenceOrder: idx + 1,
+				})
+			}
+		} else {
+			modelSegments = append(modelSegments, models.TranscriptSegment{
+				RecordingID:   recordingID,
+				SpeakerLabel:  constants.DefaultSpeakerLabel,
+				SpeakerName:   constants.DefaultSpeakerLabel,
+				StartTime:     0,
+				EndTime:       fallbackDuration,
+				Text:          fallbackText,
+				WordsData:     json.RawMessage("[]"),
+				SequenceOrder: 1,
+			})
+		}
+	}
+
+	return mergeConsecutiveSegments(modelSegments, 1.5, 20.0)
+}
+
 // needsDiarization returns true if all segments currently have empty or default speaker labels.
 func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 	for _, seg := range segments {
@@ -1441,12 +1469,20 @@ func pruneGhostSpeakers(segments []dtos.SegmentResult, rosterMap map[string]dtos
 	return segments
 }
 
+type diarizeChunkJob struct {
+	chunkIdx        int
+	startIdx        int
+	endIdx          int
+	previousContext string
+	acousticSlice   string
+}
+
 // diarizeAndCorrectSegmentsWithLLM uses an advanced 3-pass architecture:
 // Pre-pass: Acoustic temporal alignment and speaker-turn splitting.
 // Pass 1: Global Speaker Roster Discovery across acoustic and textual dialogue.
-// Pass 2: Sequential sliding-window chunk consensus with locked roster, timestamp-aligned acoustic slicing,
+// Pass 2: Concurrent bounded worker-pool chunk consensus with locked roster, timestamp-aligned acoustic slicing,
 //         and post-chunk systematic inversion detection.
-// Pass 3: Post-processing ghost speaker pruning and canonical name propagation.
+// Pass 3: Post-processing ghost speaker pruning, canonical name propagation, and role consistency.
 func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments []dtos.SegmentResult, extra ...interface{}) []dtos.SegmentResult {
 	if len(segments) == 0 {
 		return segments
@@ -1456,6 +1492,7 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 	var diarizedList []dtos.SegmentResult
 	var externalRoster []string
 	var analyticsMap models.JSONMap
+	var recordingID uuid.UUID
 
 	for _, arg := range extra {
 		switch v := arg.(type) {
@@ -1469,6 +1506,8 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		case map[string]interface{}:
 			analyticsMap = models.JSONMap(v)
 			externalRoster = extractExternalRosterFromAnalytics(models.JSONMap(v))
+		case uuid.UUID:
+			recordingID = v
 		}
 	}
 
@@ -1524,15 +1563,19 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 			"Keluarkan JSON array objek dengan keys 'index', 'speaker', 'speaker_name', dan 'text'."
 	}
 
-	const chunkSize = 25
+	chunkSize := 25
+	if len(segments) > 100 {
+		chunkSize = 60
+	}
+
 	totalDuration := 0.0
 	if len(segments) > 0 {
 		totalDuration = segments[len(segments)-1].End
 	}
 
-	// Pass 2: Sequential chained chunk processing with sliding context
-	var previousContext string
-
+	// Pass 2: Partition segments into jobs with sliding acoustic/preceding context
+	var jobs []diarizeChunkJob
+	jobIdx := 0
 	for i := 0; i < len(segments); i += chunkSize {
 		end := i + chunkSize
 		if end > len(segments) {
@@ -1543,172 +1586,9 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		endTime := segments[end-1].End
 		acousticSlice := sttalign.SliceAcousticReferenceByTime(diarizedList, rawRef, startTime, endTime, totalDuration, 12.0)
 
-		var sb strings.Builder
-		sb.WriteString("ROSTER PEMBICARA RESMI:\n")
-		for _, r := range rosterList {
-			if r.Name != "" && !isGenericSpeakerLabel(r.Name) {
-				sb.WriteString(fmt.Sprintf("- %s: %s (%s)\n", r.Label, r.Name, r.Role))
-			} else {
-				sb.WriteString(fmt.Sprintf("- %s\n", r.Label))
-			}
-		}
-
-		if previousContext != "" {
-			sb.WriteString("\nKONTEKS GILIRAN BICARA SEBELUMNYA:\n")
-			sb.WriteString(previousContext)
-		}
-
-		if len(externalRoster) > 0 {
-			sb.WriteString("\nDAFTAR PESERTA MEETING (Google Meet / Zoom / Teams):\n")
-			for _, name := range externalRoster {
-				sb.WriteString(fmt.Sprintf("- %s\n", name))
-			}
-			sb.WriteString("Gunakan nama peserta di atas sebagai referensi nama pembicara asli jika dibuktikan dalam percakapan (misal saling menyapa atau memperkenalkan diri). JANGAN mengasumsikan urutan peserta sama dengan nomor speaker akustik.\n")
-		}
-
-		if acousticSlice != "" {
-			sb.WriteString("\nREFERENSI AKUSTIK DEEPGRAM (RENTANG WAKTU INI):\n")
-			sb.WriteString(acousticSlice)
-		}
-
-		sb.WriteString("\n\nSEGMEN NOMOR WHISPER (TENTUKAN SPEAKER & KOREKSI FONETIK):\n")
-		hasContent := false
-		for idx := i; idx < end; idx++ {
-			txt := strings.TrimSpace(segments[idx].Text)
-			if txt == "" {
-				continue
-			}
-			hasContent = true
-			acSpk := segments[idx].AcousticSpeaker
-			if acSpk == "" {
-				acSpk = segments[idx].SpeakerLabel
-			}
-
-			if acSpk != "" {
-				sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs] (Acoustic: %s): %s\n", idx, segments[idx].Start, segments[idx].End, acSpk, txt))
-			} else if segments[idx].Start > 0 || segments[idx].End > 0 {
-				sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, segments[idx].Start, segments[idx].End, txt))
-			} else {
-				sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
-			}
-		}
-
-		if !hasContent {
-			continue
-		}
-
-		temp := 0.0
-		chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
-			{Role: "user", Content: sb.String()},
-		}, dtos.ChatOptions{Temperature: &temp})
-		if err != nil {
-			log.Printf("[PIPELINE WARN] llm consensus chunk [%d:%d] failed: %v", i, end, err)
-			continue
-		}
-
-		cleanJSON := cleanLLMJSONResponse(chatRes.Content)
-
-		type correctedItem struct {
-			Index       int    `json:"index"`
-			Speaker     string `json:"speaker"`
-			SpeakerName string `json:"speaker_name"`
-			Text        string `json:"text"`
-		}
-
-		var items []correctedItem
-		if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
-			var labelMap map[string]string
-			if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
-				for idx := i; idx < end; idx++ {
-					key := strconv.Itoa(idx)
-					relKey := strconv.Itoa(idx - i)
-					val, ok := labelMap[key]
-					if !ok {
-						val, ok = labelMap[relKey]
-					}
-					if ok && strings.TrimSpace(val) != "" {
-						lbl, name := sttalign.ResolveSpeakerLabelAndName(val, "", rosterMap)
-						if !sttalign.IsAcousticallyAnchored(segments[idx], lbl) {
-							segments[idx].SpeakerLabel = lbl
-							segments[idx].SpeakerName = name
-						}
-					}
-				}
-			}
-		} else {
-			// Determine whether LLM returned absolute indices (i..end-1) or 0-based relative indices (0..chunkSize-1)
-			hasAbsoluteIndex := false
-			for _, it := range items {
-				if it.Index >= i && it.Index < end {
-					hasAbsoluteIndex = true
-					break
-				}
-			}
-
-			// Stage proposed updates for this chunk
-			proposed := make([]dtos.SegmentResult, end-i)
-			for relIdx := 0; relIdx < end-i; relIdx++ {
-				proposed[relIdx] = segments[i+relIdx]
-			}
-
-			for _, it := range items {
-				targetIdx := it.Index
-				if !hasAbsoluteIndex && i > 0 && it.Index >= 0 && (i+it.Index) < end {
-					targetIdx = i + it.Index
-				}
-
-				if targetIdx >= i && targetIdx < end {
-					relIdx := targetIdx - i
-					lbl, name := sttalign.ResolveSpeakerLabelAndName(it.Speaker, it.SpeakerName, rosterMap)
-
-					// Acoustic anchor gate: reject LLM speaker changes if acoustic biometric confidence is high
-					if sttalign.IsAcousticallyAnchored(proposed[relIdx], lbl) {
-						acSpk := proposed[relIdx].AcousticSpeaker
-						if acSpk == "" {
-							acSpk = proposed[relIdx].SpeakerLabel
-						}
-						lbl = acSpk
-						if item, ok := rosterMap[lbl]; ok && !isGenericSpeakerLabel(item.Name) {
-							name = item.Name
-						} else {
-							name = lbl
-						}
-					}
-
-					if lbl != "" {
-						proposed[relIdx].SpeakerLabel = lbl
-					}
-					if name != "" {
-						proposed[relIdx].SpeakerName = name
-					}
-					if strings.TrimSpace(it.Text) != "" {
-						proposed[relIdx].Text = strings.TrimSpace(it.Text)
-					}
-				}
-			}
-
-			// Inversion guardrail: detect if LLM systematically flipped speaker labels in this chunk
-			correctedChunk := sttalign.DetectAndCorrectSpeakerInversion(segments[i:end], proposed)
-			for relIdx := 0; relIdx < end-i; relIdx++ {
-				targetIdx := i + relIdx
-				segments[targetIdx].SpeakerLabel = correctedChunk[relIdx].SpeakerLabel
-				segments[targetIdx].SpeakerName = correctedChunk[relIdx].SpeakerName
-				segments[targetIdx].Text = correctedChunk[relIdx].Text
-
-				// If LLM discovered a concrete real name during this chunk, record into rosterMap
-				if !isGenericSpeakerLabel(segments[targetIdx].SpeakerName) && segments[targetIdx].SpeakerLabel != "" {
-					curr := rosterMap[segments[targetIdx].SpeakerLabel]
-					curr.Label = segments[targetIdx].SpeakerLabel
-					curr.Name = segments[targetIdx].SpeakerName
-					rosterMap[segments[targetIdx].SpeakerLabel] = curr
-				}
-			}
-		}
-
-		// Update sliding window context for next chunk
 		var ctxSb strings.Builder
 		count := 0
-		for idx := end - 1; idx >= i && count < 3; idx-- {
+		for idx := i - 1; idx >= 0 && count < 3; idx-- {
 			if strings.TrimSpace(segments[idx].Text) != "" {
 				spk := segments[idx].SpeakerLabel
 				if spk == "" {
@@ -1722,11 +1602,97 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 				count++
 			}
 		}
-		previousContext = ctxSb.String()
+
+		jobs = append(jobs, diarizeChunkJob{
+			chunkIdx:        jobIdx,
+			startIdx:        i,
+			endIdx:          end,
+			previousContext: ctxSb.String(),
+			acousticSlice:   acousticSlice,
+		})
+		jobIdx++
+	}
+
+	if len(jobs) == 0 {
+		return segments
+	}
+
+	chunkResults := make([][]dtos.SegmentResult, len(jobs))
+	for _, job := range jobs {
+		fallback := make([]dtos.SegmentResult, job.endIdx-job.startIdx)
+		copy(fallback, segments[job.startIdx:job.endIdx])
+		chunkResults[job.chunkIdx] = fallback
+	}
+
+	const maxWorkers = 6
+	numWorkers := len(jobs)
+	if numWorkers > maxWorkers {
+		numWorkers = maxWorkers
+	}
+
+	jobChan := make(chan diarizeChunkJob, len(jobs))
+	for _, job := range jobs {
+		jobChan <- job
+	}
+	close(jobChan)
+
+	var (
+		wg             sync.WaitGroup
+		rosterMu       sync.RWMutex
+		completedCount int64
+		totalJobs      = int64(len(jobs))
+	)
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobChan {
+				if ctx.Err() != nil {
+					return
+				}
+				res := s.processDiarizationChunk(ctx, job, segments, rosterList, &rosterMu, rosterMap, externalRoster, systemPrompt)
+				chunkResults[job.chunkIdx] = res
+
+				done := atomic.AddInt64(&completedCount, 1)
+				if recordingID != uuid.Nil {
+					prog := 35 + int((float64(done)/float64(totalJobs))*20.0)
+					s.publishCustomProgress(recordingID, models.RecordingStatusTranscribing, "TRANSCRIBING", prog)
+					if done%5 == 0 || done == totalJobs {
+						_ = s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusTranscribing, nil, nil)
+					}
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Reassemble chunks into contiguous segments slice
+	for _, job := range jobs {
+		res := chunkResults[job.chunkIdx]
+		for relIdx := 0; relIdx < len(res); relIdx++ {
+			targetIdx := job.startIdx + relIdx
+			if targetIdx < len(segments) {
+				segments[targetIdx] = res[relIdx]
+			}
+		}
+	}
+
+	// Canonical name propagation from discovered rosterMap before Pass 3
+	for i := range segments {
+		lbl := segments[i].SpeakerLabel
+		if isGenericSpeakerLabel(segments[i].SpeakerName) && lbl != "" {
+			rosterMu.RLock()
+			if item, ok := rosterMap[lbl]; ok && !isGenericSpeakerLabel(item.Name) {
+				segments[i].SpeakerName = item.Name
+			}
+			rosterMu.RUnlock()
+		}
 	}
 
 	// Pass 3: Post-processing Ghost Speaker Pruning, Canonical Name Assignment, and Role Consistency.
-	pruneGhostSpeakers(segments, rosterMap)
+	segments = pruneGhostSpeakers(segments, rosterMap)
 	roleConsistent := sttalign.EnforceDialogueRoleConsistency(segments)
 	for i := range segments {
 		// Preserve trusted acoustic diarization evidence.
@@ -1736,6 +1702,188 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		segments[i] = roleConsistent[i]
 	}
 	return segments
+}
+
+func (s *Service) processDiarizationChunk(
+	ctx context.Context,
+	job diarizeChunkJob,
+	rawSegments []dtos.SegmentResult,
+	rosterList []dtos.SpeakerRosterItem,
+	rosterMu *sync.RWMutex,
+	rosterMap map[string]dtos.SpeakerRosterItem,
+	externalRoster []string,
+	systemPrompt string,
+) []dtos.SegmentResult {
+	fallback := make([]dtos.SegmentResult, job.endIdx-job.startIdx)
+	copy(fallback, rawSegments[job.startIdx:job.endIdx])
+
+	var sb strings.Builder
+	sb.WriteString("ROSTER PEMBICARA RESMI:\n")
+	for _, r := range rosterList {
+		if r.Name != "" && !isGenericSpeakerLabel(r.Name) {
+			sb.WriteString(fmt.Sprintf("- %s: %s (%s)\n", r.Label, r.Name, r.Role))
+		} else {
+			sb.WriteString(fmt.Sprintf("- %s\n", r.Label))
+		}
+	}
+
+	if job.previousContext != "" {
+		sb.WriteString("\nKONTEKS GILIRAN BICARA SEBELUMNYA:\n")
+		sb.WriteString(job.previousContext)
+	}
+
+	if len(externalRoster) > 0 {
+		sb.WriteString("\nDAFTAR PESERTA MEETING (Google Meet / Zoom / Teams):\n")
+		for _, name := range externalRoster {
+			sb.WriteString(fmt.Sprintf("- %s\n", name))
+		}
+		sb.WriteString("Gunakan nama peserta di atas sebagai referensi nama pembicara asli jika dibuktikan dalam percakapan (misal saling menyapa atau memperkenalkan diri). JANGAN mengasumsikan urutan peserta sama dengan nomor speaker akustik.\n")
+	}
+
+	if job.acousticSlice != "" {
+		sb.WriteString("\nREFERENSI AKUSTIK DEEPGRAM (RENTANG WAKTU INI):\n")
+		sb.WriteString(job.acousticSlice)
+	}
+
+	sb.WriteString("\n\nSEGMEN NOMOR WHISPER (TENTUKAN SPEAKER & KOREKSI FONETIK):\n")
+	hasContent := false
+	for idx := job.startIdx; idx < job.endIdx; idx++ {
+		txt := strings.TrimSpace(rawSegments[idx].Text)
+		if txt == "" {
+			continue
+		}
+		hasContent = true
+		acSpk := rawSegments[idx].AcousticSpeaker
+		if acSpk == "" {
+			acSpk = rawSegments[idx].SpeakerLabel
+		}
+
+		if acSpk != "" {
+			sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs] (Acoustic: %s): %s\n", idx, rawSegments[idx].Start, rawSegments[idx].End, acSpk, txt))
+		} else if rawSegments[idx].Start > 0 || rawSegments[idx].End > 0 {
+			sb.WriteString(fmt.Sprintf("%d [%.2fs - %.2fs]: %s\n", idx, rawSegments[idx].Start, rawSegments[idx].End, txt))
+		} else {
+			sb.WriteString(fmt.Sprintf("%d: %s\n", idx, txt))
+		}
+	}
+
+	if !hasContent {
+		return fallback
+	}
+
+	temp := 0.0
+	chatRes, err := s.llm.GenerateChatResponse(ctx, systemPrompt, []dtos.ChatMessageInput{
+		{Role: "user", Content: sb.String()},
+	}, dtos.ChatOptions{Temperature: &temp})
+	if err != nil {
+		log.Printf("[PIPELINE WARN] llm consensus chunk [%d:%d] failed: %v", job.startIdx, job.endIdx, err)
+		return fallback
+	}
+
+	cleanJSON := cleanLLMJSONResponse(chatRes.Content)
+
+	type correctedItem struct {
+		Index       int    `json:"index"`
+		Speaker     string `json:"speaker"`
+		SpeakerName string `json:"speaker_name"`
+		Text        string `json:"text"`
+	}
+
+	var items []correctedItem
+	if err := json.Unmarshal([]byte(cleanJSON), &items); err != nil {
+		var labelMap map[string]string
+		if mapErr := json.Unmarshal([]byte(cleanJSON), &labelMap); mapErr == nil {
+			out := make([]dtos.SegmentResult, len(fallback))
+			copy(out, fallback)
+			for idx := job.startIdx; idx < job.endIdx; idx++ {
+				key := strconv.Itoa(idx)
+				relKey := strconv.Itoa(idx - job.startIdx)
+				val, ok := labelMap[key]
+				if !ok {
+					val, ok = labelMap[relKey]
+				}
+				if ok && strings.TrimSpace(val) != "" {
+					rosterMu.RLock()
+					lbl, name := sttalign.ResolveSpeakerLabelAndName(val, "", rosterMap)
+					rosterMu.RUnlock()
+					relIdx := idx - job.startIdx
+					if !sttalign.IsAcousticallyAnchored(out[relIdx], lbl) {
+						out[relIdx].SpeakerLabel = lbl
+						out[relIdx].SpeakerName = name
+					}
+				}
+			}
+			return out
+		}
+		return fallback
+	}
+
+	hasAbsoluteIndex := false
+	for _, it := range items {
+		if it.Index >= job.startIdx && it.Index < job.endIdx {
+			hasAbsoluteIndex = true
+			break
+		}
+	}
+
+	proposed := make([]dtos.SegmentResult, len(fallback))
+	copy(proposed, fallback)
+
+	for _, it := range items {
+		targetIdx := it.Index
+		if !hasAbsoluteIndex && job.startIdx > 0 && it.Index >= 0 && (job.startIdx+it.Index) < job.endIdx {
+			targetIdx = job.startIdx + it.Index
+		}
+
+		if targetIdx < job.startIdx || targetIdx >= job.endIdx {
+			continue
+		}
+
+		relIdx := targetIdx - job.startIdx
+		rosterMu.RLock()
+		lbl, name := sttalign.ResolveSpeakerLabelAndName(it.Speaker, it.SpeakerName, rosterMap)
+		rosterMu.RUnlock()
+
+		if sttalign.IsAcousticallyAnchored(proposed[relIdx], lbl) {
+			acSpk := proposed[relIdx].AcousticSpeaker
+			if acSpk == "" {
+				acSpk = proposed[relIdx].SpeakerLabel
+			}
+			lbl = acSpk
+			rosterMu.RLock()
+			if item, ok := rosterMap[lbl]; ok && !isGenericSpeakerLabel(item.Name) {
+				name = item.Name
+			} else {
+				name = lbl
+			}
+			rosterMu.RUnlock()
+		}
+
+		if lbl != "" {
+			proposed[relIdx].SpeakerLabel = lbl
+		}
+		if name != "" {
+			proposed[relIdx].SpeakerName = name
+		}
+		if strings.TrimSpace(it.Text) != "" {
+			proposed[relIdx].Text = strings.TrimSpace(it.Text)
+		}
+	}
+
+	correctedChunk := sttalign.DetectAndCorrectSpeakerInversion(fallback, proposed)
+	for relIdx := 0; relIdx < len(correctedChunk); relIdx++ {
+		seg := correctedChunk[relIdx]
+		if !isGenericSpeakerLabel(seg.SpeakerName) && seg.SpeakerLabel != "" {
+			rosterMu.Lock()
+			curr := rosterMap[seg.SpeakerLabel]
+			curr.Label = seg.SpeakerLabel
+			curr.Name = seg.SpeakerName
+			rosterMap[seg.SpeakerLabel] = curr
+			rosterMu.Unlock()
+		}
+	}
+
+	return correctedChunk
 }
 
 // isGenericSpeakerLabel returns true if the name is empty or a generic placeholder (e.g. "Speaker 0", "Pembicara 1").

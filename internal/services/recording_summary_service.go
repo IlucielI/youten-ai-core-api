@@ -265,22 +265,7 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		return nil, fmt.Errorf("invalid structured response JSON: %w", err)
 	}
 
-	markdownContent := ""
-	if md, ok := structMap["markdown_content"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["executive_summary"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["executive_overview"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["show_notes"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["course_summary"].(string); ok && md != "" {
-		markdownContent = md
-	} else if md, ok := structMap["abstract_or_summary"].(string); ok && md != "" {
-		markdownContent = md
-	} else {
-		markdownContent = cleanedJSON
-	}
+	markdownContent := AssembleStructuredMarkdown(structMap, cleanedJSON)
 
 	var customAnglePtr *string
 	if req.CustomAngle != nil && strings.TrimSpace(*req.CustomAngle) != "" {

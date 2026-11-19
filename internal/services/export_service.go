@@ -364,13 +364,75 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 			res.Overview = fmt.Sprintf("Tujuan Rapat: %s\n\n%s", mg, res.Overview)
 		}
 	}
-	if es, ok := data["executive_summary"].(string); ok && strings.TrimSpace(es) != "" {
+	appendOverviewParagraph := func(p string) {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			return
+		}
 		if res.Overview == "" {
-			res.Overview = strings.TrimSpace(es)
-		} else if !strings.Contains(res.Overview, strings.TrimSpace(es)) {
-			res.Overview = res.Overview + "\n\n" + strings.TrimSpace(es)
+			res.Overview = trimmed
+			return
+		}
+		for _, existing := range strings.Split(res.Overview, "\n\n") {
+			if strings.TrimSpace(existing) == trimmed {
+				return
+			}
+		}
+		res.Overview = res.Overview + "\n\n" + trimmed
+	}
+	if es, ok := data["executive_summary"].(string); ok {
+		appendOverviewParagraph(es)
+	}
+	if eo, ok := data["executive_overview"].(string); ok {
+		appendOverviewParagraph(eo)
+	}
+	// Discussion Topics & Core Themes
+	if dt, ok := data["discussion_topics"].([]interface{}); ok && len(dt) > 0 {
+		var items []string
+		for idx, t := range dt {
+			if tm, ok := t.(map[string]interface{}); ok {
+				top, _ := tm["topic"].(string)
+				if top == "" {
+					top = fmt.Sprintf("Topik %d", idx+1)
+				}
+				if kp, ok := tm["key_points"].([]interface{}); ok && len(kp) > 0 {
+					var pts []string
+					for _, p := range kp {
+						pts = append(pts, fmt.Sprintf("  - %v", p))
+					}
+					items = append(items, fmt.Sprintf("**%s**\n%s", top, strings.Join(pts, "\n")))
+				} else {
+					items = append(items, fmt.Sprintf("**%s**", top))
+				}
+			}
+		}
+		if len(items) > 0 {
+			res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Sub Pembahasan & Poin Kunci", Items: items})
+		}
+	} else if ct, ok := data["core_themes"].([]interface{}); ok && len(ct) > 0 {
+		var items []string
+		for idx, t := range ct {
+			if tm, ok := t.(map[string]interface{}); ok {
+				theme, _ := tm["theme"].(string)
+				if theme == "" {
+					theme = fmt.Sprintf("Topik %d", idx+1)
+				}
+				if sp, ok := tm["summary_points"].([]interface{}); ok && len(sp) > 0 {
+					var pts []string
+					for _, p := range sp {
+						pts = append(pts, fmt.Sprintf("  - %v", p))
+					}
+					items = append(items, fmt.Sprintf("**%s**\n%s", theme, strings.Join(pts, "\n")))
+				} else {
+					items = append(items, fmt.Sprintf("**%s**", theme))
+				}
+			}
+		}
+		if len(items) > 0 {
+			res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Sub Pembahasan (Core Themes)", Items: items})
 		}
 	}
+
 	if kd, ok := data["key_decisions"].([]interface{}); ok && len(kd) > 0 {
 		var items []string
 		for _, d := range kd {
@@ -388,12 +450,20 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 		}
 		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Keputusan Kunci (Key Decisions)", Items: items})
 	}
+
 	if oi, ok := data["open_issues"].([]interface{}); ok && len(oi) > 0 {
 		var items []string
 		for _, o := range oi {
 			items = append(items, fmt.Sprintf("• %v", o))
 		}
 		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Isu Terbuka (Open Issues)", Items: items})
+	}
+	if op, ok := data["open_points"].([]interface{}); ok && len(op) > 0 {
+		var items []string
+		for _, o := range op {
+			items = append(items, fmt.Sprintf("• %v", o))
+		}
+		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Isu Terbuka (Open Points)", Items: items})
 	}
 
 	// 5. Tech Review Schema
@@ -594,12 +664,25 @@ func extractActionItems(summary *models.Summary) []string {
 				if task, ok := v["task"].(string); ok && strings.TrimSpace(task) != "" {
 					pic, _ := v["pic"].(string)
 					assignee, _ := v["assignee"].(string)
-					owner := pic
+					owner := strings.TrimSpace(pic)
 					if owner == "" {
-						owner = assignee
+						owner = strings.TrimSpace(assignee)
 					}
+					dueDate, _ := v["due_date"].(string)
+					targetSprint, _ := v["target_sprint"].(string)
+					target := strings.TrimSpace(dueDate)
+					if target == "" {
+						target = strings.TrimSpace(targetSprint)
+					}
+					var meta []string
 					if owner != "" {
-						results = append(results, fmt.Sprintf("%s (PIC: %s)", task, owner))
+						meta = append(meta, fmt.Sprintf("PIC: %s", owner))
+					}
+					if target != "" {
+						meta = append(meta, fmt.Sprintf("Target: %s", target))
+					}
+					if len(meta) > 0 {
+						results = append(results, fmt.Sprintf("%s (%s)", task, strings.Join(meta, ", ")))
 					} else {
 						results = append(results, task)
 					}

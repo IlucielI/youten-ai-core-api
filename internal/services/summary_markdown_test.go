@@ -123,5 +123,57 @@ func TestAssembleStructuredMarkdown(t *testing.T) {
 			t.Errorf("expected fallback core_themes rendering, got:\n%s", res)
 		}
 	})
+
+	t.Run("renders default executive overview title when key_takeaways is the only section", func(t *testing.T) {
+		data := map[string]interface{}{
+			"executive_overview": "Short brief",
+			"key_takeaways": []interface{}{
+				"Key takeaway point 1",
+			},
+		}
+		res := services.AssembleStructuredMarkdown(data, "fallback")
+		if !strings.Contains(res, "# Ringkasan Eksekutif") {
+			t.Errorf("expected # Ringkasan Eksekutif heading, got:\n%s", res)
+		}
+		if !strings.Contains(res, "## Poin Kunci (Key Takeaways)") {
+			t.Errorf("expected key takeaways section, got:\n%s", res)
+		}
+	})
+
+	t.Run("falls back to core_themes when discussion_topics contains only malformed elements", func(t *testing.T) {
+		data := map[string]interface{}{
+			"executive_overview": "Malformed topics fallback test",
+			"discussion_topics": []interface{}{
+				"invalid string instead of map",
+				123,
+			},
+			"core_themes": []interface{}{
+				map[string]interface{}{
+					"theme": "Resilient Fallback",
+					"summary_points": []interface{}{
+						"Successfully fell back to core_themes",
+					},
+				},
+			},
+		}
+		res := services.AssembleStructuredMarkdown(data, "fallback")
+		if !strings.Contains(res, "## Sub Pembahasan") || !strings.Contains(res, "Resilient Fallback") {
+			t.Errorf("expected fallback to core_themes on malformed discussion_topics, got:\n%s", res)
+		}
+	})
+
+	t.Run("does not render action items header when items have no valid task", func(t *testing.T) {
+		data := map[string]interface{}{
+			"executive_overview": "Empty action items test",
+			"action_items": []interface{}{
+				map[string]interface{}{},
+				map[string]interface{}{"invalid_key": "val"},
+			},
+		}
+		res := services.AssembleStructuredMarkdown(data, "fallback")
+		if strings.Contains(res, "## Tindakan Lanjutan") {
+			t.Errorf("should not render action items header when all items are empty/invalid, got:\n%s", res)
+		}
+	})
 }
 

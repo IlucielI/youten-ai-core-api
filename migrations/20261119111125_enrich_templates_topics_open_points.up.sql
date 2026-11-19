@@ -3,7 +3,7 @@
 -- 1. Update MOM Template
 UPDATE templates
 SET description = 'Ekstraksi agenda, daftar kehadiran, sub pembahasan per topik, dinamika rapat, keputusan final, isu terbuka, dan tabel action items ber-deadline.',
-    prompt = 'Analisis transkrip percakapan berikut ke format Minutes of Meeting (MOM) terstruktur dengan agenda, daftar hadir, sub pembahasan dan poin kunci per topik (discussion_topics), konsensus dan keputusan final (key_decisions), isu-isu terbuka (open_points/open_issues), serta tabel action items ber-assignee dan deadline.',
+    prompt = 'Analisis transkrip percakapan berikut ke format Minutes of Meeting (MOM) terstruktur dengan agenda, daftar hadir, sub pembahasan dan poin kunci per topik (discussion_topics), konsensus dan keputusan final (key_decisions), isu-isu terbuka (open_points/open_issues), tabel action items ber-assignee dan deadline, dinamika rapat (meeting_dynamics) yang mencakup speaker_talk_time, consensus_score, dan sentiment_trajectory, serta perspektif pemangku kepentingan (stakeholder_perspectives) yang mencakup executive_brief, engineering_focus, dan product_delivery. Pastikan seluruh properti wajib tersebut dihasilkan sesuai struktur schema MOM.',
     output_schema = $${
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
@@ -334,7 +334,7 @@ WHERE category_key = 'GENERAL';
 -- 3. Update TECH_REVIEW Template
 UPDATE templates
 SET description = 'Rangkuman tinjauan arsitektur sistem, RFC/ADR, sub pembahasan teknis, mitigasi risiko, isu terbuka, dan tindakan lanjutan.',
-    prompt = 'Sintesis percakapan teknis arsitektur ke dalam format RFC/ADR mencakup konteks arsitektural (context), sub pembahasan teknis dan poin kunci per topik (discussion_topics), keputusan yang diadopsi vs ditolak, isu terbuka atau risiko yang masih menggantung (open_points), serta rencana aksi mitigasi teknis (action_items).',
+    prompt = 'Sintesis percakapan teknis arsitektur ke dalam format RFC/ADR mencakup konteks arsitektural (context), sub pembahasan teknis dan poin kunci per topik (discussion_topics), keputusan yang diadopsi vs ditolak, penilaian kebutuhan non-fungsional (nfr_assessment) mencakup keamanan, performa, dan reliabilitas, isu terbuka atau risiko yang masih menggantung (open_points), serta rencana aksi mitigasi teknis (action_items). Pastikan seluruh properti wajib tersebut dihasilkan sesuai struktur schema.',
     output_schema = $${
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",

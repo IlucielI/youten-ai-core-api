@@ -169,6 +169,36 @@ func TestExtractor_FetchMetadata(t *testing.T) {
 	}
 }
 
+func TestExtractor_FetchMetadata_FromVirusWarningPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`
+				<html><body>
+				<span class="uc-name-size"><a href="/open?id=10TUcekQHgti6LCeJ9icohx6L287Y7FUv">[Pegadaian Prime] Product Discovery - 2026_11_16 13_28 WIB - Recording.mp4</a> (698M)</span>
+				</body></html>
+			`))
+		}
+	}))
+	defer server.Close()
+
+	ext := googledrive.NewExtractorForTest(server.URL, googledrive.Config{
+		Transport: server.Client().Transport,
+	})
+
+	targetURL := "https://drive.google.com/file/d/10TUcekQHgti6LCeJ9icohx6L287Y7FUv/view"
+	meta, err := ext.FetchMetadata(context.Background(), targetURL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedTitle := "[Pegadaian Prime] Product Discovery - 2026_11_16 13_28 WIB - Recording.mp4"
+	if meta.Title != expectedTitle {
+		t.Errorf("expected Title %q, got %q", expectedTitle, meta.Title)
+	}
+}
+
 func TestExtractor_ExtractAudio_AudioStreamSuccess(t *testing.T) {
 	fakeAudioPayload := "RIFF....WAVEfmt ....datafakeaudio"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -256,6 +286,64 @@ func TestExtractor_ExtractAudio_VirusWarningBypass(t *testing.T) {
 
 	if extracted.Filename != "large_podcast.mp3" {
 		t.Errorf("expected Filename 'large_podcast.mp3', got %q", extracted.Filename)
+	}
+
+	data, _ := io.ReadAll(extracted)
+	if string(data) != fakeAudioPayload {
+		t.Errorf("expected payload %q, got %q", fakeAudioPayload, string(data))
+	}
+}
+
+func TestExtractor_ExtractAudio_ModernVirusWarningFormBypass(t *testing.T) {
+	fakeAudioPayload := "audio-bytes-after-modern-form-bypass"
+	attempt := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt++
+		if attempt == 1 {
+			// First request: modern Google Drive virus warning page with form and uuid
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`
+				<!DOCTYPE html><html><head><title>Google Drive - Virus scan warning</title></head><body>
+				<span class="uc-name-size"><a href="/open?id=10TUcekQHgti6LCeJ9icohx6L287Y7FUv">[Pegadaian Prime] Product Discovery - 2026_11_16 13_28 WIB - Recording.mp4</a> (698M)</span>
+				<form id="download-form" action="/download" method="get">
+					<input type="submit" id="uc-download-link" value="Download anyway"/>
+					<input type="hidden" name="id" value="10TUcekQHgti6LCeJ9icohx6L287Y7FUv">
+					<input type="hidden" name="export" value="download">
+					<input type="hidden" name="confirm" value="t">
+					<input type="hidden" name="uuid" value="fc44c6b9-4036-447b-80f0-50728b75c868">
+				</form>
+				</body></html>
+			`))
+			return
+		}
+
+		// Second request: confirmed download with uuid and confirm=t
+		if r.URL.Query().Get("confirm") != "t" || r.URL.Query().Get("uuid") != "fc44c6b9-4036-447b-80f0-50728b75c868" {
+			http.Error(w, "missing or bad confirm/uuid tokens", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.Header().Set("Content-Disposition", `attachment; filename="pegadaian_meeting.mp3"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(fakeAudioPayload))
+	}))
+	defer server.Close()
+
+	ext := googledrive.NewExtractorForTest(server.URL, googledrive.Config{
+		Transport: server.Client().Transport,
+	})
+
+	targetURL := "https://drive.google.com/file/d/10TUcekQHgti6LCeJ9icohx6L287Y7FUv/view"
+	extracted, err := ext.ExtractAudio(context.Background(), targetURL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer extracted.Close()
+
+	if extracted.Filename != "pegadaian_meeting.mp3" {
+		t.Errorf("expected Filename 'pegadaian_meeting.mp3', got %q", extracted.Filename)
 	}
 
 	data, _ := io.ReadAll(extracted)

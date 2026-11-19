@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["meeting_title", "executive_summary", "discussion_topics", "meeting_dynamics", "stakeholder_perspectives", "key_decisions", "action_items", "open_points"],
+  "properties": {
+    "meeting_title": {"type": "string"},
+    "meeting_goal": {"type": "string"},
+    "executive_summary": {"type": "string"},
+    "discussion_topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "key_points"],
+        "properties": {
+          "topic": {"type": "string"},
+          "key_points": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "meeting_dynamics": {
+      "type": "object",
+      "required": ["speaker_talk_time", "consensus_score", "sentiment_trajectory"],
+      "properties": {
+        "speaker_talk_time": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["speaker", "percentage", "duration_minutes"],
+            "properties": {
+              "speaker": {"type": "string"},
+              "percentage": {"type": "number"},
+              "duration_minutes": {"type": "number"}
+            }
+          }
+        },
+        "consensus_score": {"type": "string"},
+        "sentiment_trajectory": {"type": "string"}
+      }
+    },
+    "stakeholder_perspectives": {
+      "type": "object",
+      "required": ["executive_brief", "engineering_focus", "product_delivery"],
+      "properties": {
+        "executive_brief": {"type": "string"},
+        "engineering_focus": {"type": "string"},
+        "product_delivery": {"type": "string"}
+      }
+    },
+    "key_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["decision", "root_cause_trigger", "contested_points", "quantitative_impact", "approved_by"],
+        "properties": {
+          "decision": {"type": "string"},
+          "root_cause_trigger": {"type": "string"},
+          "contested_points": {"type": "string"},
+          "quantitative_impact": {"type": "string"},
+          "approved_by": {"type": "string"}
+        }
+      }
+    },
+    "action_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["task", "pic", "due_date", "priority", "definition_of_done", "cost_of_inaction"],
+        "properties": {
+          "task": {"type": "string"},
+          "pic": {"type": "string"},
+          "due_date": {"type": "string"},
+          "priority": {"type": "string", "enum": ["P0", "P1", "P2"]},
+          "definition_of_done": {"type": "string"},
+          "cost_of_inaction": {"type": "string"}
+        }
+      }
+    },
+    "open_points": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "open_issues": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "next_meeting": {"type": "string"}
+  }
+}

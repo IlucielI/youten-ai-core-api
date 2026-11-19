@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["lecture_title", "course_summary", "core_concepts", "technical_glossary", "topic_notes", "exam_review_questions"],
+  "properties": {
+    "lecture_title": {"type": "string"},
+    "course_summary": {"type": "string"},
+    "learning_objectives": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "core_concepts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["concept", "explanation"],
+        "properties": {
+          "concept": {"type": "string"},
+          "explanation": {"type": "string"},
+          "examples": {"type": "string"}
+        }
+      }
+    },
+    "technical_glossary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["term", "definition"],
+        "properties": {
+          "term": {"type": "string"},
+          "definition": {"type": "string"}
+        }
+      }
+    },
+    "topic_notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "key_points"],
+        "properties": {
+          "topic": {"type": "string"},
+          "key_points": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "exam_review_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "hint_or_key_answer"],
+        "properties": {
+          "question": {"type": "string"},
+          "hint_or_key_answer": {"type": "string"}
+        }
+      }
+    }
+  }
+}

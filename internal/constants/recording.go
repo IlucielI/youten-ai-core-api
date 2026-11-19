@@ -54,6 +54,15 @@ const (
 	VisualCueTypeDemoAction    = "DEMO_ACTION"
 )
 
+// Meeting platform layout detection constants.
+const (
+	MeetingPlatformNone       = "none"
+	MeetingPlatformGoogleMeet = "google_meet"
+	MeetingPlatformZoom       = "zoom"
+	MeetingPlatformMSTeams    = "ms_teams"
+	MeetingPlatformOther      = "other_meeting"
+)
+
 // Chat message sender roles.
 const (
 	ChatRoleUser      = "user"

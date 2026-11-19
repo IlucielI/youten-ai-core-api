@@ -123,3 +123,74 @@ func TestExtractExternalRosterFromAnalytics(t *testing.T) {
 		}
 	})
 }
+
+func TestIsMeetingPlatform(t *testing.T) {
+	tests := []struct {
+		platform string
+		expected bool
+	}{
+		{constants.MeetingPlatformGoogleMeet, true},
+		{constants.MeetingPlatformZoom, true},
+		{constants.MeetingPlatformMSTeams, true},
+		{constants.MeetingPlatformOther, true},
+		{constants.MeetingPlatformNone, false},
+		{"unknown", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		if res := isMeetingPlatform(tt.platform); res != tt.expected {
+			t.Errorf("isMeetingPlatform(%q) = %v; want %v", tt.platform, res, tt.expected)
+		}
+	}
+}
+
+func TestTriageMeetingLayout(t *testing.T) {
+	t.Run("nil analysis returns none", func(t *testing.T) {
+		isMeeting, platform := triageMeetingLayout(nil)
+		if isMeeting || platform != constants.MeetingPlatformNone {
+			t.Errorf("expected false and none, got %v, %s", isMeeting, platform)
+		}
+	})
+
+	t.Run("explicit google meet platform", func(t *testing.T) {
+		analysis := &dtos.KeyframeAnalysisResult{
+			MeetingPlatform: constants.MeetingPlatformGoogleMeet,
+		}
+		isMeeting, platform := triageMeetingLayout(analysis)
+		if !isMeeting || platform != constants.MeetingPlatformGoogleMeet {
+			t.Errorf("expected true and google_meet, got %v, %s", isMeeting, platform)
+		}
+	})
+
+	t.Run("fallback to other_meeting if visible speakers present", func(t *testing.T) {
+		analysis := &dtos.KeyframeAnalysisResult{
+			VisibleSpeakers: []string{"Bayu Anugerah", "Budi Santoso"},
+		}
+		isMeeting, platform := triageMeetingLayout(analysis)
+		if !isMeeting || platform != constants.MeetingPlatformOther {
+			t.Errorf("expected true and other_meeting, got %v, %s", isMeeting, platform)
+		}
+	})
+
+	t.Run("fallback to other_meeting if active speaker present", func(t *testing.T) {
+		analysis := &dtos.KeyframeAnalysisResult{
+			ActiveSpeaker: "Bayu Anugerah",
+		}
+		isMeeting, platform := triageMeetingLayout(analysis)
+		if !isMeeting || platform != constants.MeetingPlatformOther {
+			t.Errorf("expected true and other_meeting, got %v, %s", isMeeting, platform)
+		}
+	})
+
+	t.Run("slide presentation returns none", func(t *testing.T) {
+		analysis := &dtos.KeyframeAnalysisResult{
+			CueType:         constants.VisualCueTypeSlide,
+			MeetingPlatform: constants.MeetingPlatformNone,
+		}
+		isMeeting, platform := triageMeetingLayout(analysis)
+		if isMeeting || platform != constants.MeetingPlatformNone {
+			t.Errorf("expected false and none, got %v, %s", isMeeting, platform)
+		}
+	})
+}

@@ -487,3 +487,219 @@ func TestProcessVisualExtraction_ActiveSpeakerNametagBinding(t *testing.T) {
 	}
 }
 
+func TestProcessVisualExtraction_GoogleMeet_EarlyStopOptimization(t *testing.T) {
+	svc, mock, storage := setupVisualTestService(t)
+
+	recID := uuid.New()
+	rec := &models.Recording{
+		BaseModel:        models.BaseModel{ID: recID},
+		OriginalFilename: "google-meet-standup.mp4",
+		AnalyticsData:    make(models.JSONMap),
+	}
+
+	p := queue.RecordingPipelinePayload{
+		RecordingID: recID,
+		SourcePath:  "recordings/google-meet-standup.mp4",
+	}
+
+	segments := []models.TranscriptSegment{
+		{StartTime: 0.0, EndTime: 10.0, SpeakerLabel: "Speaker 1"},
+		{StartTime: 12.0, EndTime: 20.0, SpeakerLabel: "Speaker 2"},
+	}
+
+	// Mock Extractor: 3 frames (2 for Speaker 1, 1 for Speaker 2)
+	extractor := &mockVisualExtractor{
+		extractFn: func(ctx context.Context, input io.Reader, filename string, opts dtos.KeyframeExtractionOptions) ([]dtos.ExtractedKeyframe, error) {
+			return []dtos.ExtractedKeyframe{
+				{SequenceOrder: 1, TimestampSeconds: 2.0, ImageBytes: []byte("frame-1"), MimeType: "image/jpeg"},
+				{SequenceOrder: 2, TimestampSeconds: 6.0, ImageBytes: []byte("frame-2"), MimeType: "image/jpeg"},
+				{SequenceOrder: 3, TimestampSeconds: 15.0, ImageBytes: []byte("frame-3"), MimeType: "image/jpeg"},
+			}, nil
+		},
+	}
+	svc.SetVisualExtractor(extractor)
+
+	vlmCalls := 0
+	visionAnalyzer := &mockVisionAnalyzer{
+		analyzeFn: func(ctx context.Context, imgBytes []byte, mimeType string, prompt string) (*dtos.KeyframeAnalysisResult, error) {
+			vlmCalls++
+			switch string(imgBytes) {
+			case "frame-1":
+				return &dtos.KeyframeAnalysisResult{
+					CueType:         constants.VisualCueTypeActiveSpeaker,
+					MeetingPlatform: constants.MeetingPlatformGoogleMeet,
+					ActiveSpeaker:   "Bayu Anugerah",
+					VisibleSpeakers: []string{"Bayu Anugerah", "Budi Santoso"},
+					Confidence:      0.95,
+				}, nil
+			case "frame-3":
+				return &dtos.KeyframeAnalysisResult{
+					CueType:         constants.VisualCueTypeActiveSpeaker,
+					MeetingPlatform: constants.MeetingPlatformGoogleMeet,
+					ActiveSpeaker:   "Budi Santoso",
+					VisibleSpeakers: []string{"Bayu Anugerah", "Budi Santoso"},
+					Confidence:      0.90,
+				}, nil
+			default:
+				return &dtos.KeyframeAnalysisResult{
+					CueType:    constants.VisualCueTypeActiveSpeaker,
+					Confidence: 0.50,
+				}, nil
+			}
+		},
+	}
+	svc.SetVisionAnalyzer(visionAnalyzer)
+
+	// DB Expectations:
+	// 1. Delete stale keyframes
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "video_keyframes" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	// 2. SaveVideoKeyframes (batch insert 3 rows)
+	mock.ExpectBegin()
+	rows := sqlmock.NewRows([]string{"id", "metadata", "created_at", "updated_at"}).
+		AddRow(uuid.New(), []byte("{}"), time.Now(), time.Now()).
+		AddRow(uuid.New(), []byte("{}"), time.Now(), time.Now()).
+		AddRow(uuid.New(), []byte("{}"), time.Now(), time.Now())
+	mock.ExpectQuery(`INSERT INTO "video_keyframes"`).WillReturnRows(rows)
+	mock.ExpectCommit()
+
+	// 3. UpdateTranscriptSpeakerNames transaction
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "transcript_segments"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "transcript_segments"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// 4. UpdateRecordingAnalytics
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.ProcessVisualExtraction(context.Background(), rec, p, segments)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify Early-Stop Optimization:
+	// Frame 2 was skipped because Speaker 1 was already identified with confidence 0.95 >= 0.8
+	// Thus vlmCalls must be exactly 2 (not 3!)
+	if vlmCalls != 2 {
+		t.Fatalf("expected exactly 2 VLM calls due to early-stop, got %d", vlmCalls)
+	}
+
+	if storage.uploadCalls != 3 {
+		t.Errorf("expected 3 thumbnail uploads to storage, got %d", storage.uploadCalls)
+	}
+
+	if rec.AnalyticsData["meeting_platform"] != constants.MeetingPlatformGoogleMeet {
+		t.Errorf("expected meeting_platform google_meet, got %v", rec.AnalyticsData["meeting_platform"])
+	}
+
+	visualSpeakers, ok := rec.AnalyticsData["visual_speakers"].(map[string]string)
+	if !ok {
+		t.Fatalf("expected visual_speakers map in analytics, got: %v", rec.AnalyticsData["visual_speakers"])
+	}
+	if visualSpeakers["Speaker 1"] != "Bayu Anugerah" {
+		t.Errorf("expected Speaker 1 to be 'Bayu Anugerah', got %q", visualSpeakers["Speaker 1"])
+	}
+	if visualSpeakers["Speaker 2"] != "Budi Santoso" {
+		t.Errorf("expected Speaker 2 to be 'Budi Santoso', got %q", visualSpeakers["Speaker 2"])
+	}
+
+	parts, ok := rec.AnalyticsData["meeting_participants"].([]dtos.MeetingParticipant)
+	if !ok || len(parts) != 2 {
+		t.Fatalf("expected 2 meeting_participants in analytics, got: %v", rec.AnalyticsData["meeting_participants"])
+	}
+}
+
+func TestProcessVisualExtraction_ScreenShare_StrictVisualFallback(t *testing.T) {
+	svc, mock, _ := setupVisualTestService(t)
+
+	recID := uuid.New()
+	rec := &models.Recording{
+		BaseModel:        models.BaseModel{ID: recID},
+		OriginalFilename: "meet-screenshare.mp4",
+		AnalyticsData:    make(models.JSONMap),
+	}
+
+	p := queue.RecordingPipelinePayload{
+		RecordingID: recID,
+		SourcePath:  "recordings/meet-screenshare.mp4",
+	}
+
+	segments := []models.TranscriptSegment{
+		{StartTime: 0.0, EndTime: 10.0, SpeakerLabel: "Speaker 1"},
+	}
+
+	// 1 keyframe during screenshare where video tiles are small/blurry and no active speaker is confirmed
+	extractor := &mockVisualExtractor{
+		extractFn: func(ctx context.Context, input io.Reader, filename string, opts dtos.KeyframeExtractionOptions) ([]dtos.ExtractedKeyframe, error) {
+			return []dtos.ExtractedKeyframe{
+				{SequenceOrder: 1, TimestampSeconds: 5.0, ImageBytes: []byte("screenshare-frame"), MimeType: "image/jpeg"},
+			}, nil
+		},
+	}
+	svc.SetVisualExtractor(extractor)
+
+	visionAnalyzer := &mockVisionAnalyzer{
+		analyzeFn: func(ctx context.Context, imgBytes []byte, mimeType string, prompt string) (*dtos.KeyframeAnalysisResult, error) {
+			return &dtos.KeyframeAnalysisResult{
+				CueType:         constants.VisualCueTypeScreenShare,
+				MeetingPlatform: constants.MeetingPlatformGoogleMeet,
+				Title:           "Quarterly Roadmap",
+				ExtractedText:   "Q1 Milestones",
+				VisualSummary:   "Presentation slides showing roadmap",
+				ActiveSpeaker:   "", // Strict visual confirmation: empty because tile is too small
+				Confidence:      0.80,
+			}, nil
+		},
+	}
+	svc.SetVisionAnalyzer(visionAnalyzer)
+
+	// DB Expectations:
+	// 1. Delete stale keyframes
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM "video_keyframes" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	// 2. SaveVideoKeyframes (1 row)
+	mock.ExpectBegin()
+	rows := sqlmock.NewRows([]string{"id", "metadata", "created_at", "updated_at"}).
+		AddRow(uuid.New(), []byte("{}"), time.Now(), time.Now())
+	mock.ExpectQuery(`INSERT INTO "video_keyframes"`).WillReturnRows(rows)
+	mock.ExpectCommit()
+
+	// 3. UpdateRecordingAnalytics
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings"`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.ProcessVisualExtraction(context.Background(), rec, p, segments)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify strict visual fallback: Zero guessing! No visual_speakers mapped
+	if _, exists := rec.AnalyticsData["visual_speakers"]; exists {
+		t.Errorf("expected visual_speakers to NOT exist when active speaker is blurry/empty, got: %v", rec.AnalyticsData["visual_speakers"])
+	}
+
+	// Platform was still accurately identified
+	if rec.AnalyticsData["meeting_platform"] != constants.MeetingPlatformGoogleMeet {
+		t.Errorf("expected meeting_platform google_meet, got %v", rec.AnalyticsData["meeting_platform"])
+	}
+}
+

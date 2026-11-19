@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"code-base-golang/internal/constants"
@@ -79,9 +80,18 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 	// Clean up any stale keyframes for idempotency
 	_ = s.repo.DeleteVideoKeyframesByRecordingID(ctx, recording.ID)
 
-	var modelKeyframes []models.VideoKeyframe
-	var validKeyframes []dtos.ExtractedKeyframe
-	var validAnalyses []*dtos.KeyframeAnalysisResult
+	var (
+		modelKeyframes []models.VideoKeyframe
+		validKeyframes []dtos.ExtractedKeyframe
+		validAnalyses  []*dtos.KeyframeAnalysisResult
+
+		isMeetingUI     bool
+		meetingPlatform = constants.MeetingPlatformNone
+
+		speakerMap      = make(map[string]string)
+		speakerConf     = make(map[string]float64)
+		allParticipants = make(map[string]bool)
+	)
 
 	for idx, kf := range keyframes {
 		seqOrder := idx + 1
@@ -93,10 +103,62 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 			continue
 		}
 
-		// Dual-Engine Cascade: Fast-path local OCR -> Multimodal Vision LLM fallback
-		analysis := s.analyzeKeyframeCascade(ctx, kf)
+		currentSpeaker := ""
+		seg := findSegmentAtTimestamp(kf.TimestampSeconds, segments)
+		if seg != nil {
+			currentSpeaker = strings.TrimSpace(seg.SpeakerLabel)
+		}
+
+		// Early-Stop per Speaker Optimization:
+		// If meeting layout is active and current acoustic speaker has already been confidently identified (>= 0.8),
+		// bypass expensive VLM active-speaker re-analysis on subsequent speech midpoints.
+		var analysis *dtos.KeyframeAnalysisResult
+		if isMeetingUI && currentSpeaker != "" && speakerConf[currentSpeaker] >= 0.8 {
+			analysis = &dtos.KeyframeAnalysisResult{
+				SequenceOrder:    seqOrder,
+				TimestampSeconds: kf.TimestampSeconds,
+				CueType:          constants.VisualCueTypeActiveSpeaker,
+				ActiveSpeaker:    speakerMap[currentSpeaker],
+				Title:            "Active Speaker: " + speakerMap[currentSpeaker],
+				VisualSummary:    fmt.Sprintf("Active speaker %s continuing speech turn", speakerMap[currentSpeaker]),
+				Confidence:       speakerConf[currentSpeaker],
+				Metadata: map[string]interface{}{
+					"engine": "early_stop_cached",
+				},
+			}
+		} else {
+			meetingPrompt := ""
+			if isMeetingUI {
+				meetingPrompt = fmt.Sprintf("Analyze meeting frame (%s). Identify active speaker tile with blue outline, audio waves, or green/purple border, and read nametag. If screenshare dominates and tiles are too small/blurry, leave active_speaker empty.", meetingPlatform)
+			}
+			analysis = s.analyzeKeyframeCascade(ctx, kf, meetingPrompt)
+		}
+
 		if analysis == nil {
 			continue
+		}
+
+		// Tahap 1: Triage layout on initial frame
+		if idx == 0 {
+			isMeetingUI, meetingPlatform = triageMeetingLayout(analysis)
+			if isMeetingUI {
+				log.Printf("[PIPELINE INFO] recording %s: detected meeting layout (%s); enabling active speaker tile extraction", recording.ID.String(), meetingPlatform)
+			}
+		}
+
+		// Record active speaker if confidently detected
+		if detectedName := strings.TrimSpace(analysis.ActiveSpeaker); detectedName != "" && !isGenericSpeakerLabel(detectedName) {
+			if currentSpeaker != "" && (speakerConf[currentSpeaker] < analysis.Confidence || speakerMap[currentSpeaker] == "") {
+				speakerMap[currentSpeaker] = detectedName
+				speakerConf[currentSpeaker] = analysis.Confidence
+			}
+			allParticipants[detectedName] = true
+		}
+		for _, name := range analysis.VisibleSpeakers {
+			clean := strings.TrimSpace(name)
+			if clean != "" && !isGenericSpeakerLabel(clean) {
+				allParticipants[clean] = true
+			}
 		}
 
 		validKeyframes = append(validKeyframes, kf)
@@ -129,32 +191,91 @@ func (s *Service) ProcessVisualExtraction(ctx context.Context, recording *models
 		return nil
 	}
 
-	// Audiovisual Active Speaker Nametag Binding
-	if len(segments) > 0 && len(validKeyframes) > 0 {
-		speakerMap := correlateVisualSpeakerNames(validKeyframes, validAnalyses, segments)
+	// Audiovisual Active Speaker Nametag Binding & Cluster Propagation
+	if len(segments) > 0 {
+		correlated := correlateVisualSpeakerNames(validKeyframes, validAnalyses, segments)
+		for k, v := range correlated {
+			if _, exists := speakerMap[k]; !exists {
+				speakerMap[k] = v
+			}
+		}
+
 		if len(speakerMap) > 0 {
 			if count, err := s.repo.UpdateTranscriptSpeakerNames(ctx, recording.ID, speakerMap); err != nil {
 				log.Printf("[PIPELINE WARN] recording %s: failed to update transcript speaker names from visual detection: %v", recording.ID.String(), err)
 			} else {
 				log.Printf("[PIPELINE SUCCESS] recording %s: bound %d speaker names from visual nametags (%d segments updated): %v", recording.ID.String(), len(speakerMap), count, speakerMap)
-				if recording.AnalyticsData == nil {
-					recording.AnalyticsData = make(models.JSONMap)
-				}
-				recording.AnalyticsData["visual_speakers"] = speakerMap
 			}
 		}
 	}
 
-	// Update recording analytics with visual completion details
+	// Update recording analytics with visual completion details and extracted meeting metadata
+	if recording.AnalyticsData == nil {
+		recording.AnalyticsData = make(models.JSONMap)
+	}
+	if isMeetingUI {
+		recording.AnalyticsData["meeting_platform"] = meetingPlatform
+	}
+	if len(speakerMap) > 0 {
+		recording.AnalyticsData["visual_speakers"] = speakerMap
+	}
+	if len(allParticipants) > 0 {
+		participantNames := make([]string, 0, len(allParticipants))
+		for p := range allParticipants {
+			participantNames = append(participantNames, p)
+		}
+		sort.Strings(participantNames)
+		var participants []dtos.MeetingParticipant
+		for _, p := range participantNames {
+			participants = append(participants, dtos.MeetingParticipant{
+				Name: p,
+				Role: "Participant",
+			})
+		}
+		recording.AnalyticsData["meeting_participants"] = participants
+	}
+
 	s.recordVisualSuccess(ctx, recording, len(modelKeyframes))
 	log.Printf("[PIPELINE SUCCESS] recording %s: extracted and saved %d visual keyframes", recording.ID.String(), len(modelKeyframes))
 	return nil
 }
 
+// isMeetingPlatform checks whether a given platform label represents a recognized video meeting UI.
+func isMeetingPlatform(platform string) bool {
+	switch platform {
+	case constants.MeetingPlatformGoogleMeet,
+		constants.MeetingPlatformZoom,
+		constants.MeetingPlatformMSTeams,
+		constants.MeetingPlatformOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// triageMeetingLayout inspects the initial keyframe analysis to classify the video layout.
+func triageMeetingLayout(analysis *dtos.KeyframeAnalysisResult) (bool, string) {
+	if analysis == nil {
+		return false, constants.MeetingPlatformNone
+	}
+	if isMeetingPlatform(analysis.MeetingPlatform) {
+		return true, analysis.MeetingPlatform
+	}
+	if len(analysis.VisibleSpeakers) > 0 || analysis.ActiveSpeaker != "" {
+		return true, constants.MeetingPlatformOther
+	}
+	return false, constants.MeetingPlatformNone
+}
+
 // analyzeKeyframeCascade executes the Dual-Engine Cascade: local OCR fast-path -> Multimodal Vision LLM.
-func (s *Service) analyzeKeyframeCascade(ctx context.Context, kf dtos.ExtractedKeyframe) *dtos.KeyframeAnalysisResult {
-	// Stage 1: Fast-Path Local OCR (if configured and available)
-	if s.localOCR != nil && s.localOCR.IsAvailable() {
+func (s *Service) analyzeKeyframeCascade(ctx context.Context, kf dtos.ExtractedKeyframe, customPrompt ...string) *dtos.KeyframeAnalysisResult {
+	prompt := ""
+	if len(customPrompt) > 0 {
+		prompt = customPrompt[0]
+	}
+
+	// Stage 1: Fast-Path Local OCR (for presentation slides without specialized meeting prompts)
+	if prompt == "" && s.localOCR != nil && s.localOCR.IsAvailable() {
 		text, conf, usable, err := s.localOCR.ExtractText(ctx, kf.ImageBytes)
 		if err == nil && usable && conf >= 0.75 {
 			firstLine := extractFirstLine(text)
@@ -175,7 +296,7 @@ func (s *Service) analyzeKeyframeCascade(ctx context.Context, kf dtos.ExtractedK
 
 	// Stage 2: Multimodal Vision LLM Escalation
 	if s.visionAnalyzer != nil {
-		result, err := s.visionAnalyzer.AnalyzeKeyframe(ctx, kf.ImageBytes, kf.MimeType, "")
+		result, err := s.visionAnalyzer.AnalyzeKeyframe(ctx, kf.ImageBytes, kf.MimeType, prompt)
 		if err == nil && result != nil {
 			result.SequenceOrder = kf.SequenceOrder
 			result.TimestampSeconds = kf.TimestampSeconds

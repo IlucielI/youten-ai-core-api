@@ -31,6 +31,19 @@ func New(cfg config.Config, svc *services.Service, sub EventSubscriber) *WorkerS
 // DefaultStageTimeout defines the maximum deadline allowed for any single background pipeline stage.
 const DefaultStageTimeout = 15 * time.Minute
 
+// subscribe registers a subscription with options if the subscriber supports them,
+// gracefully falling back to standard MustSubscribe if only basic EventSubscriber is implemented.
+func (w *WorkerServer) subscribe(topic string, handler WorkerHandler, opts ...SubscribeOption) {
+	if w == nil || w.sub == nil {
+		return
+	}
+	if configurable, ok := w.sub.(ConfigurableEventSubscriber); ok {
+		configurable.MustSubscribeWithOptions(topic, handler, opts...)
+		return
+	}
+	w.sub.MustSubscribe(topic, handler)
+}
+
 // RegisterWorker registers all worker subscriptions with differentiated stage concurrency
 // and elastic dynamic idle auto-reaping.
 func (w *WorkerServer) RegisterWorker() {
@@ -43,14 +56,14 @@ func (w *WorkerServer) RegisterWorker() {
 	const defaultIdleReap = 30 * time.Second
 
 	// CPU-bound media extractions: cap at 3 workers to prevent host CPU starvation
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingUploaded,
 		w.HandleRecordingExtract,
 		WithConcurrency(3),
 		WithPrefetch(3),
 		WithIdleTimeout(defaultIdleReap),
 	)
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingExtract,
 		w.HandleRecordingExtract,
 		WithConcurrency(3),
@@ -59,7 +72,7 @@ func (w *WorkerServer) RegisterWorker() {
 	)
 
 	// Remote media link import (YouTube/Google Drive): I/O bound
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingImport,
 		w.HandleRecordingImport,
 		WithConcurrency(4),
@@ -68,7 +81,7 @@ func (w *WorkerServer) RegisterWorker() {
 	)
 
 	// Speech-to-text audio transcription: I/O bound to STT endpoint, scale up to 8 workers
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingTranscribe,
 		w.HandleRecordingTranscribe,
 		WithConcurrency(8),
@@ -77,7 +90,7 @@ func (w *WorkerServer) RegisterWorker() {
 	)
 
 	// Structured LLM Summarization: I/O bound to LLM API, scale up to 6 workers
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingSummarize,
 		w.HandleRecordingSummarize,
 		WithConcurrency(6),
@@ -86,7 +99,7 @@ func (w *WorkerServer) RegisterWorker() {
 	)
 
 	// Semantic Vector Indexing: I/O bound to Embedding API + pgvector batch insert
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingIndex,
 		w.HandleRecordingIndex,
 		WithConcurrency(6),
@@ -95,14 +108,14 @@ func (w *WorkerServer) RegisterWorker() {
 	)
 
 	// Post-processing Analytics & Chapterization: best-effort downstream analysis
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingAnalytics,
 		w.HandleRecordingAnalytics,
 		WithConcurrency(4),
 		WithPrefetch(8),
 		WithIdleTimeout(defaultIdleReap),
 	)
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicRecordingChapterize,
 		w.HandleRecordingChapterize,
 		WithConcurrency(4),
@@ -111,7 +124,7 @@ func (w *WorkerServer) RegisterWorker() {
 	)
 
 	// Administrative audit logs: lightweight
-	w.sub.MustSubscribeWithOptions(
+	w.subscribe(
 		constants.TopicAdminAuditLog,
 		w.HandleAdminAuditLog,
 		WithConcurrency(2),

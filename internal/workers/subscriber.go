@@ -65,6 +65,12 @@ type EventSubscriber interface {
 
 	// MustSubscribe registers a handler and panics on configuration or binding failure.
 	MustSubscribe(topic string, handler WorkerHandler)
+}
+
+// ConfigurableEventSubscriber is an optional extension interface implemented by message brokers
+// that support fine-tuned worker concurrency, prefetch, and elastic idle auto-reaping.
+type ConfigurableEventSubscriber interface {
+	EventSubscriber
 
 	// SubscribeWithOptions registers a subscription with fine-tuned concurrency, prefetch, and idle reap options.
 	SubscribeWithOptions(topic string, handler WorkerHandler, opts ...SubscribeOption) error

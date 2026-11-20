@@ -902,6 +902,6 @@ func (r *RabbitMQ) Close() error {
 	return nil
 }
 
-// Ensure RabbitMQ satisfies workers.EventSubscriber at compile time.
-var _ workers.EventSubscriber = (*RabbitMQ)(nil)
+// Ensure RabbitMQ satisfies workers.ConfigurableEventSubscriber at compile time.
+var _ workers.ConfigurableEventSubscriber = (*RabbitMQ)(nil)
 

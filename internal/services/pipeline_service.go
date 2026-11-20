@@ -1238,7 +1238,7 @@ func HasNativeSpeakerLabels(segments []dtos.SegmentResult) bool {
 			labeled++
 		}
 	}
-	return labeled >= (len(segments)+1)/2
+	return labeled > len(segments)/2
 }
 
 // TranscribeAudioAdaptive slices audio on silence boundaries for parallel transcription when duration exceeds threshold.
@@ -1250,13 +1250,13 @@ func (s *Service) TranscribeAudioAdaptive(ctx context.Context, reader io.Reader,
 		return nil, errors.New("audio reader is nil")
 	}
 
-	audioData, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read audio: %w", err)
-	}
-
 	// Adaptive silence slicing path
 	if slicer, ok := s.audioExtractor.(AudioSlicer); ok && durationSec >= constants.MinAudioDurationForChunkingSeconds {
+		audioData, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read audio: %w", err)
+		}
+
 		chunks, sliceErr := slicer.SliceAudioOnSilence(ctx, bytes.NewReader(audioData), "audio.mp3", durationSec)
 		if sliceErr == nil && len(chunks) > 1 {
 			if parallelSTT, ok := s.stt.(ParallelSTTProvider); ok {
@@ -1268,10 +1268,12 @@ func (s *Service) TranscribeAudioAdaptive(ctx context.Context, reader io.Reader,
 		} else if len(chunks) == 1 {
 			return s.stt.Transcribe(ctx, bytes.NewReader(chunks[0].Data), "audio.mp3", opts)
 		}
+
+		return s.stt.Transcribe(ctx, bytes.NewReader(audioData), "audio.mp3", opts)
 	}
 
 	// Standard single-pass transcription
-	return s.stt.Transcribe(ctx, bytes.NewReader(audioData), "audio.mp3", opts)
+	return s.stt.Transcribe(ctx, reader, "audio.mp3", opts)
 }
 
 var speakerExtractRegex = regexp.MustCompile(`(?i)(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:`)
@@ -1598,8 +1600,8 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		}
 	}
 
-	// Pre-pass: If acoustic segments provided and native labels not already present, perform acoustic alignment & speaker-turn splitting
-	if len(diarizedList) > 0 && !HasNativeSpeakerLabels(segments) {
+	// Pre-pass: If acoustic segments provided, perform acoustic alignment & speaker-turn splitting
+	if len(diarizedList) > 0 {
 		segments = sttalign.AlignSegments(segments, diarizedList)
 	}
 

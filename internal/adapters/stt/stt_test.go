@@ -420,6 +420,9 @@ func TestStitchChunkResults(t *testing.T) {
 	}
 
 	// Verify segment 0
+	if stitched.Segments[0].ID != 0 {
+		t.Errorf("expected segment 0 ID 0, got %d", stitched.Segments[0].ID)
+	}
 	if stitched.Segments[0].Start != 5.0 || stitched.Segments[0].End != 15.0 {
 		t.Errorf("expected chunk 0 segment [5, 15], got [%f, %f]", stitched.Segments[0].Start, stitched.Segments[0].End)
 	}
@@ -428,6 +431,9 @@ func TestStitchChunkResults(t *testing.T) {
 	}
 
 	// Verify segment 1 (offset by 300s: 300 + 10 = 310, 300 + 25 = 325)
+	if stitched.Segments[1].ID != 1 {
+		t.Errorf("expected segment 1 ID 1, got %d", stitched.Segments[1].ID)
+	}
 	if stitched.Segments[1].Start != 310.0 || stitched.Segments[1].End != 325.0 {
 		t.Errorf("expected chunk 1 segment [310, 325], got [%f, %f]", stitched.Segments[1].Start, stitched.Segments[1].End)
 	}

@@ -663,6 +663,23 @@ func TestPipelineService_HasNativeSpeakerLabels(t *testing.T) {
 	if !services.HasNativeSpeakerLabels(acousticSegs) {
 		t.Error("expected true for AcousticSpeaker segments")
 	}
+
+	// Case 5: Exactly 50% labeled (2 out of 4) -> false (strict majority required)
+	halfLabeled := []dtos.SegmentResult{
+		{Text: "S1", SpeakerLabel: "SPEAKER_00"},
+		{Text: "S2", SpeakerLabel: "SPEAKER_01"},
+		{Text: "S3", SpeakerLabel: constants.DefaultSpeakerLabel},
+		{Text: "S4", SpeakerLabel: ""},
+	}
+	if services.HasNativeSpeakerLabels(halfLabeled) {
+		t.Error("expected false for exactly 50% labeled segments (requires strict majority)")
+	}
+
+	// Case 6: Strict majority labeled (3 out of 4) -> true
+	majorityLabeled := append(halfLabeled[:2], dtos.SegmentResult{Text: "S3", SpeakerLabel: "SPEAKER_02"}, halfLabeled[3])
+	if !services.HasNativeSpeakerLabels(majorityLabeled) {
+		t.Error("expected true for >50% labeled segments")
+	}
 }
 
 func TestPipelineService_TranscribeAudioAdaptive(t *testing.T) {

@@ -277,7 +277,13 @@ func (f *FFmpegExtractor) SliceAudioOnSilence(ctx context.Context, input io.Read
 		var probeErr bytes.Buffer
 		probeCmd.Stderr = &probeErr
 		_ = probeCmd.Run()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		totalDurationSec = ParseDuration(probeErr.String())
+		if totalDurationSec <= 0 {
+			return nil, fmt.Errorf("failed to probe audio duration: %s", strings.TrimSpace(probeErr.String()))
+		}
 	}
 
 	if totalDurationSec < constants.MinAudioDurationForChunkingSeconds {

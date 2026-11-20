@@ -614,6 +614,9 @@ func StitchChunkResults(chunks []dtos.AudioChunk, results []*dtos.TranscriptionR
 	sort.SliceStable(allSegments, func(i, j int) bool {
 		return allSegments[i].Start < allSegments[j].Start
 	})
+	for i := range allSegments {
+		allSegments[i].ID = i
+	}
 	sort.SliceStable(allDiarizedSegments, func(i, j int) bool {
 		return allDiarizedSegments[i].Start < allDiarizedSegments[j].Start
 	})

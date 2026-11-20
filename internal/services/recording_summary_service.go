@@ -342,16 +342,19 @@ func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, vers
 }
 
 const (
-	maxDirectSummaryTranscriptChars = 16000
+	maxDirectSummaryTranscriptChars = 20000
 	summaryMapChunkMaxChars         = 14000
+	summaryChunkOverlapRunes        = 600
 	maxSummaryCondenseWorkers       = 4
 	minCondensedChunkChars          = 1500
-	maxCondensedChunkChars          = 3500
+	maxCondensedChunkChars          = 8000
+	maxCombinedDigestRunes          = 22000
 )
 
 type summaryChunkJob struct {
-	index int
-	text  string
+	index       int
+	overlapText string
+	text        string
 }
 
 func (s *Service) generateStructuredSummary(
@@ -380,11 +383,11 @@ func (s *Service) generateStructuredSummary(
 		log.Printf("[SUMMARY WARN] recording %s: summarization attempt %d failed: %v", recordingID.String(), attempt, lastErr)
 		if isPromptTooLongError(lastErr) {
 			transcriptRunes := utf8.RuneCountInString(effectiveTranscript)
-			shrunkTarget := transcriptRunes * 60 / 100
-			if shrunkTarget < 1000 && transcriptRunes >= 1000 {
-				shrunkTarget = 1000
+			shrunkTarget := transcriptRunes * 70 / 100
+			if shrunkTarget < 1200 && transcriptRunes >= 1200 {
+				shrunkTarget = 1200
 			}
-			effectiveTranscript = deterministicCondenseChunk(effectiveTranscript, shrunkTarget)
+			effectiveTranscript = smartDeterministicCondense(effectiveTranscript, shrunkTarget)
 		}
 		if attempt < 3 {
 			if waitErr := waitSummaryRetry(ctx, attempt); waitErr != nil {
@@ -421,20 +424,27 @@ func isPromptTooLongError(err error) bool {
 		strings.Contains(lower, "context_length") ||
 		strings.Contains(lower, "maximum context") ||
 		strings.Contains(lower, "request too large") ||
-		strings.Contains(lower, "string_above_max_length")
+		strings.Contains(lower, "string_above_max_length") ||
+		strings.Contains(lower, "max_tokens") ||
+		strings.Contains(lower, "prompt_tokens") ||
+		strings.Contains(lower, "exceeds") ||
+		strings.Contains(lower, "413")
 }
 
 func (s *Service) condenseTranscriptForSummary(ctx context.Context, recordingID uuid.UUID, transcriptBody string, targetLang string) string {
-	if len(transcriptBody) <= maxDirectSummaryTranscriptChars {
-		return transcriptBody
+	trimmed := strings.TrimSpace(transcriptBody)
+	if utf8.RuneCountInString(trimmed) <= maxDirectSummaryTranscriptChars {
+		return trimmed
 	}
 
-	chunks := splitTranscriptIntoChunks(transcriptBody, summaryMapChunkMaxChars)
+	chunks := splitTranscriptIntoChunksWithOverlap(trimmed, summaryMapChunkMaxChars, summaryChunkOverlapRunes)
 	if len(chunks) <= 1 {
-		return deterministicCondenseChunk(transcriptBody, maxDirectSummaryTranscriptChars)
+		return smartDeterministicCondense(trimmed, maxDirectSummaryTranscriptChars)
 	}
 
-	perChunkTarget := maxDirectSummaryTranscriptChars / len(chunks)
+	headerOverhead := len(chunks) * 50
+	usableBudget := maxCombinedDigestRunes - headerOverhead
+	perChunkTarget := usableBudget / len(chunks)
 	if perChunkTarget < minCondensedChunkChars {
 		perChunkTarget = minCondensedChunkChars
 	}
@@ -448,8 +458,8 @@ func (s *Service) condenseTranscriptForSummary(ctx context.Context, recordingID 
 	}
 
 	jobChan := make(chan summaryChunkJob, len(chunks))
-	for i, c := range chunks {
-		jobChan <- summaryChunkJob{index: i, text: c}
+	for _, c := range chunks {
+		jobChan <- c
 	}
 	close(jobChan)
 
@@ -465,7 +475,7 @@ func (s *Service) condenseTranscriptForSummary(ctx context.Context, recordingID 
 		go func() {
 			defer wg.Done()
 			for job := range jobChan {
-				results[job.index] = s.condenseSingleSummaryChunk(ctx, job.index, len(chunks), job.text, targetLang, perChunkTarget)
+				results[job.index] = s.condenseSingleSummaryChunk(ctx, job.index, len(chunks), job.overlapText, job.text, targetLang, perChunkTarget)
 				done := atomic.AddInt64(&completed, 1)
 				s.touchSummarizingHeartbeat(ctx, recordingID, done, total)
 			}
@@ -478,8 +488,8 @@ func (s *Service) condenseTranscriptForSummary(ctx context.Context, recordingID 
 		sb.WriteString(fmt.Sprintf("--- [Part %d/%d] ---\n%s\n\n", i+1, len(results), strings.TrimSpace(digest)))
 	}
 	combined := strings.TrimSpace(sb.String())
-	if len(combined) > maxDirectSummaryTranscriptChars {
-		return deterministicCondenseChunk(combined, maxDirectSummaryTranscriptChars)
+	if utf8.RuneCountInString(combined) > maxCombinedDigestRunes {
+		return smartDeterministicCondense(combined, maxCombinedDigestRunes)
 	}
 	return combined
 }
@@ -497,12 +507,13 @@ func (s *Service) condenseSingleSummaryChunk(
 	ctx context.Context,
 	chunkIdx int,
 	totalChunks int,
+	overlapText string,
 	chunkText string,
 	targetLang string,
 	maxDigestChars int,
 ) string {
 	if ctx.Err() != nil || s.llm == nil {
-		return deterministicCondenseChunk(chunkText, maxDigestChars)
+		return smartDeterministicCondense(chunkText, maxDigestChars)
 	}
 
 	langHint := strings.TrimSpace(targetLang)
@@ -510,30 +521,120 @@ func (s *Service) condenseSingleSummaryChunk(
 		langHint = "the primary language used by the speakers"
 	}
 
-	sysPrompt := "You are an executive meeting analyst. Condense the provided chronological meeting transcript slice into a dense, factual, timestamped digest. Preserve [start - end] timestamps, speaker names, discussion topics, key arguments, technical details, numbers/metrics, decisions made, root causes, contested points, action items (task, PIC, due date), and open points/issues. Do NOT omit concrete facts or names."
-	usrPrompt := fmt.Sprintf(
-		"Condense Part %d of %d of the meeting transcript in %s into a high-density chronological digest (target ~%d characters). Retain [start - end] Speaker: format for key statements, decisions, and action items:\n\n%s",
-		chunkIdx+1,
-		totalChunks,
-		langHint,
-		maxDigestChars,
-		chunkText,
-	)
+	sysPrompt := "You are an executive meeting analyst and senior intelligence secretary. " +
+		"Your objective is zero-loss factual condensation of this chronological meeting transcript slice into a high-density, timestamped digest. " +
+		"Preserve: (1) All [start - end] timestamps and speaker names, " +
+		"(2) All discussion topics and arguments, " +
+		"(3) All key decisions, resolutions, and consensus points verbatim, " +
+		"(4) All action items with task description, PIC/assignee, due date, and deliverable, " +
+		"(5) All quantitative metrics, numbers, percentages, dates, system names, error codes, and technical details, " +
+		"(6) All open points, pending questions, blockers, and risks. " +
+		"Do NOT generalize, omit, or speculate. Do NOT drop concrete facts."
+
+	var usrPrompt string
+	if strings.TrimSpace(overlapText) != "" {
+		usrPrompt = fmt.Sprintf(
+			"[PREVIOUS DISCUSSION CONTEXT - FOR CONTINUITY REFERENCE ONLY]:\n%s\n\n"+
+				"[ACTIVE TRANSCRIPT TO CONDENSE - Part %d of %d in %s (target ~%d characters)]:\n%s\n\n"+
+				"Synthesize the active transcript into a high-density, timestamped chronological digest. Retain [start - end] Speaker: format for every significant statement, decision, and action item.",
+			strings.TrimSpace(overlapText),
+			chunkIdx+1,
+			totalChunks,
+			langHint,
+			maxDigestChars,
+			chunkText,
+		)
+	} else {
+		usrPrompt = fmt.Sprintf(
+			"Condense Part %d of %d of the meeting transcript in %s into a high-density chronological digest (target ~%d characters). Retain [start - end] Speaker: format for key statements, decisions, and action items:\n\n%s",
+			chunkIdx+1,
+			totalChunks,
+			langHint,
+			maxDigestChars,
+			chunkText,
+		)
+	}
 
 	temp := 0.1
-	res, err := s.llm.GenerateChatResponse(ctx, sysPrompt, []dtos.ChatMessageInput{
-		{Role: "user", Content: usrPrompt},
-	}, dtos.ChatOptions{Temperature: &temp})
+	var res *dtos.ChatResponse
+	var err error
+
+	// 1 retry with fast backoff for resilience against transient proxy blips
+	for attempt := 1; attempt <= 2; attempt++ {
+		if ctx.Err() != nil {
+			break
+		}
+		res, err = s.llm.GenerateChatResponse(ctx, sysPrompt, []dtos.ChatMessageInput{
+			{Role: "user", Content: usrPrompt},
+		}, dtos.ChatOptions{Temperature: &temp})
+		if err == nil && res != nil && strings.TrimSpace(res.Content) != "" {
+			break
+		}
+		if attempt < 2 {
+			select {
+			case <-ctx.Done():
+				return smartDeterministicCondense(chunkText, maxDigestChars)
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	}
+
 	if err != nil || res == nil || strings.TrimSpace(res.Content) == "" {
 		log.Printf("[SUMMARY WARN] map-reduce chunk %d/%d condensation fallback: %v", chunkIdx+1, totalChunks, err)
-		return deterministicCondenseChunk(chunkText, maxDigestChars)
+		return smartDeterministicCondense(chunkText, maxDigestChars)
 	}
 
 	digest := strings.TrimSpace(res.Content)
-	if len(digest) > maxDigestChars+500 {
-		return deterministicCondenseChunk(digest, maxDigestChars)
+	// Allow headroom up to 1.5x target without destructive line dropping
+	if utf8.RuneCountInString(digest) > (maxDigestChars*15)/10+500 {
+		return smartDeterministicCondense(digest, maxDigestChars)
 	}
 	return digest
+}
+
+func splitTranscriptIntoChunksWithOverlap(transcriptBody string, maxChunkChars int, overlapChars int) []summaryChunkJob {
+	trimmedBody := strings.TrimSpace(transcriptBody)
+	if maxChunkChars <= 0 || utf8.RuneCountInString(trimmedBody) <= maxChunkChars {
+		return []summaryChunkJob{{index: 0, text: trimmedBody}}
+	}
+
+	rawChunks := splitTranscriptIntoChunks(trimmedBody, maxChunkChars)
+	if len(rawChunks) <= 1 {
+		return []summaryChunkJob{{index: 0, text: trimmedBody}}
+	}
+
+	result := make([]summaryChunkJob, len(rawChunks))
+	for i, c := range rawChunks {
+		var overlap string
+		if i > 0 && overlapChars > 0 {
+			prevLines := strings.Split(rawChunks[i-1], "\n")
+			var selectedPrev []string
+			accum := 0
+			// Take up to 3 trailing lines from previous chunk
+			for j := len(prevLines) - 1; j >= 0; j-- {
+				line := strings.TrimSpace(prevLines[j])
+				if line == "" {
+					continue
+				}
+				lineRunes := utf8.RuneCountInString(line)
+				if accum > 0 && accum+lineRunes+1 > overlapChars {
+					break
+				}
+				selectedPrev = append([]string{line}, selectedPrev...)
+				accum += lineRunes + 1
+				if len(selectedPrev) >= 3 {
+					break
+				}
+			}
+			overlap = strings.Join(selectedPrev, "\n")
+		}
+		result[i] = summaryChunkJob{
+			index:       i,
+			overlapText: overlap,
+			text:        c,
+		}
+	}
+	return result
 }
 
 func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []string {
@@ -594,6 +695,29 @@ func truncateRunes(s string, maxRunes int) string {
 }
 
 func deterministicCondenseChunk(text string, maxChars int) string {
+	return smartDeterministicCondense(text, maxChars)
+}
+
+func isPriorityLine(line string) bool {
+	lower := strings.ToLower(line)
+	if strings.HasPrefix(line, "--- [") {
+		return true
+	}
+	priorityKeywords := []string{
+		"decision", "keputusan", "sepakat", "setuju", "disepakati",
+		"action item", "action:", "action :", "tindakan", "tugas", "pic:", "pic :", "pic ", "deadline", "target", "due date",
+		"kesimpulan", "blocker", "masalah", "open point", "open issue",
+		"risk", "risiko", "catatan", "rekomendasi", "rfc", "adr",
+	}
+	for _, kw := range priorityKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func smartDeterministicCondense(text string, maxChars int) string {
 	trimmed := strings.TrimSpace(text)
 	if maxChars <= 0 || utf8.RuneCountInString(trimmed) <= maxChars {
 		return trimmed
@@ -604,48 +728,111 @@ func deterministicCondenseChunk(text string, maxChars int) string {
 		return truncateRunes(trimmed, maxChars)
 	}
 
-	// Sample evenly across chronological lines so start, middle, and end of the slice are preserved.
-	var selected []string
-	totalRunes := 0
-	runeCount := utf8.RuneCountInString(trimmed)
-	avgLineLen := runeCount / len(lines)
-	if avgLineLen < 20 {
-		avgLineLen = 20
-	}
-	targetLines := maxChars / avgLineLen
-	if targetLines < 3 {
-		targetLines = 3
-	}
-	step := 1
-	if len(lines) > targetLines {
-		step = (len(lines) - 1) / (targetLines - 1)
-		if step < 1 {
-			step = 1
-		}
+	type indexedLine struct {
+		index    int
+		text     string
+		runes    int
+		priority bool
 	}
 
-	for i := 0; i < len(lines); i += step {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
+	var allLines []indexedLine
+	var priorityLines []indexedLine
+	var dialogueLines []indexedLine
+
+	for idx, line := range lines {
+		clean := strings.TrimSpace(line)
+		if clean == "" {
 			continue
 		}
-		lineRunes := utf8.RuneCountInString(line)
-		if totalRunes+lineRunes+1 > maxChars {
-			break
+		rCount := utf8.RuneCountInString(clean)
+		item := indexedLine{
+			index:    idx,
+			text:     clean,
+			runes:    rCount,
+			priority: isPriorityLine(clean),
 		}
-		selected = append(selected, line)
-		totalRunes += lineRunes + 1
+		allLines = append(allLines, item)
+		if item.priority {
+			priorityLines = append(priorityLines, item)
+		} else {
+			dialogueLines = append(dialogueLines, item)
+		}
 	}
 
-	lastLine := strings.TrimSpace(lines[len(lines)-1])
-	lastLineRunes := utf8.RuneCountInString(lastLine)
-	if len(selected) > 0 && lastLine != "" && selected[len(selected)-1] != lastLine && totalRunes+lastLineRunes+1 <= maxChars {
-		selected = append(selected, lastLine)
-	}
-
-	if len(selected) == 0 {
+	if len(allLines) == 0 {
 		return truncateRunes(trimmed, maxChars)
 	}
-	return strings.Join(selected, "\n")
+
+	priorityRunes := 0
+	for _, pl := range priorityLines {
+		priorityRunes += pl.runes + 1
+	}
+
+	selectedMap := make(map[int]string)
+	budgetRemaining := maxChars
+
+	if priorityRunes <= maxChars {
+		for _, pl := range priorityLines {
+			selectedMap[pl.index] = pl.text
+		}
+		budgetRemaining -= priorityRunes
+
+		if len(dialogueLines) > 0 && budgetRemaining > 20 {
+			dialogueBudget := budgetRemaining
+			avgLen := 0
+			for _, dl := range dialogueLines {
+				avgLen += dl.runes
+			}
+			avgLen /= len(dialogueLines)
+			if avgLen < 20 {
+				avgLen = 20
+			}
+			targetCount := dialogueBudget / (avgLen + 1)
+			if targetCount > 0 {
+				step := 1
+				if len(dialogueLines) > targetCount {
+					step = len(dialogueLines) / targetCount
+					if step < 1 {
+						step = 1
+					}
+				}
+				usedDialogue := 0
+				for i := 0; i < len(dialogueLines); i += step {
+					dl := dialogueLines[i]
+					if usedDialogue+dl.runes+1 > dialogueBudget {
+						break
+					}
+					selectedMap[dl.index] = dl.text
+					usedDialogue += dl.runes + 1
+				}
+			}
+		}
+	} else {
+		used := 0
+		for _, pl := range priorityLines {
+			if used+pl.runes+1 > maxChars {
+				break
+			}
+			selectedMap[pl.index] = pl.text
+			used += pl.runes + 1
+		}
+	}
+
+	if len(selectedMap) == 0 {
+		return truncateRunes(trimmed, maxChars)
+	}
+
+	var resultLines []string
+	for _, item := range allLines {
+		if txt, exists := selectedMap[item.index]; exists {
+			resultLines = append(resultLines, txt)
+		}
+	}
+
+	assembled := strings.Join(resultLines, "\n")
+	if utf8.RuneCountInString(assembled) > maxChars {
+		return truncateRunes(assembled, maxChars)
+	}
+	return assembled
 }
 

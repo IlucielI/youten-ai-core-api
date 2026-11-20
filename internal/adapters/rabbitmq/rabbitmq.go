@@ -846,8 +846,11 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 	}
 	mu.Unlock()
 
+	dispatcherDone := make(chan struct{})
+
 	// Dispatcher loop: dynamically scales workers up to maxConcurrency
 	go func() {
+		defer close(dispatcherDone)
 		defer close(taskChan)
 		for {
 			select {
@@ -892,6 +895,7 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 
 	go func() {
 		<-workerCtx.Done()
+		<-dispatcherDone
 		wg.Wait()
 		_ = ch.Close()
 		close(done)

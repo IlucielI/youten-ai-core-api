@@ -354,3 +354,98 @@ func TestOmniRouteSTT_Transcribe_BuildSegmentsFromWords(t *testing.T) {
 	}
 }
 
+func TestStitchChunkResults(t *testing.T) {
+	chunks := []dtos.AudioChunk{
+		{Index: 0, StartOffsetSec: 0.0, DurationSeconds: 300.0},
+		{Index: 1, StartOffsetSec: 300.0, DurationSeconds: 300.0},
+	}
+	results := []*dtos.TranscriptionResult{
+		{
+			Text:     "First chunk intro.",
+			Duration: 290.0,
+			Language: "id",
+			Segments: []dtos.SegmentResult{
+				{
+					ID:    0,
+					Start: 5.0,
+					End:   15.0,
+					Text:  "First chunk intro.",
+					Words: []dtos.WordResult{
+						{Word: "First", Start: 5.0, End: 7.0},
+						{Word: "chunk", Start: 7.0, End: 10.0},
+						{Word: "intro.", Start: 10.0, End: 15.0},
+					},
+					SpeakerLabel: "Speaker 0",
+				},
+			},
+		},
+		{
+			Text:     "Second chunk dialogue.",
+			Duration: 280.0,
+			Language: "id",
+			Segments: []dtos.SegmentResult{
+				{
+					ID:    0,
+					Start: 10.0,
+					End:   25.0,
+					Text:  "Second chunk dialogue.",
+					Words: []dtos.WordResult{
+						{Word: "Second", Start: 10.0, End: 15.0},
+						{Word: "chunk", Start: 15.0, End: 18.0},
+						{Word: "dialogue.", Start: 18.0, End: 25.0},
+					},
+					SpeakerLabel: "Speaker 1",
+				},
+			},
+		},
+	}
+
+	stitched := stt.StitchChunkResults(chunks, results)
+	if stitched == nil {
+		t.Fatal("expected non-nil stitched result")
+	}
+
+	if stitched.Text != "First chunk intro. Second chunk dialogue." {
+		t.Errorf("unexpected stitched text: %s", stitched.Text)
+	}
+
+	if len(stitched.Segments) != 2 {
+		t.Fatalf("expected 2 stitched segments, got %d", len(stitched.Segments))
+	}
+
+	// Verify segment 0
+	if stitched.Segments[0].Start != 5.0 || stitched.Segments[0].End != 15.0 {
+		t.Errorf("expected chunk 0 segment [5, 15], got [%f, %f]", stitched.Segments[0].Start, stitched.Segments[0].End)
+	}
+	if stitched.Segments[0].Words[0].Start != 5.0 || stitched.Segments[0].Words[0].End != 7.0 {
+		t.Errorf("expected word 0 [5, 7], got [%f, %f]", stitched.Segments[0].Words[0].Start, stitched.Segments[0].Words[0].End)
+	}
+
+	// Verify segment 1 (offset by 300s: 300 + 10 = 310, 300 + 25 = 325)
+	if stitched.Segments[1].Start != 310.0 || stitched.Segments[1].End != 325.0 {
+		t.Errorf("expected chunk 1 segment [310, 325], got [%f, %f]", stitched.Segments[1].Start, stitched.Segments[1].End)
+	}
+	if stitched.Segments[1].Words[0].Start != 310.0 || stitched.Segments[1].Words[0].End != 315.0 {
+		t.Errorf("expected word 0 in chunk 1 [310, 315], got [%f, %f]", stitched.Segments[1].Words[0].Start, stitched.Segments[1].Words[0].End)
+	}
+}
+
+func TestMockSTT_TranscribeChunksParallel(t *testing.T) {
+	mock := stt.NewMock()
+	chunks := []dtos.AudioChunk{
+		{Index: 0, StartOffsetSec: 0.0, DurationSeconds: 10.0, Data: []byte("chunk0")},
+		{Index: 1, StartOffsetSec: 10.0, DurationSeconds: 10.0, Data: []byte("chunk1")},
+	}
+
+	res, err := mock.TranscribeChunksParallel(context.Background(), chunks, dtos.STTOptions{Language: "id"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(res.Segments) != 4 { // 2 segments per chunk * 2 chunks = 4 segments
+		t.Errorf("expected 4 stitched segments, got %d", len(res.Segments))
+	}
+}
+

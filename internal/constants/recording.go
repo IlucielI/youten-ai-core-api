@@ -165,5 +165,19 @@ const (
 // DefaultMaxLinkImportSizeMB defines the ceiling on imported media from links (1GB = 1024MB).
 const DefaultMaxLinkImportSizeMB = 1024
 
+// Adaptive silence-aware audio chunking constants.
+const (
+	// MinAudioDurationForChunkingSeconds is the threshold duration (10 minutes) before silence chunking activates.
+	MinAudioDurationForChunkingSeconds = 600.0
+	// DefaultAudioChunkTargetSeconds is the target duration (6 minutes) for each parallel STT audio slice.
+	DefaultAudioChunkTargetSeconds = 360.0
+	// DefaultAudioChunkMinSeconds is the minimum duration (4 minutes) before accepting a silence boundary.
+	DefaultAudioChunkMinSeconds = 240.0
+	// DefaultAudioChunkMaxSeconds is the maximum duration (8 minutes) before forcing a slice boundary.
+	DefaultAudioChunkMaxSeconds = 480.0
+	// DefaultAudioChunkConcurrency is the maximum parallel worker threads for STT chunk transcription.
+	DefaultAudioChunkConcurrency = 4
+)
+
 
 

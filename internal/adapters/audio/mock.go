@@ -12,6 +12,7 @@ import (
 // MockAudioExtractor provides an in-memory test implementation of services.AudioExtractor.
 type MockAudioExtractor struct {
 	ExtractFn func(ctx context.Context, input io.Reader, filename string) (*dtos.AudioExtractionResult, error)
+	SliceFn   func(ctx context.Context, input io.Reader, filename string, totalDurationSec float64) ([]dtos.AudioChunk, error)
 }
 
 // NewMock creates a new MockAudioExtractor with default pass-through behavior.
@@ -35,6 +36,22 @@ func NewMock() *MockAudioExtractor {
 				SizeBytes:       int64(len(data)),
 			}, nil
 		},
+		SliceFn: func(ctx context.Context, input io.Reader, filename string, totalDurationSec float64) ([]dtos.AudioChunk, error) {
+			if input == nil {
+				return nil, ErrEmptyInput
+			}
+			data, err := io.ReadAll(input)
+			if err != nil {
+				return nil, err
+			}
+			return []dtos.AudioChunk{{
+				Index:           0,
+				StartOffsetSec:  0,
+				DurationSeconds: totalDurationSec,
+				Data:            data,
+				Format:          "mp3",
+			}}, nil
+		},
 	}
 }
 
@@ -46,5 +63,16 @@ func (m *MockAudioExtractor) ExtractMonoAudio(ctx context.Context, input io.Read
 	return nil, nil
 }
 
-// Ensure MockAudioExtractor satisfies services.AudioExtractor at compile time.
-var _ services.AudioExtractor = (*MockAudioExtractor)(nil)
+// SliceAudioOnSilence delegates to SliceFn.
+func (m *MockAudioExtractor) SliceAudioOnSilence(ctx context.Context, input io.Reader, filename string, totalDurationSec float64) ([]dtos.AudioChunk, error) {
+	if m.SliceFn != nil {
+		return m.SliceFn(ctx, input, filename, totalDurationSec)
+	}
+	return nil, nil
+}
+
+// Ensure MockAudioExtractor satisfies services.AudioExtractor and services.AudioSlicer at compile time.
+var (
+	_ services.AudioExtractor = (*MockAudioExtractor)(nil)
+	_ services.AudioSlicer    = (*MockAudioExtractor)(nil)
+)

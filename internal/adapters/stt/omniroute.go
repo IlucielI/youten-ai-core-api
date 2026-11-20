@@ -10,12 +10,14 @@ import (
 	"mime/multipart"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/pkg/sttalign"
@@ -534,4 +536,180 @@ func parseDiarizedTextSegments(fullText string, duration float64) []dtos.Segment
 	}
 	return res
 }
+
+// StitchChunkResults combines multiple chunk transcription results into a single chronological result.
+// Each chunk result has its segment and word timestamps offset by the chunk's StartOffsetSec.
+func StitchChunkResults(chunks []dtos.AudioChunk, results []*dtos.TranscriptionResult) *dtos.TranscriptionResult {
+	if len(results) == 0 {
+		return &dtos.TranscriptionResult{}
+	}
+
+	var allSegments []dtos.SegmentResult
+	var allDiarizedSegments []dtos.SegmentResult
+	var textParts []string
+	var diarizedParts []string
+	var detectedLanguage string
+	maxDuration := 0.0
+
+	for i, res := range results {
+		if res == nil {
+			continue
+		}
+
+		offset := 0.0
+		if i < len(chunks) {
+			offset = chunks[i].StartOffsetSec
+		}
+
+		if detectedLanguage == "" && res.Language != "" {
+			detectedLanguage = res.Language
+		}
+
+		if strings.TrimSpace(res.Text) != "" {
+			textParts = append(textParts, strings.TrimSpace(res.Text))
+		}
+		if strings.TrimSpace(res.DiarizedText) != "" {
+			diarizedParts = append(diarizedParts, strings.TrimSpace(res.DiarizedText))
+		}
+
+		chunkEnd := offset + res.Duration
+		if chunkEnd > maxDuration {
+			maxDuration = chunkEnd
+		}
+
+		for _, seg := range res.Segments {
+			shiftedSeg := seg
+			shiftedSeg.Start += offset
+			shiftedSeg.End += offset
+			shiftedSeg.ID = len(allSegments)
+
+			if len(seg.Words) > 0 {
+				shiftedWords := make([]dtos.WordResult, len(seg.Words))
+				for wi, w := range seg.Words {
+					shiftedW := w
+					shiftedW.Start += offset
+					shiftedW.End += offset
+					shiftedWords[wi] = shiftedW
+				}
+				shiftedSeg.Words = shiftedWords
+			}
+
+			if shiftedSeg.End > maxDuration {
+				maxDuration = shiftedSeg.End
+			}
+
+			allSegments = append(allSegments, shiftedSeg)
+		}
+
+		for _, dseg := range res.DiarizedSegments {
+			shiftedDseg := dseg
+			shiftedDseg.Start += offset
+			shiftedDseg.End += offset
+			shiftedDseg.ID = len(allDiarizedSegments)
+			allDiarizedSegments = append(allDiarizedSegments, shiftedDseg)
+		}
+	}
+
+	// Sort segments chronologically
+	sort.SliceStable(allSegments, func(i, j int) bool {
+		return allSegments[i].Start < allSegments[j].Start
+	})
+
+	return &dtos.TranscriptionResult{
+		Text:             strings.Join(textParts, " "),
+		Language:         detectedLanguage,
+		Duration:         maxDuration,
+		Segments:         allSegments,
+		DiarizedSegments: allDiarizedSegments,
+		DiarizedText:     strings.Join(diarizedParts, "\n"),
+	}
+}
+
+// TranscribeChunksParallel dispatches audio chunks to the STT provider concurrently using a bounded worker pool.
+func (o *OmniRouteSTT) TranscribeChunksParallel(ctx context.Context, chunks []dtos.AudioChunk, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
+	if len(chunks) == 0 {
+		return &dtos.TranscriptionResult{}, nil
+	}
+	if len(chunks) == 1 {
+		res, err := o.Transcribe(ctx, bytes.NewReader(chunks[0].Data), "chunk_0.mp3", opts)
+		if err != nil {
+			return nil, err
+		}
+		return StitchChunkResults(chunks, []*dtos.TranscriptionResult{res}), nil
+	}
+
+	concurrency := constants.DefaultAudioChunkConcurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+	if concurrency > len(chunks) {
+		concurrency = len(chunks)
+	}
+
+	type chunkTask struct {
+		index int
+		chunk dtos.AudioChunk
+	}
+	type chunkOutput struct {
+		index int
+		res   *dtos.TranscriptionResult
+		err   error
+	}
+
+	taskChan := make(chan chunkTask, len(chunks))
+	outputChan := make(chan chunkOutput, len(chunks))
+
+	for i, chunk := range chunks {
+		taskChan <- chunkTask{index: i, chunk: chunk}
+	}
+	close(taskChan)
+
+	var wg sync.WaitGroup
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for task := range taskChan {
+				select {
+				case <-ctx.Done():
+					outputChan <- chunkOutput{index: task.index, err: ctx.Err()}
+					return
+				default:
+				}
+
+				chunkOpts := opts
+				chunkOpts.AudioDuration = task.chunk.DurationSeconds
+				res, err := o.Transcribe(ctx, bytes.NewReader(task.chunk.Data), fmt.Sprintf("chunk_%d.mp3", task.index), chunkOpts)
+				outputChan <- chunkOutput{index: task.index, res: res, err: err}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(outputChan)
+
+	results := make([]*dtos.TranscriptionResult, len(chunks))
+	var firstErr error
+
+	for out := range outputChan {
+		if out.err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("chunk %d transcription failed: %w", out.index, out.err)
+		}
+		if out.res != nil && out.index >= 0 && out.index < len(results) {
+			results[out.index] = out.res
+		}
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return StitchChunkResults(chunks, results), nil
+}
+
+// Ensure OmniRouteSTT satisfies services.STTProvider and services.ParallelSTTProvider at compile time.
+var (
+	_ services.STTProvider         = (*OmniRouteSTT)(nil)
+	_ services.ParallelSTTProvider = (*OmniRouteSTT)(nil)
+)
 

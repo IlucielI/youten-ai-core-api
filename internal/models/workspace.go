@@ -23,3 +23,4 @@ type Workspace struct {
 func (Workspace) TableName() string {
 	return "workspaces"
 }
+

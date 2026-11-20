@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
@@ -318,8 +320,11 @@ func (s *Service) EnsureUserPersonalWorkspace(ctx context.Context, user *models.
 	}
 
 	existing, err := s.repo.FindPersonalWorkspaceByUserID(ctx, user.ID)
-	if err == nil && existing != nil {
+	if err == nil {
 		return existing, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, s.wrapError(ctx, err)
 	}
 
 	name := "My Workspace"

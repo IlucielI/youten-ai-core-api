@@ -66,3 +66,4 @@ func TestWorkspaceRole_Permissions(t *testing.T) {
 		})
 	}
 }
+

@@ -317,4 +317,57 @@ func TestService_EnsureUserPersonalWorkspace(t *testing.T) {
 			t.Errorf("expected existing ID %s, got %s", wsID, ws.ID)
 		}
 	})
+
+	t.Run("creates new workspace when record not found", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		userID := uuid.New()
+		user := &models.User{
+			BaseModel: models.BaseModel{ID: userID},
+			FullName:  "Bayu Anugerah",
+		}
+		newWSID := uuid.New()
+		memberID := uuid.New()
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspaces" WHERE (owner_user_id = $1 AND type = $2) AND "workspaces"."deleted_at" IS NULL`)).
+			WithArgs(userID, string(constants.WorkspaceTypePersonal), 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "workspaces"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(newWSID, time.Now(), time.Now()))
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "workspace_members"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(memberID, time.Now(), time.Now()))
+		mock.ExpectCommit()
+
+		ws, err := svc.EnsureUserPersonalWorkspace(context.Background(), user)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ws.Name != "Bayu Anugerah's Workspace" {
+			t.Errorf("expected workspace name Bayu Anugerah's Workspace, got %s", ws.Name)
+		}
+	})
+
+	t.Run("propagates database error when query fails", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		userID := uuid.New()
+		user := &models.User{
+			BaseModel: models.BaseModel{ID: userID},
+			FullName:  "Bayu Anugerah",
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspaces" WHERE (owner_user_id = $1 AND type = $2) AND "workspaces"."deleted_at" IS NULL`)).
+			WithArgs(userID, string(constants.WorkspaceTypePersonal), 1).
+			WillReturnError(assertError("connection refused"))
+
+		_, err := svc.EnsureUserPersonalWorkspace(context.Background(), user)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
 }
+
+type assertError string
+
+func (e assertError) Error() string { return string(e) }
+

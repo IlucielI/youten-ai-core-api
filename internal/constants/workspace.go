@@ -42,3 +42,4 @@ func (r WorkspaceRole) CanEditContent() bool {
 func (r WorkspaceRole) CanManageWorkspace() bool {
 	return r == WorkspaceRoleOwner
 }
+

@@ -166,3 +166,4 @@ func (c *Controllers) RemoveWorkspaceMember(ctx *gin.Context) {
 	}
 	c.respondEmpty(ctx, "member removed successfully")
 }
+

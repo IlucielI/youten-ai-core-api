@@ -20,3 +20,4 @@ type WorkspaceMember struct {
 func (WorkspaceMember) TableName() string {
 	return "workspace_members"
 }
+

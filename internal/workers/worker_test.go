@@ -3,6 +3,7 @@ package workers_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
@@ -13,11 +14,13 @@ import (
 type mockSubscriber struct {
 	subscribedTopics []string
 	handlers         map[string]workers.WorkerHandler
+	options          map[string][]workers.SubscribeOption
 }
 
 func newMockSubscriber() *mockSubscriber {
 	return &mockSubscriber{
 		handlers: make(map[string]workers.WorkerHandler),
+		options:  make(map[string][]workers.SubscribeOption),
 	}
 }
 
@@ -29,6 +32,17 @@ func (m *mockSubscriber) Subscribe(topic string, handler workers.WorkerHandler) 
 
 func (m *mockSubscriber) MustSubscribe(topic string, handler workers.WorkerHandler) {
 	_ = m.Subscribe(topic, handler)
+}
+
+func (m *mockSubscriber) SubscribeWithWorkerOptions(topic string, handler workers.WorkerHandler, opts ...workers.SubscribeOption) error {
+	m.subscribedTopics = append(m.subscribedTopics, topic)
+	m.handlers[topic] = handler
+	m.options[topic] = opts
+	return nil
+}
+
+func (m *mockSubscriber) MustSubscribeWithWorkerOptions(topic string, handler workers.WorkerHandler, opts ...workers.SubscribeOption) {
+	_ = m.SubscribeWithWorkerOptions(topic, handler, opts...)
 }
 
 func TestWorkerServer_RegisterWorker(t *testing.T) {
@@ -149,5 +163,16 @@ func TestQueue_Parse(t *testing.T) {
 
 	if err := queue.Parse([]byte("bad json"), &p); err == nil {
 		t.Error("expected error parsing invalid json, got nil")
+	}
+}
+
+func TestWorkerServer_ExtractSemaphore_RespectsCap(t *testing.T) {
+	server := workers.New(config.Config{}, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	badJSON := []byte("invalid json")
+	if server.HandleRecordingExtract(ctx, badJSON) {
+		t.Error("expected false on bad json")
 	}
 }

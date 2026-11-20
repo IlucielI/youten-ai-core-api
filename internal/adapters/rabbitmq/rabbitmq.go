@@ -14,6 +14,7 @@ import (
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/workers"
 )
 
 // Supported exchange types
@@ -100,7 +101,7 @@ type DLQConfig struct {
 // MessageHandler is the signature for processing incoming delivery messages.
 type MessageHandler func(ctx context.Context, delivery amqp.Delivery) error
 
-// ConsumeConfig defines configuration for running a queue consumer worker.
+// ConsumeConfig defines configuration for running an elastic queue consumer worker.
 type ConsumeConfig struct {
 	Queue         string
 	ConsumerTag   string
@@ -109,17 +110,20 @@ type ConsumeConfig struct {
 	NoLocal       bool
 	NoWait        bool
 	PrefetchCount int
-	Concurrency   int // Number of concurrent worker goroutines (default: 1)
+	Concurrency   int           // Max concurrent worker goroutines (default: 1)
+	MinWorkers    int           // Min standby worker goroutines (default: 0)
+	IdleTimeout   time.Duration // Time to wait before reaping idle worker goroutines (default: 30s)
 	RequeueOnNack bool
 	Args          amqp.Table
 }
 
 // Worker manages a running subscriber worker pool.
 type Worker struct {
-	queue       string
-	concurrency int
-	cancel      context.CancelFunc
-	done        chan struct{}
+	queue          string
+	maxConcurrency int
+	getActive      func() int
+	cancel         context.CancelFunc
+	done           chan struct{}
 }
 
 // Queue returns the queue name this worker is consuming.
@@ -130,12 +134,20 @@ func (w *Worker) Queue() string {
 	return w.queue
 }
 
-// Concurrency returns the number of worker goroutines running in this pool.
+// Concurrency returns the maximum number of worker goroutines configured for this pool.
 func (w *Worker) Concurrency() int {
 	if w == nil {
 		return 0
 	}
-	return w.concurrency
+	return w.maxConcurrency
+}
+
+// ActiveWorkers returns the current number of warm/active worker goroutines in the pool.
+func (w *Worker) ActiveWorkers() int {
+	if w == nil || w.getActive == nil {
+		return 0
+	}
+	return w.getActive()
 }
 
 // Stop signals the worker pool to stop and waits for all in-flight jobs to complete.
@@ -503,10 +515,10 @@ func (r *RabbitMQ) MustPublish(ctx context.Context, topic string, payload any) {
 	}
 }
 
-// SubscribeOption configures subscription consuming properties such as concurrency and prefetch count.
+// SubscribeOption configures subscription consuming properties such as concurrency, min workers, and prefetch count.
 type SubscribeOption func(*ConsumeConfig)
 
-// WithConcurrency overrides the number of parallel consumer worker goroutines.
+// WithConcurrency overrides the maximum parallel worker goroutines.
 func WithConcurrency(concurrency int) SubscribeOption {
 	return func(cfg *ConsumeConfig) {
 		if concurrency > 0 {
@@ -515,11 +527,29 @@ func WithConcurrency(concurrency int) SubscribeOption {
 	}
 }
 
-// WithPrefetch overrides the prefetch count for the subscriber channel.
+// WithMinWorkers overrides the minimum standby worker goroutines.
+func WithMinWorkers(min int) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if min >= 0 {
+			cfg.MinWorkers = min
+		}
+	}
+}
+
+// WithPrefetch overrides the channel prefetch count.
 func WithPrefetch(prefetch int) SubscribeOption {
 	return func(cfg *ConsumeConfig) {
 		if prefetch > 0 {
 			cfg.PrefetchCount = prefetch
+		}
+	}
+}
+
+// WithIdleTimeout overrides the idle auto-reap duration.
+func WithIdleTimeout(timeout time.Duration) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if timeout > 0 {
+			cfg.IdleTimeout = timeout
 		}
 	}
 }
@@ -555,21 +585,26 @@ func (r *RabbitMQ) SubscribeWithOptions(topic string, handler WorkerHandler, opt
 	if concurrency <= 0 {
 		concurrency = 4
 	}
-	prefetch := r.defaultPrefetch
-	if prefetch <= 0 {
-		prefetch = concurrency * 2
-	}
 
 	consumeCfg := ConsumeConfig{
 		Queue:         queueName,
 		ConsumerTag:   "worker-" + topic,
-		PrefetchCount: prefetch,
+		PrefetchCount: r.defaultPrefetch,
 		Concurrency:   concurrency,
+		MinWorkers:    0,
+		IdleTimeout:   30 * time.Second,
 		RequeueOnNack: false, // route to DLQ
 	}
 
 	for _, opt := range opts {
-		opt(&consumeCfg)
+		if opt != nil {
+			opt(&consumeCfg)
+		}
+	}
+
+	// Calculate default prefetch dynamically based on final resolved concurrency if not explicitly set
+	if consumeCfg.PrefetchCount <= 0 {
+		consumeCfg.PrefetchCount = consumeCfg.Concurrency * 2
 	}
 
 	return r.Consume(context.Background(), consumeCfg, func(ctx context.Context, d amqp.Delivery) error {
@@ -616,6 +651,40 @@ func (r *RabbitMQ) MustSubscribeWithOptions(topic string, handler WorkerHandler,
 	}
 }
 
+// SubscribeWithWorkerOptions satisfies workers.ConfigurableEventSubscriber using worker-domain options.
+func (r *RabbitMQ) SubscribeWithWorkerOptions(topic string, handler WorkerHandler, opts ...workers.SubscribeOption) error {
+	concurrency := r.defaultConcurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+	subCfg := workers.SubscribeConfig{
+		Concurrency: concurrency,
+		MinWorkers:  0,
+		Prefetch:    r.defaultPrefetch,
+		IdleTimeout: 30 * time.Second,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&subCfg)
+		}
+	}
+	return r.SubscribeWithOptions(
+		topic,
+		handler,
+		WithConcurrency(subCfg.Concurrency),
+		WithMinWorkers(subCfg.MinWorkers),
+		WithPrefetch(subCfg.Prefetch),
+		WithIdleTimeout(subCfg.IdleTimeout),
+	)
+}
+
+// MustSubscribeWithWorkerOptions registers a subscription with worker-domain options and panics on failure.
+func (r *RabbitMQ) MustSubscribeWithWorkerOptions(topic string, handler WorkerHandler, opts ...workers.SubscribeOption) {
+	if err := r.SubscribeWithWorkerOptions(topic, handler, opts...); err != nil {
+		panic(fmt.Errorf("failed to subscribe to topic '%s': %w", topic, err))
+	}
+}
+
 // PublishJSON serializes payload into JSON and publishes with ContentType application/json.
 func (r *RabbitMQ) PublishJSON(ctx context.Context, exchange, routingKey string, payload any, opts ...PublishOption) error {
 	data, err := json.Marshal(payload)
@@ -627,8 +696,10 @@ func (r *RabbitMQ) PublishJSON(ctx context.Context, exchange, routingKey string,
 	return r.PublishRaw(ctx, exchange, routingKey, data, jsonOpts...)
 }
 
-// StartWorker initializes and starts a worker pool for a subscriber in the background, returning a Worker handle.
-// It spawns Concurrency worker goroutines, protects against per-message panics, and waits for in-flight tasks on shutdown.
+// StartWorker initializes and starts an elastic worker pool for a subscriber in the background, returning a Worker handle.
+// It dynamically scales worker goroutines between MinWorkers and Concurrency based on incoming message load,
+// automatically reaps idle worker goroutines after IdleTimeout, protects against per-message panics,
+// and waits for in-flight tasks on shutdown.
 func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler MessageHandler) (*Worker, error) {
 	if r == nil {
 		return nil, errors.New("rabbitmq client is nil")
@@ -637,9 +708,21 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 	workerCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 
-	concurrency := cfg.Concurrency
-	if concurrency <= 0 {
-		concurrency = 1
+	maxConcurrency := cfg.Concurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = 1
+	}
+
+	minWorkers := cfg.MinWorkers
+	if minWorkers < 0 {
+		minWorkers = 0
+	} else if minWorkers > maxConcurrency {
+		minWorkers = maxConcurrency
+	}
+
+	idleTimeout := cfg.IdleTimeout
+	if idleTimeout <= 0 {
+		idleTimeout = 30 * time.Second
 	}
 
 	ch, err := r.Channel()
@@ -651,7 +734,7 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 
 	prefetch := cfg.PrefetchCount
 	if prefetch <= 0 {
-		prefetch = concurrency * 2
+		prefetch = maxConcurrency * 2
 	}
 	if err := ch.Qos(prefetch, 0, false); err != nil {
 		_ = ch.Close()
@@ -677,16 +760,35 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 		return nil, fmt.Errorf("failed to start consuming for worker on queue %s: %w", cfg.Queue, err)
 	}
 
-	var wg sync.WaitGroup
-	for i := 0; i < concurrency; i++ {
+	taskChan := make(chan amqp.Delivery)
+	var (
+		mu            sync.Mutex
+		activeWorkers int
+		wg            sync.WaitGroup
+	)
+
+	spawnWorker := func() {
+		activeWorkers++
 		wg.Add(1)
-		go func(workerID int) {
+		go func() {
+			var decremented bool
 			defer wg.Done()
+			defer func() {
+				if !decremented {
+					mu.Lock()
+					activeWorkers--
+					mu.Unlock()
+				}
+			}()
+
+			idleTimer := time.NewTimer(idleTimeout)
+			defer idleTimer.Stop()
+
 			for {
 				select {
 				case <-workerCtx.Done():
 					return
-				case d, ok := <-deliveries:
+				case d, ok := <-taskChan:
 					if !ok {
 						return
 					}
@@ -694,6 +796,7 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 					func() {
 						defer func() {
 							if rec := recover(); rec != nil {
+								log.Printf("[RABBITMQ] Panic in consumer queue %s: %v", cfg.Queue, rec)
 								if !cfg.AutoAck {
 									_ = d.Nack(false, cfg.RequeueOnNack)
 								}
@@ -711,23 +814,103 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 							_ = d.Ack(false)
 						}
 					}()
+
+					// Reset idle timer after processing message
+					if !idleTimer.Stop() {
+						select {
+						case <-idleTimer.C:
+						default:
+						}
+					}
+					idleTimer.Reset(idleTimeout)
+
+				case <-idleTimer.C:
+					mu.Lock()
+					if activeWorkers > minWorkers {
+						activeWorkers--
+						decremented = true
+						mu.Unlock()
+						return // Auto-reap this worker goroutine down to minWorkers
+					}
+					mu.Unlock()
+					idleTimer.Reset(idleTimeout)
 				}
 			}
-		}(i + 1)
+		}()
 	}
+
+	// Pre-spawn minimum standby workers if configured
+	mu.Lock()
+	for i := 0; i < minWorkers; i++ {
+		spawnWorker()
+	}
+	mu.Unlock()
+
+	dispatcherDone := make(chan struct{})
+
+	// Dispatcher loop: dynamically scales workers up to maxConcurrency
+	go func() {
+		defer close(dispatcherDone)
+		defer close(taskChan)
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case d, ok := <-deliveries:
+				if !ok {
+					return
+				}
+
+				// Fast path: pass immediately to an idle warm worker if ready
+				select {
+				case taskChan <- d:
+					continue
+				default:
+				}
+
+				// All existing workers are currently busy.
+				// Spawn an additional worker goroutine if below maxConcurrency cap.
+				mu.Lock()
+				if activeWorkers < maxConcurrency {
+					spawnWorker()
+					mu.Unlock()
+					select {
+					case taskChan <- d:
+					case <-workerCtx.Done():
+						return
+					}
+					continue
+				}
+				mu.Unlock()
+
+				// Already at maxConcurrency: block until any worker finishes its task
+				select {
+				case taskChan <- d:
+				case <-workerCtx.Done():
+					return
+				}
+			}
+		}
+	}()
 
 	go func() {
 		<-workerCtx.Done()
+		<-dispatcherDone
 		wg.Wait()
 		_ = ch.Close()
 		close(done)
 	}()
 
 	return &Worker{
-		queue:       cfg.Queue,
-		concurrency: concurrency,
-		cancel:      cancel,
-		done:        done,
+		queue:          cfg.Queue,
+		maxConcurrency: maxConcurrency,
+		getActive: func() int {
+			mu.Lock()
+			defer mu.Unlock()
+			return activeWorkers
+		},
+		cancel: cancel,
+		done:   done,
 	}, nil
 }
 
@@ -773,3 +956,7 @@ func (r *RabbitMQ) Close() error {
 
 	return nil
 }
+
+// Ensure RabbitMQ satisfies workers.ConfigurableEventSubscriber at compile time.
+var _ workers.ConfigurableEventSubscriber = (*RabbitMQ)(nil)
+

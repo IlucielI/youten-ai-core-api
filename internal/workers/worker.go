@@ -14,37 +14,125 @@ import (
 
 // WorkerServer manages and registers all background worker subscriptions.
 type WorkerServer struct {
-	cfg config.Config
-	svc *services.Service
-	sub EventSubscriber
+	cfg        config.Config
+	svc        *services.Service
+	sub        EventSubscriber
+	extractSem chan struct{}
 }
 
 // New creates a new WorkerServer instance.
 func New(cfg config.Config, svc *services.Service, sub EventSubscriber) *WorkerServer {
 	return &WorkerServer{
-		cfg: cfg,
-		svc: svc,
-		sub: sub,
+		cfg:        cfg,
+		svc:        svc,
+		sub:        sub,
+		extractSem: make(chan struct{}, 3),
 	}
 }
 
-// RegisterWorker registers all worker subscriptions to Domain Events.
+// DefaultStageTimeout defines the maximum deadline allowed for any single background pipeline stage.
+const DefaultStageTimeout = 15 * time.Minute
+
+// subscribe registers a subscription with options if the subscriber supports them,
+// gracefully falling back to standard MustSubscribe if only basic EventSubscriber is implemented.
+func (w *WorkerServer) subscribe(topic string, handler WorkerHandler, opts ...SubscribeOption) {
+	if w == nil || w.sub == nil {
+		return
+	}
+	if configurable, ok := w.sub.(ConfigurableEventSubscriber); ok {
+		configurable.MustSubscribeWithWorkerOptions(topic, handler, opts...)
+		return
+	}
+	w.sub.MustSubscribe(topic, handler)
+}
+
+// RegisterWorker registers all worker subscriptions with differentiated stage concurrency
+// and elastic dynamic idle auto-reaping.
 func (w *WorkerServer) RegisterWorker() {
 	if w == nil || w.sub == nil {
 		return
 	}
 
-	log.Println("Registering worker subscriptions to Domain Events...")
+	log.Println("Registering worker subscriptions to Domain Events with elastic dynamic pool...")
 
-	w.sub.MustSubscribe(constants.TopicRecordingUploaded, w.HandleRecordingExtract)
-	w.sub.MustSubscribe(constants.TopicRecordingExtract, w.HandleRecordingExtract)
-	w.sub.MustSubscribe(constants.TopicRecordingImport, w.HandleRecordingImport)
-	w.sub.MustSubscribe(constants.TopicRecordingTranscribe, w.HandleRecordingTranscribe)
-	w.sub.MustSubscribe(constants.TopicRecordingSummarize, w.HandleRecordingSummarize)
-	w.sub.MustSubscribe(constants.TopicRecordingIndex, w.HandleRecordingIndex)
-	w.sub.MustSubscribe(constants.TopicRecordingAnalytics, w.HandleRecordingAnalytics)
-	w.sub.MustSubscribe(constants.TopicRecordingChapterize, w.HandleRecordingChapterize)
-	w.sub.MustSubscribe(constants.TopicAdminAuditLog, w.HandleAdminAuditLog)
+	const defaultIdleReap = 30 * time.Second
+
+	// CPU-bound media extractions: cap at 3 workers to prevent host CPU starvation
+	w.subscribe(
+		constants.TopicRecordingUploaded,
+		w.HandleRecordingExtract,
+		WithConcurrency(3),
+		WithPrefetch(3),
+		WithIdleTimeout(defaultIdleReap),
+	)
+	w.subscribe(
+		constants.TopicRecordingExtract,
+		w.HandleRecordingExtract,
+		WithConcurrency(3),
+		WithPrefetch(3),
+		WithIdleTimeout(defaultIdleReap),
+	)
+
+	// Remote media link import (YouTube/Google Drive): I/O bound
+	w.subscribe(
+		constants.TopicRecordingImport,
+		w.HandleRecordingImport,
+		WithConcurrency(4),
+		WithPrefetch(8),
+		WithIdleTimeout(defaultIdleReap),
+	)
+
+	// Speech-to-text audio transcription: I/O bound to STT endpoint, scale up to 8 workers
+	w.subscribe(
+		constants.TopicRecordingTranscribe,
+		w.HandleRecordingTranscribe,
+		WithConcurrency(8),
+		WithPrefetch(16),
+		WithIdleTimeout(defaultIdleReap),
+	)
+
+	// Structured LLM Summarization: I/O bound to LLM API, scale up to 6 workers
+	w.subscribe(
+		constants.TopicRecordingSummarize,
+		w.HandleRecordingSummarize,
+		WithConcurrency(6),
+		WithPrefetch(12),
+		WithIdleTimeout(defaultIdleReap),
+	)
+
+	// Semantic Vector Indexing: I/O bound to Embedding API + pgvector batch insert
+	w.subscribe(
+		constants.TopicRecordingIndex,
+		w.HandleRecordingIndex,
+		WithConcurrency(6),
+		WithPrefetch(12),
+		WithIdleTimeout(defaultIdleReap),
+	)
+
+	// Post-processing Analytics & Chapterization: best-effort downstream analysis
+	w.subscribe(
+		constants.TopicRecordingAnalytics,
+		w.HandleRecordingAnalytics,
+		WithConcurrency(4),
+		WithPrefetch(8),
+		WithIdleTimeout(defaultIdleReap),
+	)
+	w.subscribe(
+		constants.TopicRecordingChapterize,
+		w.HandleRecordingChapterize,
+		WithConcurrency(4),
+		WithPrefetch(8),
+		WithIdleTimeout(defaultIdleReap),
+	)
+
+	// Administrative audit logs: lightweight
+	w.subscribe(
+		constants.TopicAdminAuditLog,
+		w.HandleAdminAuditLog,
+		WithConcurrency(2),
+		WithPrefetch(4),
+		WithIdleTimeout(defaultIdleReap),
+	)
 
 	log.Println("Done RegisterWorker")
 }
@@ -98,9 +186,12 @@ func (w *WorkerServer) HandleRecordingImport(ctx context.Context, msg []byte) bo
 		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
 	start := time.Now()
 	log.Printf("[WORKER] Started Media Link Import for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
-	if err := w.svc.ProcessImport(ctx, p); err != nil {
+	if err := w.svc.ProcessImport(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] Media link import failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
@@ -122,9 +213,23 @@ func (w *WorkerServer) HandleRecordingExtract(ctx context.Context, msg []byte) b
 		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
+	// Acquire extraction semaphore slot to strictly cap CPU-intensive FFmpeg tasks across all extract topics
+	if w.extractSem != nil {
+		select {
+		case w.extractSem <- struct{}{}:
+			defer func() { <-w.extractSem }()
+		case <-stageCtx.Done():
+			log.Printf("[WORKER ERROR] Audio extraction timed out waiting for semaphore slot for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
+			return false
+		}
+	}
+
 	start := time.Now()
 	log.Printf("[WORKER] Started Audio Extraction for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
-	if err := w.svc.ProcessExtraction(ctx, p); err != nil {
+	if err := w.svc.ProcessExtraction(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] Audio extraction failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
@@ -146,9 +251,12 @@ func (w *WorkerServer) HandleRecordingTranscribe(ctx context.Context, msg []byte
 		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
 	start := time.Now()
 	log.Printf("[WORKER] Started Transcription for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
-	if err := w.svc.ProcessTranscription(ctx, p); err != nil {
+	if err := w.svc.ProcessTranscription(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] Transcription failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
@@ -170,9 +278,12 @@ func (w *WorkerServer) HandleRecordingSummarize(ctx context.Context, msg []byte)
 		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
 	start := time.Now()
 	log.Printf("[WORKER] Started Summarization for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
-	if err := w.svc.ProcessSummarization(ctx, p); err != nil {
+	if err := w.svc.ProcessSummarization(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] Summarization failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
@@ -194,9 +305,12 @@ func (w *WorkerServer) HandleRecordingIndex(ctx context.Context, msg []byte) boo
 		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
 	start := time.Now()
 	log.Printf("[WORKER] Started Indexing for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
-	if err := w.svc.ProcessIndexing(ctx, p); err != nil {
+	if err := w.svc.ProcessIndexing(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] Indexing failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
@@ -218,9 +332,12 @@ func (w *WorkerServer) HandleRecordingAnalytics(ctx context.Context, msg []byte)
 		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
 	start := time.Now()
 	log.Printf("[WORKER] Started Analytics for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
-	if err := w.svc.ProcessAnalytics(ctx, p); err != nil {
+	if err := w.svc.ProcessAnalytics(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] Analytics failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 	}
 	log.Printf("[WORKER] Finished Analytics for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
@@ -241,9 +358,12 @@ func (w *WorkerServer) HandleRecordingChapterize(ctx context.Context, msg []byte
 		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
 	start := time.Now()
 	log.Printf("[WORKER] Started Chapterization for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
-	if err := w.svc.ProcessChapterization(ctx, p); err != nil {
+	if err := w.svc.ProcessChapterization(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] Chapterization failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 	}
 	log.Printf("[WORKER] Finished Chapterization for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
@@ -261,8 +381,11 @@ func (w *WorkerServer) HandleAdminAuditLog(ctx context.Context, msg []byte) bool
 		return false
 	}
 
+	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
+	defer cancel()
+
 	start := time.Now()
-	if err := w.svc.RecordAdminAuditLog(ctx, p); err != nil {
+	if err := w.svc.RecordAdminAuditLog(stageCtx, p); err != nil {
 		log.Printf("[WORKER ERROR] failed to persist admin audit log in %s: %v", time.Since(start).Round(time.Millisecond), err)
 		return false
 	}

@@ -111,6 +111,10 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		return nil, fmt.Errorf("failed to read audio input stream: %w", err)
 	}
 
+	start := time.Now()
+	log.Printf("[STT START] Transcribing %s (bytes=%d, audio_dur=%.1fs, model=%s, diarize_model=%s)",
+		filename, len(audioBytes), opts.AudioDuration, o.model, o.diarizeModel)
+
 	if o.diarizeModel == "" || strings.EqualFold(o.diarizeModel, o.model) {
 		res, err := o.transcribeSingle(ctx, audioBytes, filename, o.model, opts)
 		if err != nil {
@@ -126,6 +130,8 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		if hasSpeakers {
 			res.DiarizedSegments = res.Segments
 		}
+		log.Printf("[STT DONE] Finished single-model transcription for %s in %s (segments=%d)",
+			filename, time.Since(start).Round(time.Millisecond), len(res.Segments))
 		return res, nil
 	}
 
@@ -153,6 +159,8 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 	if primaryErr != nil {
 		if diarizeResult != nil && diarizeErr == nil {
 			log.Printf("[STT WARN] primary STT model (%s) failed (%v), falling back to diarize model (%s)", o.model, primaryErr, o.diarizeModel)
+			log.Printf("[STT DONE] Finished fallback transcription for %s in %s (segments=%d)",
+				filename, time.Since(start).Round(time.Millisecond), len(diarizeResult.Segments))
 			return diarizeResult, nil
 		}
 		return nil, fmt.Errorf("primary STT (%s) failed: %w", o.model, primaryErr)
@@ -179,6 +187,8 @@ func (o *OmniRouteSTT) Transcribe(ctx context.Context, reader io.Reader, filenam
 		}
 	}
 
+	log.Printf("[STT DONE] Finished parallel consensus transcription for %s in %s (segments=%d, diarized_segments=%d)",
+		filename, time.Since(start).Round(time.Millisecond), len(primaryResult.Segments), len(primaryResult.DiarizedSegments))
 	return primaryResult, nil
 }
 
@@ -254,25 +264,35 @@ func (o *OmniRouteSTT) transcribeSingle(ctx context.Context, audioBytes []byte, 
 		req.Header.Set("Authorization", "Bearer "+o.apiKey)
 	}
 
+	reqStart := time.Now()
+	log.Printf("[STT HTTP START] [model=%s] sending transcription request (filename=%s, size=%d bytes)", model, name, len(audioBytes))
+
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
+		log.Printf("[STT HTTP ERROR] [model=%s] request failed after %s: %v", model, time.Since(reqStart).Round(time.Millisecond), err)
 		return nil, fmt.Errorf("stt request error: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("[STT HTTP ERROR] [model=%s] read response failed after %s: %v", model, time.Since(reqStart).Round(time.Millisecond), err)
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[STT HTTP ERROR] [model=%s] returned status %d after %s: %s", model, resp.StatusCode, time.Since(reqStart).Round(time.Millisecond), string(respBytes))
 		return nil, fmt.Errorf("stt api returned status %d: %s", resp.StatusCode, string(respBytes))
 	}
 
 	var parsed openAIVerboseJSON
 	if err := json.Unmarshal(respBytes, &parsed); err != nil {
+		log.Printf("[STT HTTP ERROR] [model=%s] JSON parse failed after %s: %v", model, time.Since(reqStart).Round(time.Millisecond), err)
 		return nil, fmt.Errorf("failed to parse verbose json response: %w", err)
 	}
+
+	log.Printf("[STT HTTP DONE] [model=%s] completed in %s (segments=%d, words=%d, text_len=%d)",
+		model, time.Since(reqStart).Round(time.Millisecond), len(parsed.Segments), len(parsed.Words), len(parsed.Text))
 
 	// Ingest root-level words if provided by STT engine (OpenAI Whisper verbose_json / Deepgram Nova-3 format)
 	rootWords := make([]dtos.WordResult, len(parsed.Words))

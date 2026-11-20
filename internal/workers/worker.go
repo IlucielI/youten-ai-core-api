@@ -7,6 +7,7 @@ import (
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/queue"
 	"code-base-golang/internal/services"
 )
@@ -93,13 +94,17 @@ func (w *WorkerServer) HandleRecordingImport(ctx context.Context, msg []byte) bo
 		log.Printf("[WORKER ERROR] failed to parse import payload: %v", err)
 		return false
 	}
+	if p.RequestID != "" {
+		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
+	}
 
-	log.Printf("[WORKER] Started Media Link Import for recording %s", p.RecordingID.String())
+	start := time.Now()
+	log.Printf("[WORKER] Started Media Link Import for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
 	if err := w.svc.ProcessImport(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] Media link import failed for recording %s: %v", p.RecordingID.String(), err)
+		log.Printf("[WORKER ERROR] Media link import failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
-	log.Printf("[WORKER] Finished Media Link Import for recording %s", p.RecordingID.String())
+	log.Printf("[WORKER] Finished Media Link Import for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
 	return true
 }
 
@@ -113,13 +118,17 @@ func (w *WorkerServer) HandleRecordingExtract(ctx context.Context, msg []byte) b
 		log.Printf("[WORKER ERROR] failed to parse extract payload: %v", err)
 		return false
 	}
+	if p.RequestID != "" {
+		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
+	}
 
-	log.Printf("[WORKER] Started Audio Extraction for recording %s", p.RecordingID.String())
+	start := time.Now()
+	log.Printf("[WORKER] Started Audio Extraction for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
 	if err := w.svc.ProcessExtraction(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] Audio extraction failed for recording %s: %v", p.RecordingID.String(), err)
+		log.Printf("[WORKER ERROR] Audio extraction failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
-	log.Printf("[WORKER] Finished Audio Extraction for recording %s", p.RecordingID.String())
+	log.Printf("[WORKER] Finished Audio Extraction for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
 	return true
 }
 
@@ -133,13 +142,17 @@ func (w *WorkerServer) HandleRecordingTranscribe(ctx context.Context, msg []byte
 		log.Printf("[WORKER ERROR] failed to parse transcribe payload: %v", err)
 		return false
 	}
+	if p.RequestID != "" {
+		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
+	}
 
-	log.Printf("[WORKER] Started Transcription for recording %s", p.RecordingID.String())
+	start := time.Now()
+	log.Printf("[WORKER] Started Transcription for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
 	if err := w.svc.ProcessTranscription(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] Transcription failed for recording %s: %v", p.RecordingID.String(), err)
+		log.Printf("[WORKER ERROR] Transcription failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
-	log.Printf("[WORKER] Finished Transcription for recording %s", p.RecordingID.String())
+	log.Printf("[WORKER] Finished Transcription for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
 	return true
 }
 
@@ -153,13 +166,17 @@ func (w *WorkerServer) HandleRecordingSummarize(ctx context.Context, msg []byte)
 		log.Printf("[WORKER ERROR] failed to parse summarize payload: %v", err)
 		return false
 	}
+	if p.RequestID != "" {
+		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
+	}
 
-	log.Printf("[WORKER] Started Summarization for recording %s", p.RecordingID.String())
+	start := time.Now()
+	log.Printf("[WORKER] Started Summarization for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
 	if err := w.svc.ProcessSummarization(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] Summarization failed for recording %s: %v", p.RecordingID.String(), err)
+		log.Printf("[WORKER ERROR] Summarization failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
-	log.Printf("[WORKER] Finished Summarization for recording %s", p.RecordingID.String())
+	log.Printf("[WORKER] Finished Summarization for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
 	return true
 }
 
@@ -173,13 +190,17 @@ func (w *WorkerServer) HandleRecordingIndex(ctx context.Context, msg []byte) boo
 		log.Printf("[WORKER ERROR] failed to parse index payload: %v", err)
 		return false
 	}
+	if p.RequestID != "" {
+		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
+	}
 
-	log.Printf("[WORKER] Started Indexing for recording %s", p.RecordingID.String())
+	start := time.Now()
+	log.Printf("[WORKER] Started Indexing for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
 	if err := w.svc.ProcessIndexing(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] Indexing failed for recording %s: %v", p.RecordingID.String(), err)
+		log.Printf("[WORKER ERROR] Indexing failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
 		return false
 	}
-	log.Printf("[WORKER] Finished Indexing for recording %s", p.RecordingID.String())
+	log.Printf("[WORKER] Finished Indexing for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
 	return true
 }
 
@@ -193,12 +214,16 @@ func (w *WorkerServer) HandleRecordingAnalytics(ctx context.Context, msg []byte)
 		log.Printf("[WORKER ERROR] failed to parse analytics payload: %v", err)
 		return false
 	}
-
-	log.Printf("[WORKER] Started Analytics for recording %s", p.RecordingID.String())
-	if err := w.svc.ProcessAnalytics(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] Analytics failed for recording %s: %v", p.RecordingID.String(), err)
+	if p.RequestID != "" {
+		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
-	log.Printf("[WORKER] Finished Analytics for recording %s", p.RecordingID.String())
+
+	start := time.Now()
+	log.Printf("[WORKER] Started Analytics for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
+	if err := w.svc.ProcessAnalytics(ctx, p); err != nil {
+		log.Printf("[WORKER ERROR] Analytics failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
+	}
+	log.Printf("[WORKER] Finished Analytics for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
 	return true
 }
 
@@ -212,12 +237,16 @@ func (w *WorkerServer) HandleRecordingChapterize(ctx context.Context, msg []byte
 		log.Printf("[WORKER ERROR] failed to parse chapterize payload: %v", err)
 		return false
 	}
-
-	log.Printf("[WORKER] Started Chapterization for recording %s", p.RecordingID.String())
-	if err := w.svc.ProcessChapterization(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] Chapterization failed for recording %s: %v", p.RecordingID.String(), err)
+	if p.RequestID != "" {
+		ctx = ctxmeta.WithRequestID(ctx, p.RequestID)
 	}
-	log.Printf("[WORKER] Finished Chapterization for recording %s", p.RecordingID.String())
+
+	start := time.Now()
+	log.Printf("[WORKER] Started Chapterization for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
+	if err := w.svc.ProcessChapterization(ctx, p); err != nil {
+		log.Printf("[WORKER ERROR] Chapterization failed for recording %s in %s: %v (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), err, p.RequestID)
+	}
+	log.Printf("[WORKER] Finished Chapterization for recording %s in %s (req_id=%s)", p.RecordingID.String(), time.Since(start).Round(time.Millisecond), p.RequestID)
 	return true
 }
 
@@ -232,8 +261,9 @@ func (w *WorkerServer) HandleAdminAuditLog(ctx context.Context, msg []byte) bool
 		return false
 	}
 
+	start := time.Now()
 	if err := w.svc.RecordAdminAuditLog(ctx, p); err != nil {
-		log.Printf("[WORKER ERROR] failed to persist admin audit log: %v", err)
+		log.Printf("[WORKER ERROR] failed to persist admin audit log in %s: %v", time.Since(start).Round(time.Millisecond), err)
 		return false
 	}
 	return true

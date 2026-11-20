@@ -20,9 +20,10 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
-	"code-base-golang/internal/queue"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/pkg/ssrf"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/pkg/sttalign"
 	"code-base-golang/internal/sse"
@@ -35,6 +36,12 @@ import (
 func (s *Service) publishEvent(ctx context.Context, topic string, payload any) error {
 	if s.publisher == nil {
 		return nil
+	}
+	if p, ok := payload.(queue.RecordingPipelinePayload); ok {
+		if p.RequestID == "" {
+			p.RequestID = ctxmeta.GetRequestID(ctx)
+		}
+		payload = p
 	}
 	if err := s.publisher.Publish(ctx, topic, payload); err != nil {
 		return fmt.Errorf("failed to publish %s event: %w", topic, err)
@@ -306,11 +313,36 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		sttLang = "id"
 	}
 
+	heartbeatStop := make(chan struct{})
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		tick := 0
+		for {
+			select {
+			case <-heartbeatStop:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				tick++
+				prog := 10 + (tick % 20)
+				s.publishCustomProgress(recording.ID, models.RecordingStatusTranscribing, "TRANSCRIBING", prog)
+				_ = s.repo.UpdateRecordingStatus(ctx, recording.ID, models.RecordingStatusTranscribing, nil, nil)
+				log.Printf("[PIPELINE HEARTBEAT] recording %s: transcription in progress (tick %d, prog %d%%)", recording.ID.String(), tick, prog)
+			}
+		}
+	}()
+
 	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", dtos.STTOptions{
 		Language:      sttLang,
 		AudioDuration: recording.DurationSeconds,
 		Prompt:        buildContextualSTTPrompt(recording.Title, sttLang),
 	})
+	close(heartbeatStop)
+	<-heartbeatDone
 	if err != nil {
 		s.failAndLog(ctx, recording.ID, models.ErrCodeTranscriptionFail, fmt.Sprintf("stt transcription failed: %v", err))
 		return fmt.Errorf("stt transcription failed: %w", err)

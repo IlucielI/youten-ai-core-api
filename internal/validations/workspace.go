@@ -43,3 +43,28 @@ func ValidateWorkspaceAskRequest(r *dtos.WorkspaceAskRequest) error {
 		validation.Field(&r.Question, validation.Required, validation.Length(1, 4000)),
 	)
 }
+
+// ValidateCreateWorkspaceRequest validates the payload for creating a new team workspace.
+func ValidateCreateWorkspaceRequest(r *dtos.CreateWorkspaceRequest) error {
+	r.Name = strings.TrimSpace(r.Name)
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Name, validation.Required, validation.Length(2, 150)),
+	)
+}
+
+// ValidateUpdateWorkspaceRequest validates the payload for updating workspace details.
+func ValidateUpdateWorkspaceRequest(r *dtos.UpdateWorkspaceRequest) error {
+	r.Name = strings.TrimSpace(r.Name)
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Name, validation.Required, validation.Length(2, 150)),
+	)
+}
+
+// ValidateUpdateWorkspaceMemberRoleRequest validates the role update for a member.
+func ValidateUpdateWorkspaceMemberRoleRequest(r *dtos.UpdateWorkspaceMemberRoleRequest) error {
+	r.Role = strings.ToLower(strings.TrimSpace(r.Role))
+	return validation.ValidateStruct(r,
+		validation.Field(&r.Role, validation.Required, validation.In("owner", "admin", "member", "viewer")),
+	)
+}
+

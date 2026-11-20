@@ -68,7 +68,13 @@ func RequireAuth(validator AuthValidator) gin.HandlerFunc {
 		}
 
 		// Inject authenticated user into standard context
-		c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), *authUser))
+		reqCtx := ctxmeta.WithAuthUser(c.Request.Context(), *authUser)
+		if wsHeader := strings.TrimSpace(c.GetHeader("X-Workspace-ID")); wsHeader != "" {
+			if wsID, err := uuid.Parse(wsHeader); err == nil && wsID != uuid.Nil {
+				reqCtx = ctxmeta.WithWorkspaceID(reqCtx, wsID)
+			}
+		}
+		c.Request = c.Request.WithContext(reqCtx)
 
 		c.Next()
 	}
@@ -126,7 +132,13 @@ func OptionalAuth(validator AuthValidator) gin.HandlerFunc {
 		}
 
 		// Inject authenticated user into standard context
-		c.Request = c.Request.WithContext(ctxmeta.WithAuthUser(c.Request.Context(), *authUser))
+		reqCtx := ctxmeta.WithAuthUser(c.Request.Context(), *authUser)
+		if wsHeader := strings.TrimSpace(c.GetHeader("X-Workspace-ID")); wsHeader != "" {
+			if wsID, err := uuid.Parse(wsHeader); err == nil && wsID != uuid.Nil {
+				reqCtx = ctxmeta.WithWorkspaceID(reqCtx, wsID)
+			}
+		}
+		c.Request = c.Request.WithContext(reqCtx)
 
 		c.Next()
 	}

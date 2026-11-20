@@ -97,6 +97,24 @@ var (
 	// ErrPipelineTimeout is returned when processing exceeds the maximum duration limit or pipeline stalls.
 	ErrPipelineTimeout = apperror.New(http.StatusInternalServerError, "ERR_PIPELINE_TIMEOUT", "pipeline processing timed out or was abandoned")
 
+	// ErrWorkspaceNotFound is returned when a requested workspace does not exist or has been deleted.
+	ErrWorkspaceNotFound = apperror.New(http.StatusNotFound, "ERR_WORKSPACE_NOT_FOUND", "workspace not found")
+
+	// ErrWorkspaceAccessDenied is returned when a user does not have membership or sufficient rights in a workspace.
+	ErrWorkspaceAccessDenied = apperror.New(http.StatusForbidden, "ERR_WORKSPACE_ACCESS_DENIED", "access to this workspace is denied")
+
+	// ErrCannotDeletePersonalWorkspace is returned when attempting to delete a default personal workspace.
+	ErrCannotDeletePersonalWorkspace = apperror.New(http.StatusBadRequest, "ERR_CANNOT_DELETE_PERSONAL_WORKSPACE", "personal workspace cannot be deleted")
+
+	// ErrCannotRemoveWorkspaceOwner is returned when attempting to delete or demote the owner of a workspace.
+	ErrCannotRemoveWorkspaceOwner = apperror.New(http.StatusBadRequest, "ERR_CANNOT_REMOVE_WORKSPACE_OWNER", "workspace owner cannot be removed or demoted; transfer ownership first")
+
+	// ErrWorkspaceSlugTaken is returned when a workspace slug is already in use.
+	ErrWorkspaceSlugTaken = apperror.New(http.StatusConflict, "ERR_WORKSPACE_SLUG_TAKEN", "workspace slug is already in use")
+
+	// ErrInvalidWorkspaceRole is returned when an invalid role is provided for a workspace member.
+	ErrInvalidWorkspaceRole = apperror.New(http.StatusBadRequest, "ERR_INVALID_WORKSPACE_ROLE", "invalid workspace role specified")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

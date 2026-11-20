@@ -149,13 +149,14 @@ func (r *Repositories) DeleteRecording(ctx context.Context, id uuid.UUID) error 
 
 // RecordingFilter specifies filtering and pagination criteria for user recordings.
 type RecordingFilter struct {
-	Search    string
-	Status    string
-	Template  string
-	SortBy    string
-	SortOrder string
-	Limit     int
-	Offset    int
+	Search      string
+	Status      string
+	Template    string
+	WorkspaceID *uuid.UUID
+	SortBy      string
+	SortOrder   string
+	Limit       int
+	Offset      int
 }
 
 func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
@@ -167,6 +168,9 @@ func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
 	}
 	if f.Template != "" {
 		db = db.Where("selected_template = ?", f.Template)
+	}
+	if f.WorkspaceID != nil && *f.WorkspaceID != uuid.Nil {
+		db = db.Where("workspace_id = ?", *f.WorkspaceID)
 	}
 	return db
 }
@@ -193,6 +197,23 @@ func (r *Repositories) ListRecordingsWithFilter(ctx context.Context, userID uuid
 
 	query := r.db.WithContext(ctx).Model(&models.Recording{}).
 		Where("user_id = ?", userID).
+		Scopes(filter.scope)
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Order(filter.orderClause()).Limit(filter.Limit).Offset(filter.Offset).Find(&list).Error
+	return list, total, err
+}
+
+// ListWorkspaceRecordings retrieves paginated recordings within a workspace matching criteria.
+func (r *Repositories) ListWorkspaceRecordings(ctx context.Context, workspaceID uuid.UUID, filter RecordingFilter) ([]models.Recording, int64, error) {
+	var list []models.Recording
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&models.Recording{}).
+		Where("workspace_id = ?", workspaceID).
 		Scopes(filter.scope)
 
 	if err := query.Count(&total).Error; err != nil {

@@ -388,4 +388,25 @@ func TestHasScope(t *testing.T) {
 	}
 }
 
+func TestWorkspaceID(t *testing.T) {
+	wsID := uuid.New()
+	ctx := WithWorkspaceID(context.Background(), wsID)
+
+	got, ok := GetWorkspaceID(ctx)
+	if !ok || got != wsID {
+		t.Fatalf("expected workspace ID %s, got %s (ok: %v)", wsID, got, ok)
+	}
+
+	gotNil, okNil := GetWorkspaceID(context.Background())
+	if okNil || gotNil != uuid.Nil {
+		t.Fatalf("expected nil workspace ID, got %s (ok: %v)", gotNil, okNil)
+	}
+
+	gotFromNilCtx, okFromNilCtx := GetWorkspaceID(nil)
+	if okFromNilCtx || gotFromNilCtx != uuid.Nil {
+		t.Fatalf("expected nil workspace ID from nil context, got %s (ok: %v)", gotFromNilCtx, okFromNilCtx)
+	}
+}
+
+
 

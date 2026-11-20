@@ -37,6 +37,8 @@ const (
 // Recording represents a core media file, its processing lifecycle, guest ownership, and sharing configuration.
 type Recording struct {
 	BaseModel
+	WorkspaceID      *uuid.UUID `gorm:"type:uuid;index:idx_recordings_workspace_id" json:"workspace_id,omitempty"`
+	Workspace        *Workspace `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:CASCADE" json:"workspace,omitempty"`
 	UserID           *uuid.UUID `gorm:"type:uuid;index:idx_recordings_user_id" json:"user_id,omitempty"`
 	User             *User      `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"user,omitempty"`
 	OwnershipToken   string     `gorm:"type:varchar(255);not null;index:idx_recordings_ownership_token" json:"-"`

@@ -69,4 +69,47 @@ type SpeakerDirectoryResponse struct {
 	Speakers []SpeakerSummary `json:"speakers"`
 }
 
+// CreateWorkspaceRequest defines the input payload for creating a new team workspace.
+type CreateWorkspaceRequest struct {
+	Name    string  `json:"name"`
+	LogoURL *string `json:"logo_url,omitempty"`
+}
+
+// UpdateWorkspaceRequest defines the input payload for updating workspace details.
+type UpdateWorkspaceRequest struct {
+	Name    string  `json:"name"`
+	LogoURL *string `json:"logo_url,omitempty"`
+}
+
+// UpdateWorkspaceMemberRoleRequest defines the input payload for modifying a member's role.
+type UpdateWorkspaceMemberRoleRequest struct {
+	Role string `json:"role"`
+}
+
+// WorkspaceResponse represents the public representation of a workspace with the current user's role.
+type WorkspaceResponse struct {
+	ID           uuid.UUID `json:"id"`
+	Name         string    `json:"name"`
+	Slug         string    `json:"slug"`
+	Type         string    `json:"type"`
+	Role         string    `json:"role"`
+	OwnerUserID  uuid.UUID `json:"owner_user_id"`
+	LogoURL      *string   `json:"logo_url,omitempty"`
+	MembersCount int64     `json:"members_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// WorkspaceMemberResponse represents a member within a workspace.
+type WorkspaceMemberResponse struct {
+	ID          uuid.UUID `json:"id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	UserID      uuid.UUID `json:"user_id"`
+	Email       string    `json:"email"`
+	FullName    string    `json:"full_name"`
+	Role        string    `json:"role"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+
 

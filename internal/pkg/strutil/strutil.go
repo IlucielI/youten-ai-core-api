@@ -153,5 +153,24 @@ func LikePattern(query string) string {
 	return "%" + trimmed + "%"
 }
 
+// Slugify converts an arbitrary string into a clean lowercase URL slug.
+func Slugify(text string) string {
+	t := strings.ToLower(strings.TrimSpace(text))
+	var sb strings.Builder
+	for _, r := range t {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		} else if sb.Len() > 0 && sb.String()[sb.Len()-1] != '-' {
+			sb.WriteRune('-')
+		}
+	}
+	res := strings.Trim(sb.String(), "-")
+	if res == "" {
+		return "workspace"
+	}
+	return res
+}
+
+
 
 

@@ -9,3 +9,12 @@ type AudioExtractionResult struct {
 	DurationSeconds float64
 	SizeBytes       int64
 }
+
+// AudioChunk represents a time-bounded slice of an audio recording with its start offset.
+type AudioChunk struct {
+	Index           int     `json:"index"`
+	StartOffsetSec  float64 `json:"start_offset_sec"`
+	DurationSeconds float64 `json:"duration_seconds"`
+	Data            []byte  `json:"data"`
+	Format          string  `json:"format"`
+}

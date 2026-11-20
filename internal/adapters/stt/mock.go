@@ -1,6 +1,7 @@
 package stt
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -10,7 +11,8 @@ import (
 
 // MockSTT provides a mockable implementation of services.STTProvider for unit and offline tests.
 type MockSTT struct {
-	TranscribeFunc func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error)
+	TranscribeFunc       func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error)
+	TranscribeChunksFunc func(ctx context.Context, chunks []dtos.AudioChunk, opts dtos.STTOptions) (*dtos.TranscriptionResult, error)
 }
 
 // NewMock creates a new MockSTT with realistic default responses.
@@ -69,5 +71,24 @@ func (m *MockSTT) Transcribe(ctx context.Context, reader io.Reader, filename str
 	}, nil
 }
 
-// Ensure MockSTT satisfies services.STTProvider at compile time.
-var _ services.STTProvider = (*MockSTT)(nil)
+// TranscribeChunksParallel delegates to TranscribeChunksFunc or transcribes each chunk and stitches.
+func (m *MockSTT) TranscribeChunksParallel(ctx context.Context, chunks []dtos.AudioChunk, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
+	if m.TranscribeChunksFunc != nil {
+		return m.TranscribeChunksFunc(ctx, chunks, opts)
+	}
+	results := make([]*dtos.TranscriptionResult, len(chunks))
+	for i, chunk := range chunks {
+		res, err := m.Transcribe(ctx, bytes.NewReader(chunk.Data), "chunk.mp3", opts)
+		if err != nil {
+			return nil, err
+		}
+		results[i] = res
+	}
+	return StitchChunkResults(chunks, results), nil
+}
+
+// Ensure MockSTT satisfies services.STTProvider and services.ParallelSTTProvider at compile time.
+var (
+	_ services.STTProvider         = (*MockSTT)(nil)
+	_ services.ParallelSTTProvider = (*MockSTT)(nil)
+)

@@ -631,3 +631,131 @@ func TestPipelineService_ProcessImport_UnsupportedMediaType(t *testing.T) {
 	}
 }
 
+func TestPipelineService_HasNativeSpeakerLabels(t *testing.T) {
+	// Case 1: Empty segments -> false
+	if services.HasNativeSpeakerLabels(nil) {
+		t.Error("expected false for nil segments")
+	}
+
+	// Case 2: Segments with default "Speaker 0" -> false
+	defaultSegs := []dtos.SegmentResult{
+		{Text: "Halo", SpeakerLabel: "Speaker 0"},
+		{Text: "Dunia", SpeakerLabel: "Speaker 0"},
+	}
+	if services.HasNativeSpeakerLabels(defaultSegs) {
+		t.Error("expected false for default Speaker 0 segments")
+	}
+
+	// Case 3: Segments with distinct native acoustic labels -> true
+	nativeSegs := []dtos.SegmentResult{
+		{Text: "Halo", SpeakerLabel: "SPEAKER_00"},
+		{Text: "Dunia", SpeakerLabel: "SPEAKER_01"},
+	}
+	if !services.HasNativeSpeakerLabels(nativeSegs) {
+		t.Error("expected true for native acoustic segments")
+	}
+
+	// Case 4: Segments with AcousticSpeaker field populated -> true
+	acousticSegs := []dtos.SegmentResult{
+		{Text: "Halo", AcousticSpeaker: "Speaker A"},
+		{Text: "Dunia", AcousticSpeaker: "Speaker B"},
+	}
+	if !services.HasNativeSpeakerLabels(acousticSegs) {
+		t.Error("expected true for AcousticSpeaker segments")
+	}
+
+	// Case 5: Exactly 50% labeled (2 out of 4) -> false (strict majority required)
+	halfLabeled := []dtos.SegmentResult{
+		{Text: "S1", SpeakerLabel: "SPEAKER_00"},
+		{Text: "S2", SpeakerLabel: "SPEAKER_01"},
+		{Text: "S3", SpeakerLabel: constants.DefaultSpeakerLabel},
+		{Text: "S4", SpeakerLabel: ""},
+	}
+	if services.HasNativeSpeakerLabels(halfLabeled) {
+		t.Error("expected false for exactly 50% labeled segments (requires strict majority)")
+	}
+
+	// Case 6: Strict majority labeled (3 out of 4) -> true
+	majorityLabeled := append(halfLabeled[:2], dtos.SegmentResult{Text: "S3", SpeakerLabel: "SPEAKER_02"}, halfLabeled[3])
+	if !services.HasNativeSpeakerLabels(majorityLabeled) {
+		t.Error("expected true for >50% labeled segments")
+	}
+}
+
+func TestPipelineService_TranscribeAudioAdaptive(t *testing.T) {
+	svc, _, _, cleanup := setupTestPipelineService(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	opts := dtos.STTOptions{Language: "id"}
+
+	// 1. Short duration (< 600s) -> delegates directly to Transcribe
+	mockSTT := stt.NewMock()
+	mockSTT.TranscribeFunc = func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
+		return &dtos.TranscriptionResult{Text: "single pass short"}, nil
+	}
+	svc.WithSTT(mockSTT)
+
+	res, err := svc.TranscribeAudioAdaptive(context.Background(), strings.NewReader("audio"), 300.0, opts, recID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Text != "single pass short" {
+		t.Errorf("expected single pass short, got %s", res.Text)
+	}
+
+	// 2. Long duration (>= 600s) with AudioSlicer returning multiple chunks
+	mockExtractor := audio.NewMock()
+	mockExtractor.SliceFn = func(ctx context.Context, input io.Reader, filename string, totalDurationSec float64) ([]dtos.AudioChunk, error) {
+		return []dtos.AudioChunk{
+			{Index: 0, StartOffsetSec: 0, DurationSeconds: 360, Data: []byte("c1"), Format: "mp3"},
+			{Index: 1, StartOffsetSec: 360, DurationSeconds: 360, Data: []byte("c2"), Format: "mp3"},
+		}, nil
+	}
+	svc.WithAudioExtractor(mockExtractor)
+
+	parallelCalled := false
+	mockSTT.TranscribeChunksFunc = func(ctx context.Context, chunks []dtos.AudioChunk, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
+		parallelCalled = true
+		return &dtos.TranscriptionResult{Text: "parallel chunks transcribed"}, nil
+	}
+
+	resLong, err := svc.TranscribeAudioAdaptive(context.Background(), strings.NewReader("long audio"), 720.0, opts, recID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !parallelCalled {
+		t.Error("expected parallel chunk transcription to be called")
+	}
+	if resLong.Text != "parallel chunks transcribed" {
+		t.Errorf("expected parallel chunks transcribed, got %s", resLong.Text)
+	}
+
+	// 3. Nil reader -> error
+	_, err = svc.TranscribeAudioAdaptive(context.Background(), nil, 300.0, opts, recID)
+	if err == nil {
+		t.Error("expected error for nil reader")
+	}
+
+	// 4. Slicing error falls back cleanly to single-pass STT without empty audio
+	mockExtractor.SliceFn = func(ctx context.Context, input io.Reader, filename string, totalDurationSec float64) ([]dtos.AudioChunk, error) {
+		return nil, errors.New("slice failed")
+	}
+	var receivedAudio []byte
+	mockSTT.TranscribeFunc = func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
+		receivedAudio, _ = io.ReadAll(reader)
+		return &dtos.TranscriptionResult{Text: "fallback success"}, nil
+	}
+
+	resFallback, err := svc.TranscribeAudioAdaptive(context.Background(), strings.NewReader("buffered audio stream"), 720.0, opts, recID)
+	if err != nil {
+		t.Fatalf("unexpected fallback error: %v", err)
+	}
+	if resFallback.Text != "fallback success" {
+		t.Errorf("expected fallback success, got %s", resFallback.Text)
+	}
+	if string(receivedAudio) != "buffered audio stream" {
+		t.Errorf("expected 'buffered audio stream', got '%s'", string(receivedAudio))
+	}
+}
+

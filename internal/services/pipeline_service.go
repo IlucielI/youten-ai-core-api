@@ -1,10 +1,12 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"regexp"
 	"sort"
@@ -336,11 +338,13 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		}
 	}()
 
-	sttResult, err := s.stt.Transcribe(ctx, audioReader, "audio.mp3", dtos.STTOptions{
+	sttOpts := dtos.STTOptions{
 		Language:      sttLang,
 		AudioDuration: recording.DurationSeconds,
 		Prompt:        buildContextualSTTPrompt(recording.Title, sttLang),
-	})
+	}
+
+	sttResult, err := s.TranscribeAudioAdaptive(ctx, audioReader, recording.DurationSeconds, sttOpts, recording.ID)
 	close(heartbeatStop)
 	<-heartbeatDone
 	if err != nil {
@@ -397,9 +401,20 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		}
 	}
 
-	// 2. If STT returned segments, use LLM to infer turn-taking and correct phonetic ASR errors in parallel.
-	if len(sttResult.Segments) > 0 && s.llm != nil {
+	// 2. Diarization & Refinement:
+	// If native acoustic speaker labels are present from STT, preserve them to avoid
+	// unnecessary speaker re-clustering, while still allowing text refinement and role discovery.
+	shouldRunRefinement := len(sttResult.Segments) > 0 && s.llm != nil
+	if shouldRunRefinement {
 		s.publishCustomProgress(recording.ID, models.RecordingStatusTranscribing, "TRANSCRIBING", 35)
+		if HasNativeSpeakerLabels(sttResult.Segments) {
+			log.Printf("[PIPELINE] recording %s: smart diarization bypass active (native acoustic speaker labels locked)", recording.ID.String())
+			for i := range sttResult.Segments {
+				if sttResult.Segments[i].SpeakerLabel != "" && sttResult.Segments[i].AcousticSpeaker == "" {
+					sttResult.Segments[i].AcousticSpeaker = sttResult.Segments[i].SpeakerLabel
+				}
+			}
+		}
 		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments, recording.AnalyticsData, recording.ID)
 		refinedSegments := s.buildModelTranscriptSegments(recording.ID, sttResult.Segments, sttResult.Text, durationToSave)
 		if len(refinedSegments) > 0 {
@@ -1205,6 +1220,57 @@ func (s *Service) needsDiarization(segments []dtos.SegmentResult) bool {
 		}
 	}
 	return true
+}
+
+// HasNativeSpeakerLabels returns true if segments already contain acoustic or native speaker labels from the STT provider.
+func HasNativeSpeakerLabels(segments []dtos.SegmentResult) bool {
+	if len(segments) == 0 {
+		return false
+	}
+	labeled := 0
+	for _, seg := range segments {
+		lbl := strings.TrimSpace(seg.SpeakerLabel)
+		ac := strings.TrimSpace(seg.AcousticSpeaker)
+		if (lbl != "" && lbl != constants.DefaultSpeakerLabel) || ac != "" {
+			labeled++
+		}
+	}
+	return labeled > len(segments)/2
+}
+
+// TranscribeAudioAdaptive slices audio on silence boundaries for parallel transcription when duration exceeds threshold.
+func (s *Service) TranscribeAudioAdaptive(ctx context.Context, reader io.Reader, durationSec float64, opts dtos.STTOptions, recordingID uuid.UUID) (*dtos.TranscriptionResult, error) {
+	if s.stt == nil {
+		return nil, errors.New("stt provider is not configured")
+	}
+	if reader == nil {
+		return nil, errors.New("audio reader is nil")
+	}
+
+	// Adaptive silence slicing path
+	if slicer, ok := s.audioExtractor.(AudioSlicer); ok && durationSec >= constants.MinAudioDurationForChunkingSeconds {
+		audioData, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read audio: %w", err)
+		}
+
+		chunks, sliceErr := slicer.SliceAudioOnSilence(ctx, bytes.NewReader(audioData), "audio.mp3", durationSec)
+		if sliceErr == nil && len(chunks) > 1 {
+			if parallelSTT, ok := s.stt.(ParallelSTTProvider); ok {
+				log.Printf("[PIPELINE] recording %s: dispatching %d silence-aligned audio chunks in parallel", recordingID.String(), len(chunks))
+				return parallelSTT.TranscribeChunksParallel(ctx, chunks, opts)
+			}
+		} else if sliceErr != nil {
+			log.Printf("[PIPELINE WARN] recording %s: silence slicing failed (%v), falling back to single-pass STT", recordingID.String(), sliceErr)
+		} else if len(chunks) == 1 {
+			return s.stt.Transcribe(ctx, bytes.NewReader(chunks[0].Data), "audio.mp3", opts)
+		}
+
+		return s.stt.Transcribe(ctx, bytes.NewReader(audioData), "audio.mp3", opts)
+	}
+
+	// Standard single-pass transcription
+	return s.stt.Transcribe(ctx, reader, "audio.mp3", opts)
 }
 
 var speakerExtractRegex = regexp.MustCompile(`(?i)(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:`)

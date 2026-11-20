@@ -9,7 +9,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -221,11 +224,6 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		}
 	}
 
-	userPrompt, err := templates.RenderSummaryUserPromptWithCues(transcriptBody, targetLang, customAngle, visualCueViews)
-	if err != nil {
-		userPrompt = fmt.Sprintf("Please summarize the following meeting transcript:\n\n%s", transcriptBody)
-	}
-
 	var schema map[string]interface{}
 	if template != nil && len(template.OutputSchema) > 0 {
 		schema = map[string]interface{}(template.OutputSchema)
@@ -233,26 +231,20 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		schema = templates.DefaultSchemaForTemplate(templateKey)
 	}
 
-	var structuredRes *dtos.StructuredResponse
-	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
-		if lastErr == nil && structuredRes != nil {
-			break
-		}
-		if lastErr == nil && structuredRes == nil {
-			lastErr = errors.New("empty structured response from llm")
-		}
-		log.Printf("[SUMMARY WARN] recording %s: summary regeneration attempt %d failed: %v", rec.ID.String(), attempt, lastErr)
-		if attempt < 3 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(time.Duration(attempt) * time.Second):
-			}
-		}
-	}
+	structuredRes, lastErr := s.generateStructuredSummary(
+		ctx,
+		uuid.Nil,
+		systemPrompt,
+		transcriptBody,
+		targetLang,
+		customAngle,
+		visualCueViews,
+		schema,
+	)
 	if lastErr != nil {
+		if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
+			return nil, lastErr
+		}
 		return nil, fmt.Errorf("llm generation failed: %w", lastErr)
 	}
 	if structuredRes == nil {
@@ -348,3 +340,312 @@ func (s *Service) ActivateSummaryVersion(ctx context.Context, id uuid.UUID, vers
 	resp := toSummaryVersionResponse(*activated)
 	return &resp, nil
 }
+
+const (
+	maxDirectSummaryTranscriptChars = 16000
+	summaryMapChunkMaxChars         = 14000
+	maxSummaryCondenseWorkers       = 4
+	minCondensedChunkChars          = 1500
+	maxCondensedChunkChars          = 3500
+)
+
+type summaryChunkJob struct {
+	index int
+	text  string
+}
+
+func (s *Service) generateStructuredSummary(
+	ctx context.Context,
+	recordingID uuid.UUID,
+	systemPrompt string,
+	transcriptBody string,
+	targetLang string,
+	customAngle string,
+	visualCueViews []templates.VisualCueView,
+	schema map[string]interface{},
+) (*dtos.StructuredResponse, error) {
+	effectiveTranscript := s.condenseTranscriptForSummary(ctx, recordingID, transcriptBody, targetLang)
+
+	var structuredRes *dtos.StructuredResponse
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		userPrompt := renderSummaryPromptOrFallback(effectiveTranscript, targetLang, customAngle, visualCueViews)
+		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
+		if lastErr == nil && structuredRes != nil {
+			return structuredRes, nil
+		}
+		if lastErr == nil {
+			lastErr = errors.New("empty structured response from llm")
+		}
+		log.Printf("[SUMMARY WARN] recording %s: summarization attempt %d failed: %v", recordingID.String(), attempt, lastErr)
+		if isPromptTooLongError(lastErr) {
+			transcriptRunes := utf8.RuneCountInString(effectiveTranscript)
+			shrunkTarget := transcriptRunes * 60 / 100
+			if shrunkTarget < 1000 && transcriptRunes >= 1000 {
+				shrunkTarget = 1000
+			}
+			effectiveTranscript = deterministicCondenseChunk(effectiveTranscript, shrunkTarget)
+		}
+		if attempt < 3 {
+			if waitErr := waitSummaryRetry(ctx, attempt); waitErr != nil {
+				return nil, waitErr
+			}
+		}
+	}
+	return nil, lastErr
+}
+
+func renderSummaryPromptOrFallback(transcriptBody string, targetLang string, customAngle string, visualCueViews []templates.VisualCueView) string {
+	userPrompt, err := templates.RenderSummaryUserPromptWithCues(transcriptBody, targetLang, customAngle, visualCueViews)
+	if err != nil {
+		return fmt.Sprintf("Please summarize the following meeting transcript:\n\n%s", transcriptBody)
+	}
+	return userPrompt
+}
+
+func waitSummaryRetry(ctx context.Context, attempt int) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Duration(attempt) * time.Second):
+		return nil
+	}
+}
+
+func isPromptTooLongError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "too long") ||
+		strings.Contains(lower, "context_length") ||
+		strings.Contains(lower, "maximum context") ||
+		strings.Contains(lower, "request too large") ||
+		strings.Contains(lower, "string_above_max_length")
+}
+
+func (s *Service) condenseTranscriptForSummary(ctx context.Context, recordingID uuid.UUID, transcriptBody string, targetLang string) string {
+	if len(transcriptBody) <= maxDirectSummaryTranscriptChars {
+		return transcriptBody
+	}
+
+	chunks := splitTranscriptIntoChunks(transcriptBody, summaryMapChunkMaxChars)
+	if len(chunks) <= 1 {
+		return deterministicCondenseChunk(transcriptBody, maxDirectSummaryTranscriptChars)
+	}
+
+	perChunkTarget := maxDirectSummaryTranscriptChars / len(chunks)
+	if perChunkTarget < minCondensedChunkChars {
+		perChunkTarget = minCondensedChunkChars
+	}
+	if perChunkTarget > maxCondensedChunkChars {
+		perChunkTarget = maxCondensedChunkChars
+	}
+
+	numWorkers := len(chunks)
+	if numWorkers > maxSummaryCondenseWorkers {
+		numWorkers = maxSummaryCondenseWorkers
+	}
+
+	jobChan := make(chan summaryChunkJob, len(chunks))
+	for i, c := range chunks {
+		jobChan <- summaryChunkJob{index: i, text: c}
+	}
+	close(jobChan)
+
+	results := make([]string, len(chunks))
+	var (
+		wg        sync.WaitGroup
+		completed int64
+		total     = int64(len(chunks))
+	)
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobChan {
+				results[job.index] = s.condenseSingleSummaryChunk(ctx, job.index, len(chunks), job.text, targetLang, perChunkTarget)
+				done := atomic.AddInt64(&completed, 1)
+				s.touchSummarizingHeartbeat(ctx, recordingID, done, total)
+			}
+		}()
+	}
+	wg.Wait()
+
+	var sb strings.Builder
+	for i, digest := range results {
+		sb.WriteString(fmt.Sprintf("--- [Part %d/%d] ---\n%s\n\n", i+1, len(results), strings.TrimSpace(digest)))
+	}
+	combined := strings.TrimSpace(sb.String())
+	if len(combined) > maxDirectSummaryTranscriptChars {
+		return deterministicCondenseChunk(combined, maxDirectSummaryTranscriptChars)
+	}
+	return combined
+}
+
+func (s *Service) touchSummarizingHeartbeat(ctx context.Context, recordingID uuid.UUID, done int64, total int64) {
+	if recordingID == uuid.Nil || total <= 0 {
+		return
+	}
+	prog := 60 + int((float64(done)/float64(total))*20.0)
+	s.publishCustomProgress(recordingID, models.RecordingStatusSummarizing, "SUMMARIZING", prog)
+	_ = s.repo.UpdateRecordingStatus(ctx, recordingID, models.RecordingStatusSummarizing, nil, nil)
+}
+
+func (s *Service) condenseSingleSummaryChunk(
+	ctx context.Context,
+	chunkIdx int,
+	totalChunks int,
+	chunkText string,
+	targetLang string,
+	maxDigestChars int,
+) string {
+	if ctx.Err() != nil || s.llm == nil {
+		return deterministicCondenseChunk(chunkText, maxDigestChars)
+	}
+
+	langHint := strings.TrimSpace(targetLang)
+	if langHint == "" {
+		langHint = "the primary language used by the speakers"
+	}
+
+	sysPrompt := "You are an executive meeting analyst. Condense the provided chronological meeting transcript slice into a dense, factual, timestamped digest. Preserve [start - end] timestamps, speaker names, discussion topics, key arguments, technical details, numbers/metrics, decisions made, root causes, contested points, action items (task, PIC, due date), and open points/issues. Do NOT omit concrete facts or names."
+	usrPrompt := fmt.Sprintf(
+		"Condense Part %d of %d of the meeting transcript in %s into a high-density chronological digest (target ~%d characters). Retain [start - end] Speaker: format for key statements, decisions, and action items:\n\n%s",
+		chunkIdx+1,
+		totalChunks,
+		langHint,
+		maxDigestChars,
+		chunkText,
+	)
+
+	temp := 0.1
+	res, err := s.llm.GenerateChatResponse(ctx, sysPrompt, []dtos.ChatMessageInput{
+		{Role: "user", Content: usrPrompt},
+	}, dtos.ChatOptions{Temperature: &temp})
+	if err != nil || res == nil || strings.TrimSpace(res.Content) == "" {
+		log.Printf("[SUMMARY WARN] map-reduce chunk %d/%d condensation fallback: %v", chunkIdx+1, totalChunks, err)
+		return deterministicCondenseChunk(chunkText, maxDigestChars)
+	}
+
+	digest := strings.TrimSpace(res.Content)
+	if len(digest) > maxDigestChars+500 {
+		return deterministicCondenseChunk(digest, maxDigestChars)
+	}
+	return digest
+}
+
+func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []string {
+	if maxChunkChars <= 0 || utf8.RuneCountInString(transcriptBody) <= maxChunkChars {
+		return []string{transcriptBody}
+	}
+
+	lines := strings.Split(transcriptBody, "\n")
+	var chunks []string
+	var current strings.Builder
+	currentRunes := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		for utf8.RuneCountInString(trimmed) > maxChunkChars {
+			if current.Len() > 0 {
+				chunks = append(chunks, strings.TrimSpace(current.String()))
+				current.Reset()
+				currentRunes = 0
+			}
+			runes := []rune(trimmed)
+			chunks = append(chunks, string(runes[:maxChunkChars]))
+			trimmed = strings.TrimSpace(string(runes[maxChunkChars:]))
+		}
+		if trimmed == "" {
+			continue
+		}
+
+		trimmedRunes := utf8.RuneCountInString(trimmed)
+		if currentRunes > 0 && currentRunes+trimmedRunes+1 > maxChunkChars {
+			chunks = append(chunks, strings.TrimSpace(current.String()))
+			current.Reset()
+			currentRunes = 0
+		}
+		current.WriteString(trimmed)
+		current.WriteByte('\n')
+		currentRunes += trimmedRunes + 1
+	}
+	if current.Len() > 0 {
+		chunks = append(chunks, strings.TrimSpace(current.String()))
+	}
+	return chunks
+}
+
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	return string(r[:maxRunes])
+}
+
+func deterministicCondenseChunk(text string, maxChars int) string {
+	trimmed := strings.TrimSpace(text)
+	if maxChars <= 0 || utf8.RuneCountInString(trimmed) <= maxChars {
+		return trimmed
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) <= 1 {
+		return truncateRunes(trimmed, maxChars)
+	}
+
+	// Sample evenly across chronological lines so start, middle, and end of the slice are preserved.
+	var selected []string
+	totalRunes := 0
+	runeCount := utf8.RuneCountInString(trimmed)
+	avgLineLen := runeCount / len(lines)
+	if avgLineLen < 20 {
+		avgLineLen = 20
+	}
+	targetLines := maxChars / avgLineLen
+	if targetLines < 3 {
+		targetLines = 3
+	}
+	step := 1
+	if len(lines) > targetLines {
+		step = (len(lines) - 1) / (targetLines - 1)
+		if step < 1 {
+			step = 1
+		}
+	}
+
+	for i := 0; i < len(lines); i += step {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		lineRunes := utf8.RuneCountInString(line)
+		if totalRunes+lineRunes+1 > maxChars {
+			break
+		}
+		selected = append(selected, line)
+		totalRunes += lineRunes + 1
+	}
+
+	lastLine := strings.TrimSpace(lines[len(lines)-1])
+	lastLineRunes := utf8.RuneCountInString(lastLine)
+	if len(selected) > 0 && lastLine != "" && selected[len(selected)-1] != lastLine && totalRunes+lastLineRunes+1 <= maxChars {
+		selected = append(selected, lastLine)
+	}
+
+	if len(selected) == 0 {
+		return truncateRunes(trimmed, maxChars)
+	}
+	return strings.Join(selected, "\n")
+}
+

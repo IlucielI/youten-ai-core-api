@@ -3,7 +3,9 @@ package services_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -908,3 +910,182 @@ func TestService_ActivateSummaryVersion_Success_AuthenticatedOwnerWithVersionInt
 		t.Errorf("unexpected activated response: %+v", resp)
 	}
 }
+
+func TestService_RegenerateSummary_LongTranscriptMapReduce(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	ctx := context.Background()
+
+	var chatCalls int32
+	var currentConcurrent int32
+	var maxConcurrent int32
+	var structuredPromptLen int
+	mockLLM := llm.NewMock()
+	mockLLM.GenerateChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+		atomic.AddInt32(&chatCalls, 1)
+		cur := atomic.AddInt32(&currentConcurrent, 1)
+		for {
+			oldMax := atomic.LoadInt32(&maxConcurrent)
+			if cur <= oldMax || atomic.CompareAndSwapInt32(&maxConcurrent, oldMax, cur) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		atomic.AddInt32(&currentConcurrent, -1)
+		return &dtos.ChatResponse{
+			Content: "[00:00 - 05:00] Speaker 1: Condensed digest of segment topics, decisions, and action items.",
+		}, nil
+	}
+	mockLLM.GenerateStructuredFunc = func(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+		structuredPromptLen = len(userPrompt)
+		return &dtos.StructuredResponse{
+			RawJSON: `{"executive_summary": "Long meeting map-reduce summary", "action_items": []}`,
+		}, nil
+	}
+	svc.SetLLM(mockLLM)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "status", "detected_language", "output_language", "selected_template"}).
+			AddRow(recID, guestToken, models.RecordingStatusCompleted, "id", "id", "MOM"))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	// Generate 250 segments totaling > 35,000 characters
+	segRows := sqlmock.NewRows([]string{"id", "recording_id", "speaker_name", "text", "start_time", "end_time"})
+	for i := 0; i < 250; i++ {
+		segRows.AddRow(
+			uuid.New(),
+			recID,
+			fmt.Sprintf("Speaker %d", (i%4)+1),
+			"Pembahasan mendalam terkait arsitektur sistem Pegadaian Prime, otorisasi pencairan, test case QA, serta integrasi microservices dan milestone minggu depan.",
+			float64(i*30),
+			float64((i+1)*30),
+		)
+	}
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC`).
+		WithArgs(recID).
+		WillReturnRows(segRows)
+
+	mock.ExpectQuery(`SELECT \* FROM "templates" WHERE category_key = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs("MOM", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "prompt", "output_schema"}).
+			AddRow(uuid.New(), "MOM", "MOM prompt", "{}"))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(1))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`INSERT INTO "summaries"`).
+		WithArgs(recID, "MOM", nil, 2, true, sqlmock.AnyArg(), "Long meeting map-reduce summary", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), time.Now(), time.Now()))
+	mock.ExpectCommit()
+
+	resp, err := svc.RegenerateSummary(ctx, recID, guestToken, dtos.RegenerateSummaryRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error on long transcript map-reduce summary: %v", err)
+	}
+	if chatCalls < 2 {
+		t.Errorf("expected map-reduce chunk condensation calls >= 2, got %d", chatCalls)
+	}
+	if maxConcurrent < 2 {
+		t.Errorf("expected concurrent condensation calls >= 2, got %d", maxConcurrent)
+	}
+	if structuredPromptLen > 20000 {
+		t.Errorf("expected condensed structured userPrompt <= 20000 chars, got %d", structuredPromptLen)
+	}
+	if resp.MarkdownContent != "Long meeting map-reduce summary" {
+		t.Errorf("unexpected markdown content: %s", resp.MarkdownContent)
+	}
+}
+
+func TestService_RegenerateSummary_AutoShrinkOnTooLongError(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	ctx := context.Background()
+
+	var attempt int
+	var firstLen, secondLen int
+	mockLLM := llm.NewMock()
+	mockLLM.GenerateStructuredFunc = func(ctx context.Context, systemPrompt, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+		attempt++
+		if attempt == 1 {
+			firstLen = len(userPrompt)
+			return nil, errors.New("llm api returned status 502: The message you submitted was too long, please edit it and resubmit.")
+		}
+		secondLen = len(userPrompt)
+		return &dtos.StructuredResponse{
+			RawJSON: `{"executive_summary": "Recovered after shrinking prompt", "action_items": []}`,
+		}, nil
+	}
+	svc.SetLLM(mockLLM)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "status", "detected_language", "output_language", "selected_template"}).
+			AddRow(recID, guestToken, models.RecordingStatusCompleted, "id", "id", "GENERAL"))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	segRows := sqlmock.NewRows([]string{"id", "recording_id", "speaker_name", "text", "start_time", "end_time"})
+	for i := 0; i < 60; i++ {
+		segRows.AddRow(
+			uuid.New(),
+			recID,
+			"Speaker 1",
+			"Diskusi teknis mengenai layanan autentikasi, optimasi database query, dan deployment container multi-arch.",
+			float64(i*10),
+			float64((i+1)*10),
+		)
+	}
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC`).
+		WithArgs(recID).
+		WillReturnRows(segRows)
+
+	mock.ExpectQuery(`SELECT \* FROM "templates" WHERE category_key = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs("GENERAL", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "category_key", "prompt", "output_schema"}).
+			AddRow(uuid.New(), "GENERAL", "General prompt", "{}"))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM "summaries" WHERE recording_id = \$1`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(1))
+	mock.ExpectExec(`UPDATE "summaries" SET "is_active"=\$1,"updated_at"=\$2 WHERE recording_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`INSERT INTO "summaries"`).
+		WithArgs(recID, "GENERAL", nil, 2, true, sqlmock.AnyArg(), "Recovered after shrinking prompt", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(uuid.New(), time.Now(), time.Now()))
+	mock.ExpectCommit()
+
+	resp, err := svc.RegenerateSummary(ctx, recID, guestToken, dtos.RegenerateSummaryRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if attempt != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempt)
+	}
+	if secondLen >= firstLen {
+		t.Errorf("expected second attempt prompt (%d) to be shrunk smaller than first attempt (%d)", secondLen, firstLen)
+	}
+	if resp.MarkdownContent != "Recovered after shrinking prompt" {
+		t.Errorf("unexpected markdown content: %s", resp.MarkdownContent)
+	}
+}
+

@@ -77,7 +77,7 @@ type CreateWorkspaceRequest struct {
 
 // UpdateWorkspaceRequest defines the input payload for updating workspace details.
 type UpdateWorkspaceRequest struct {
-	Name    string  `json:"name"`
+	Name    *string `json:"name,omitempty"`
 	LogoURL *string `json:"logo_url,omitempty"`
 }
 

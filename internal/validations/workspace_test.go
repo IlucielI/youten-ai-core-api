@@ -170,12 +170,20 @@ func TestWorkspaceManagement_Validations(t *testing.T) {
 	})
 
 	t.Run("UpdateWorkspace", func(t *testing.T) {
-		valid := dtos.UpdateWorkspaceRequest{Name: "New Name"}
+		name := "New Name"
+		valid := dtos.UpdateWorkspaceRequest{Name: &name}
 		if err := validations.ValidateUpdateWorkspaceRequest(&valid); err != nil {
 			t.Errorf("expected valid, got: %v", err)
 		}
 
-		empty := dtos.UpdateWorkspaceRequest{Name: ""}
+		logo := "https://example.com/logo.png"
+		logoOnly := dtos.UpdateWorkspaceRequest{LogoURL: &logo}
+		if err := validations.ValidateUpdateWorkspaceRequest(&logoOnly); err != nil {
+			t.Errorf("expected logo only to be valid, got: %v", err)
+		}
+
+		emptyStr := ""
+		empty := dtos.UpdateWorkspaceRequest{Name: &emptyStr}
 		if err := validations.ValidateUpdateWorkspaceRequest(&empty); err == nil {
 			t.Error("expected error for empty name")
 		}

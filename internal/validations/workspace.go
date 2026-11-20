@@ -54,10 +54,16 @@ func ValidateCreateWorkspaceRequest(r *dtos.CreateWorkspaceRequest) error {
 
 // ValidateUpdateWorkspaceRequest validates the payload for updating workspace details.
 func ValidateUpdateWorkspaceRequest(r *dtos.UpdateWorkspaceRequest) error {
-	r.Name = strings.TrimSpace(r.Name)
-	return validation.ValidateStruct(r,
-		validation.Field(&r.Name, validation.Required, validation.Length(2, 150)),
-	)
+	if r.Name != nil {
+		trimmed := strings.TrimSpace(*r.Name)
+		r.Name = &trimmed
+		if len(trimmed) < 2 || len(trimmed) > 150 {
+			return validation.Errors{
+				"name": validation.NewError("validation_length", "the length must be between 2 and 150"),
+			}
+		}
+	}
+	return nil
 }
 
 // ValidateUpdateWorkspaceMemberRoleRequest validates the role update for a member.

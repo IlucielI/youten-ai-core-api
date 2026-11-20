@@ -149,7 +149,9 @@ func (s *Service) UpdateWorkspace(ctx context.Context, workspaceID uuid.UUID, re
 		return nil, constants.ErrWorkspaceNotFound
 	}
 
-	ws.Name = req.Name
+	if req.Name != nil && *req.Name != "" {
+		ws.Name = *req.Name
+	}
 	if req.LogoURL != nil {
 		ws.LogoURL = req.LogoURL
 	}

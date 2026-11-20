@@ -72,9 +72,9 @@ type EventSubscriber interface {
 type ConfigurableEventSubscriber interface {
 	EventSubscriber
 
-	// SubscribeWithOptions registers a subscription with fine-tuned concurrency, prefetch, and idle reap options.
-	SubscribeWithOptions(topic string, handler WorkerHandler, opts ...SubscribeOption) error
+	// SubscribeWithWorkerOptions registers a subscription with fine-tuned concurrency, prefetch, and idle reap options.
+	SubscribeWithWorkerOptions(topic string, handler WorkerHandler, opts ...SubscribeOption) error
 
-	// MustSubscribeWithOptions registers a subscription with options and panics on failure.
-	MustSubscribeWithOptions(topic string, handler WorkerHandler, opts ...SubscribeOption)
+	// MustSubscribeWithWorkerOptions registers a subscription with options and panics on failure.
+	MustSubscribeWithWorkerOptions(topic string, handler WorkerHandler, opts ...SubscribeOption)
 }

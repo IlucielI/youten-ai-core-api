@@ -14,17 +14,19 @@ import (
 
 // WorkerServer manages and registers all background worker subscriptions.
 type WorkerServer struct {
-	cfg config.Config
-	svc *services.Service
-	sub EventSubscriber
+	cfg        config.Config
+	svc        *services.Service
+	sub        EventSubscriber
+	extractSem chan struct{}
 }
 
 // New creates a new WorkerServer instance.
 func New(cfg config.Config, svc *services.Service, sub EventSubscriber) *WorkerServer {
 	return &WorkerServer{
-		cfg: cfg,
-		svc: svc,
-		sub: sub,
+		cfg:        cfg,
+		svc:        svc,
+		sub:        sub,
+		extractSem: make(chan struct{}, 3),
 	}
 }
 
@@ -38,7 +40,7 @@ func (w *WorkerServer) subscribe(topic string, handler WorkerHandler, opts ...Su
 		return
 	}
 	if configurable, ok := w.sub.(ConfigurableEventSubscriber); ok {
-		configurable.MustSubscribeWithOptions(topic, handler, opts...)
+		configurable.MustSubscribeWithWorkerOptions(topic, handler, opts...)
 		return
 	}
 	w.sub.MustSubscribe(topic, handler)
@@ -213,6 +215,17 @@ func (w *WorkerServer) HandleRecordingExtract(ctx context.Context, msg []byte) b
 
 	stageCtx, cancel := context.WithTimeout(ctx, DefaultStageTimeout)
 	defer cancel()
+
+	// Acquire extraction semaphore slot to strictly cap CPU-intensive FFmpeg tasks across all extract topics
+	if w.extractSem != nil {
+		select {
+		case w.extractSem <- struct{}{}:
+			defer func() { <-w.extractSem }()
+		case <-stageCtx.Done():
+			log.Printf("[WORKER ERROR] Audio extraction timed out waiting for semaphore slot for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)
+			return false
+		}
+	}
 
 	start := time.Now()
 	log.Printf("[WORKER] Started Audio Extraction for recording %s (req_id=%s)", p.RecordingID.String(), p.RequestID)

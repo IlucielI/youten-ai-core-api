@@ -148,9 +148,9 @@ func TestRabbitMQ_PublishOptions(t *testing.T) {
 }
 
 func TestRabbitMQ_SubscribeOptions(t *testing.T) {
-	cfg := rabbitmq.SubscribeConfig{
-		Concurrency: 1,
-		Prefetch:    1,
+	cfg := rabbitmq.ConsumeConfig{
+		Concurrency:   1,
+		PrefetchCount: 1,
 	}
 
 	optConc := rabbitmq.WithConcurrency(8)
@@ -166,8 +166,8 @@ func TestRabbitMQ_SubscribeOptions(t *testing.T) {
 	if cfg.Concurrency != 8 {
 		t.Errorf("expected Concurrency 8, got %d", cfg.Concurrency)
 	}
-	if cfg.Prefetch != 16 {
-		t.Errorf("expected Prefetch 16, got %d", cfg.Prefetch)
+	if cfg.PrefetchCount != 16 {
+		t.Errorf("expected PrefetchCount 16, got %d", cfg.PrefetchCount)
 	}
 	if cfg.MinWorkers != 2 {
 		t.Errorf("expected MinWorkers 2, got %d", cfg.MinWorkers)
@@ -178,6 +178,14 @@ func TestRabbitMQ_SubscribeOptions(t *testing.T) {
 
 	var r *rabbitmq.RabbitMQ
 	if err := r.SubscribeWithOptions("test.topic", func(ctx context.Context, msg []byte) bool { return true }, optConc, optPref, optMin, optIdle); err == nil {
+		t.Error("expected error calling SubscribeWithOptions on nil RabbitMQ, got nil")
+	}
+
+	optW1 := rabbitmq.WithConcurrency(5)
+	optW2 := rabbitmq.WithMinWorkers(1)
+	optW3 := rabbitmq.WithPrefetch(10)
+	optW4 := rabbitmq.WithIdleTimeout(10 * time.Second)
+	if err := r.SubscribeWithOptions("test.topic", func(ctx context.Context, msg []byte) bool { return true }, optW1, optW2, optW3, optW4); err == nil {
 		t.Error("expected error calling SubscribeWithOptions on nil RabbitMQ, got nil")
 	}
 }

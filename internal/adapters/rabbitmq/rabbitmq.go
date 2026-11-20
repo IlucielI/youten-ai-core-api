@@ -515,22 +515,44 @@ func (r *RabbitMQ) MustPublish(ctx context.Context, topic string, payload any) {
 	}
 }
 
-// SubscribeOption aliases workers.SubscribeOption for topic subscription tuning.
-type SubscribeOption = workers.SubscribeOption
+// SubscribeOption configures subscription consuming properties such as concurrency, min workers, and prefetch count.
+type SubscribeOption func(*ConsumeConfig)
 
-// SubscribeConfig aliases workers.SubscribeConfig for consumer properties.
-type SubscribeConfig = workers.SubscribeConfig
+// WithConcurrency overrides the maximum parallel worker goroutines.
+func WithConcurrency(concurrency int) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if concurrency > 0 {
+			cfg.Concurrency = concurrency
+		}
+	}
+}
 
-var (
-	// WithConcurrency overrides the maximum parallel worker goroutines.
-	WithConcurrency = workers.WithConcurrency
-	// WithMinWorkers overrides the minimum standby worker goroutines.
-	WithMinWorkers = workers.WithMinWorkers
-	// WithPrefetch overrides the channel prefetch count.
-	WithPrefetch = workers.WithPrefetch
-	// WithIdleTimeout overrides the idle auto-reap duration.
-	WithIdleTimeout = workers.WithIdleTimeout
-)
+// WithMinWorkers overrides the minimum standby worker goroutines.
+func WithMinWorkers(min int) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if min >= 0 {
+			cfg.MinWorkers = min
+		}
+	}
+}
+
+// WithPrefetch overrides the channel prefetch count.
+func WithPrefetch(prefetch int) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if prefetch > 0 {
+			cfg.PrefetchCount = prefetch
+		}
+	}
+}
+
+// WithIdleTimeout overrides the idle auto-reap duration.
+func WithIdleTimeout(timeout time.Duration) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if timeout > 0 {
+			cfg.IdleTimeout = timeout
+		}
+	}
+}
 
 // Subscribe registers a subscription to a topic using WorkerHandler with default worker elasticity.
 func (r *RabbitMQ) Subscribe(topic string, handler WorkerHandler) error {
@@ -564,32 +586,25 @@ func (r *RabbitMQ) SubscribeWithOptions(topic string, handler WorkerHandler, opt
 		concurrency = 4
 	}
 
-	subCfg := workers.SubscribeConfig{
-		Concurrency: concurrency,
-		MinWorkers:  0,
-		Prefetch:    r.defaultPrefetch, // 0 if not preset globally
-		IdleTimeout: 30 * time.Second,
+	consumeCfg := ConsumeConfig{
+		Queue:         queueName,
+		ConsumerTag:   "worker-" + topic,
+		PrefetchCount: r.defaultPrefetch,
+		Concurrency:   concurrency,
+		MinWorkers:    0,
+		IdleTimeout:   30 * time.Second,
+		RequeueOnNack: false, // route to DLQ
 	}
 
 	for _, opt := range opts {
 		if opt != nil {
-			opt(&subCfg)
+			opt(&consumeCfg)
 		}
 	}
 
 	// Calculate default prefetch dynamically based on final resolved concurrency if not explicitly set
-	if subCfg.Prefetch <= 0 {
-		subCfg.Prefetch = subCfg.Concurrency * 2
-	}
-
-	consumeCfg := ConsumeConfig{
-		Queue:         queueName,
-		ConsumerTag:   "worker-" + topic,
-		PrefetchCount: subCfg.Prefetch,
-		Concurrency:   subCfg.Concurrency,
-		MinWorkers:    subCfg.MinWorkers,
-		IdleTimeout:   subCfg.IdleTimeout,
-		RequeueOnNack: false, // route to DLQ
+	if consumeCfg.PrefetchCount <= 0 {
+		consumeCfg.PrefetchCount = consumeCfg.Concurrency * 2
 	}
 
 	return r.Consume(context.Background(), consumeCfg, func(ctx context.Context, d amqp.Delivery) error {
@@ -632,6 +647,40 @@ func (r *RabbitMQ) MustSubscribe(topic string, handler WorkerHandler) {
 // MustSubscribeWithOptions registers a subscription with options and panics on failure.
 func (r *RabbitMQ) MustSubscribeWithOptions(topic string, handler WorkerHandler, opts ...SubscribeOption) {
 	if err := r.SubscribeWithOptions(topic, handler, opts...); err != nil {
+		panic(fmt.Errorf("failed to subscribe to topic '%s': %w", topic, err))
+	}
+}
+
+// SubscribeWithWorkerOptions satisfies workers.ConfigurableEventSubscriber using worker-domain options.
+func (r *RabbitMQ) SubscribeWithWorkerOptions(topic string, handler WorkerHandler, opts ...workers.SubscribeOption) error {
+	concurrency := r.defaultConcurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+	subCfg := workers.SubscribeConfig{
+		Concurrency: concurrency,
+		MinWorkers:  0,
+		Prefetch:    r.defaultPrefetch,
+		IdleTimeout: 30 * time.Second,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&subCfg)
+		}
+	}
+	return r.SubscribeWithOptions(
+		topic,
+		handler,
+		WithConcurrency(subCfg.Concurrency),
+		WithMinWorkers(subCfg.MinWorkers),
+		WithPrefetch(subCfg.Prefetch),
+		WithIdleTimeout(subCfg.IdleTimeout),
+	)
+}
+
+// MustSubscribeWithWorkerOptions registers a subscription with worker-domain options and panics on failure.
+func (r *RabbitMQ) MustSubscribeWithWorkerOptions(topic string, handler WorkerHandler, opts ...workers.SubscribeOption) {
+	if err := r.SubscribeWithWorkerOptions(topic, handler, opts...); err != nil {
 		panic(fmt.Errorf("failed to subscribe to topic '%s': %w", topic, err))
 	}
 }
@@ -722,11 +771,14 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 		activeWorkers++
 		wg.Add(1)
 		go func() {
+			var decremented bool
+			defer wg.Done()
 			defer func() {
-				mu.Lock()
-				activeWorkers--
-				mu.Unlock()
-				wg.Done()
+				if !decremented {
+					mu.Lock()
+					activeWorkers--
+					mu.Unlock()
+				}
 			}()
 
 			idleTimer := time.NewTimer(idleTimeout)
@@ -775,6 +827,8 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 				case <-idleTimer.C:
 					mu.Lock()
 					if activeWorkers > minWorkers {
+						activeWorkers--
+						decremented = true
 						mu.Unlock()
 						return // Auto-reap this worker goroutine down to minWorkers
 					}

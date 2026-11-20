@@ -304,6 +304,9 @@ func (f *FFmpegExtractor) SliceAudioOnSilence(ctx context.Context, input io.Read
 	var detectErr bytes.Buffer
 	detectCmd.Stderr = &detectErr
 	_ = detectCmd.Run()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	silencePoints := ParseSilencePoints(detectErr.String())
 	boundaries := ComputeChunkBoundaries(

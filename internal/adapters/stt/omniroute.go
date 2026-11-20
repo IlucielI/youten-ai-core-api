@@ -606,6 +606,9 @@ func StitchChunkResults(chunks []dtos.AudioChunk, results []*dtos.TranscriptionR
 			shiftedDseg.Start += offset
 			shiftedDseg.End += offset
 			shiftedDseg.ID = len(allDiarizedSegments)
+			if shiftedDseg.End > maxDuration {
+				maxDuration = shiftedDseg.End
+			}
 			allDiarizedSegments = append(allDiarizedSegments, shiftedDseg)
 		}
 	}

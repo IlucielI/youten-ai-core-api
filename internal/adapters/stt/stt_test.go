@@ -415,6 +415,10 @@ func TestStitchChunkResults(t *testing.T) {
 		t.Errorf("unexpected stitched text: %s", stitched.Text)
 	}
 
+	if stitched.Duration != 580.0 {
+		t.Errorf("expected stitched duration 580.0, got %f", stitched.Duration)
+	}
+
 	if len(stitched.Segments) != 2 {
 		t.Fatalf("expected 2 stitched segments, got %d", len(stitched.Segments))
 	}

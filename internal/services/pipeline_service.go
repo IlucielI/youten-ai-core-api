@@ -410,11 +410,8 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		if HasNativeSpeakerLabels(sttResult.Segments) {
 			log.Printf("[PIPELINE] recording %s: smart diarization bypass active (native acoustic speaker labels locked)", recording.ID.String())
 			for i := range sttResult.Segments {
-				if sttResult.Segments[i].SpeakerLabel != "" {
+				if sttResult.Segments[i].SpeakerLabel != "" && sttResult.Segments[i].AcousticSpeaker == "" {
 					sttResult.Segments[i].AcousticSpeaker = sttResult.Segments[i].SpeakerLabel
-					if sttResult.Segments[i].AcousticConfidence == 0 {
-						sttResult.Segments[i].AcousticConfidence = 0.95
-					}
 				}
 			}
 		}

@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"code-base-golang/internal/config"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/services"
 )
@@ -400,8 +402,14 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 	url := fmt.Sprintf("%s/chat/completions", o.baseURL)
 	maxRetries := 3
 	var lastErr error
+	reqID := ctxmeta.GetRequestID(ctx)
+	start := time.Now()
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		attemptStart := time.Now()
+		log.Printf("[LLM REQ] [req_id=%s] [model=%s] starting chat request (attempt %d/%d, messages=%d, payload_bytes=%d)",
+			reqID, payload.Model, attempt, maxRetries, len(payload.Messages), len(bodyBytes))
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create http request: %w", err)
@@ -415,6 +423,8 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		resp, err := o.httpClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("llm request failed: %w", err)
+			log.Printf("[LLM WARN] [req_id=%s] [model=%s] attempt %d/%d failed in %s: %v",
+				reqID, payload.Model, attempt, maxRetries, time.Since(attemptStart).Round(time.Millisecond), lastErr)
 			if attempt < maxRetries && ctx.Err() == nil {
 				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
 					return nil, waitErr
@@ -430,6 +440,8 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		}
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			log.Printf("[LLM WARN] [req_id=%s] [model=%s] attempt %d/%d read body failed in %s: %v",
+				reqID, payload.Model, attempt, maxRetries, time.Since(attemptStart).Round(time.Millisecond), lastErr)
 			if attempt < maxRetries && ctx.Err() == nil {
 				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
 					return nil, waitErr
@@ -442,6 +454,8 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		if resp.StatusCode != http.StatusOK {
 			respStr := string(respBytes)
 			lastErr = fmt.Errorf("llm api returned status %d: %s", resp.StatusCode, respStr)
+			log.Printf("[LLM WARN] [req_id=%s] [model=%s] attempt %d/%d returned status %d in %s",
+				reqID, payload.Model, attempt, maxRetries, resp.StatusCode, time.Since(attemptStart).Round(time.Millisecond))
 			if resp.StatusCode >= 500 && !isPayloadTooLargeError(respStr) && attempt < maxRetries && ctx.Err() == nil {
 				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
 					return nil, waitErr
@@ -456,6 +470,8 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 			chatResp, sseErr := parseSSEChatResponse(trimmed)
 			if sseErr != nil {
 				lastErr = sseErr
+				log.Printf("[LLM WARN] [req_id=%s] [model=%s] attempt %d/%d failed parsing SSE response: %v",
+					reqID, payload.Model, attempt, maxRetries, sseErr)
 				if attempt < maxRetries && ctx.Err() == nil {
 					if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
 						return nil, waitErr
@@ -464,6 +480,8 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 				}
 				return nil, lastErr
 			}
+			log.Printf("[LLM SUCCESS] [req_id=%s] [model=%s] completed in %s (attempt=%d, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d)",
+				reqID, payload.Model, time.Since(start).Round(time.Millisecond), attempt, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, chatResp.Usage.TotalTokens)
 			return chatResp, nil
 		}
 
@@ -471,9 +489,13 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 		if err := json.Unmarshal(respBytes, &chatResp); err != nil {
 			// Fallback: check if response payload is an SSE event stream
 			if sseResp, sseErr := parseSSEChatResponse(trimmed); sseErr == nil && len(sseResp.Choices) > 0 && sseResp.Choices[0].Message.Content != "" {
+				log.Printf("[LLM SUCCESS] [req_id=%s] [model=%s] completed via SSE fallback in %s (attempt=%d)",
+					reqID, payload.Model, time.Since(start).Round(time.Millisecond), attempt)
 				return sseResp, nil
 			}
 			lastErr = fmt.Errorf("failed to unmarshal chat response: %w", err)
+			log.Printf("[LLM WARN] [req_id=%s] [model=%s] attempt %d/%d failed to unmarshal: %v",
+				reqID, payload.Model, attempt, maxRetries, lastErr)
 			if attempt < maxRetries && ctx.Err() == nil {
 				if waitErr := waitBackoff(ctx, attempt); waitErr != nil {
 					return nil, waitErr
@@ -483,6 +505,8 @@ func (o *OmniRouteLLM) executeChatRequest(ctx context.Context, payload openAICha
 			return nil, lastErr
 		}
 
+		log.Printf("[LLM SUCCESS] [req_id=%s] [model=%s] completed in %s (attempt=%d, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d)",
+			reqID, payload.Model, time.Since(start).Round(time.Millisecond), attempt, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, chatResp.Usage.TotalTokens)
 		return &chatResp, nil
 	}
 

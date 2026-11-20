@@ -39,13 +39,15 @@ type WorkerHandler = func(ctx context.Context, msg []byte) (ack bool)
 
 // RabbitMQ wraps amqp.Connection with thread-safe publishing, exchange/queue management, consuming, and DLQ helpers.
 type RabbitMQ struct {
-	conn        *amqp.Connection
-	publishChan *amqp.Channel
-	publishMu   sync.Mutex
-	url         string
-	dialTimeout time.Duration
-	mu          sync.RWMutex
-	isClosed    bool
+	conn               *amqp.Connection
+	publishChan        *amqp.Channel
+	publishMu          sync.Mutex
+	url                string
+	dialTimeout        time.Duration
+	defaultConcurrency int
+	defaultPrefetch    int
+	mu                 sync.RWMutex
+	isClosed           bool
 }
 
 // PublishOption configures AMQP publishing behavior.
@@ -180,11 +182,22 @@ func New(cfg config.Config) (*RabbitMQ, error) {
 		return nil, fmt.Errorf("failed to open default publisher channel: %w", err)
 	}
 
+	concurrency := cfg.WorkerConcurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+	prefetch := cfg.WorkerPrefetchCount
+	if prefetch <= 0 {
+		prefetch = concurrency * 2
+	}
+
 	return &RabbitMQ{
-		conn:        conn,
-		publishChan: pubChan,
-		url:         url,
-		dialTimeout: timeout,
+		conn:               conn,
+		publishChan:        pubChan,
+		url:                url,
+		dialTimeout:        timeout,
+		defaultConcurrency: concurrency,
+		defaultPrefetch:    prefetch,
 	}, nil
 }
 
@@ -490,9 +503,35 @@ func (r *RabbitMQ) MustPublish(ctx context.Context, topic string, payload any) {
 	}
 }
 
-// Subscribe registers a subscription to a topic using WorkerHandler.
-// It sets up the queue, DLQ, topic binding on DefaultExchange, and dispatches incoming messages.
+// SubscribeOption configures subscription consuming properties such as concurrency and prefetch count.
+type SubscribeOption func(*ConsumeConfig)
+
+// WithConcurrency overrides the number of parallel consumer worker goroutines.
+func WithConcurrency(concurrency int) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if concurrency > 0 {
+			cfg.Concurrency = concurrency
+		}
+	}
+}
+
+// WithPrefetch overrides the prefetch count for the subscriber channel.
+func WithPrefetch(prefetch int) SubscribeOption {
+	return func(cfg *ConsumeConfig) {
+		if prefetch > 0 {
+			cfg.PrefetchCount = prefetch
+		}
+	}
+}
+
+// Subscribe registers a subscription to a topic using WorkerHandler with default worker elasticity.
 func (r *RabbitMQ) Subscribe(topic string, handler WorkerHandler) error {
+	return r.SubscribeWithOptions(topic, handler)
+}
+
+// SubscribeWithOptions registers a subscription with fine-tuned worker concurrency and prefetch options.
+// It sets up the queue, DLQ, topic binding on DefaultExchange, and dispatches incoming messages.
+func (r *RabbitMQ) SubscribeWithOptions(topic string, handler WorkerHandler, opts ...SubscribeOption) error {
 	if r == nil {
 		return errors.New("rabbitmq client is nil")
 	}
@@ -512,14 +551,28 @@ func (r *RabbitMQ) Subscribe(topic string, handler WorkerHandler) error {
 		return fmt.Errorf("failed to declare queue and dlq for topic %s: %w", topic, err)
 	}
 
-	// Start consuming with concurrency
-	return r.Consume(context.Background(), ConsumeConfig{
+	concurrency := r.defaultConcurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+	prefetch := r.defaultPrefetch
+	if prefetch <= 0 {
+		prefetch = concurrency * 2
+	}
+
+	consumeCfg := ConsumeConfig{
 		Queue:         queueName,
 		ConsumerTag:   "worker-" + topic,
-		PrefetchCount: 10,
-		Concurrency:   2,
+		PrefetchCount: prefetch,
+		Concurrency:   concurrency,
 		RequeueOnNack: false, // route to DLQ
-	}, func(ctx context.Context, d amqp.Delivery) error {
+	}
+
+	for _, opt := range opts {
+		opt(&consumeCfg)
+	}
+
+	return r.Consume(context.Background(), consumeCfg, func(ctx context.Context, d amqp.Delivery) error {
 		// Set PublishId / RequestID into context
 		pubID, _ := d.Headers[HeaderPublishID].(string)
 		if pubID == "" {
@@ -552,6 +605,13 @@ func (r *RabbitMQ) Subscribe(topic string, handler WorkerHandler) error {
 // MustSubscribe registers a subscription to a topic and panics on failure.
 func (r *RabbitMQ) MustSubscribe(topic string, handler WorkerHandler) {
 	if err := r.Subscribe(topic, handler); err != nil {
+		panic(fmt.Errorf("failed to subscribe to topic '%s': %w", topic, err))
+	}
+}
+
+// MustSubscribeWithOptions registers a subscription with options and panics on failure.
+func (r *RabbitMQ) MustSubscribeWithOptions(topic string, handler WorkerHandler, opts ...SubscribeOption) {
+	if err := r.SubscribeWithOptions(topic, handler, opts...); err != nil {
 		panic(fmt.Errorf("failed to subscribe to topic '%s': %w", topic, err))
 	}
 }

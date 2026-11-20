@@ -452,10 +452,18 @@ func (s *Service) condenseTranscriptForSummary(ctx context.Context, recordingID 
 		perChunkTarget = maxCondensedChunkChars
 	}
 
-	numWorkers := len(chunks)
-	if numWorkers > maxSummaryCondenseWorkers {
-		numWorkers = maxSummaryCondenseWorkers
+	start := time.Now()
+	maxWorkers := s.cfg.MaxSummaryWorkers
+	if maxWorkers <= 0 {
+		maxWorkers = maxSummaryCondenseWorkers
 	}
+	numWorkers := len(chunks)
+	if numWorkers > maxWorkers {
+		numWorkers = maxWorkers
+	}
+
+	log.Printf("[SUMMARY MAP-REDUCE START] recording %s: condensing transcript (%d chars, %d chunks, %d workers, target_lang=%s)",
+		recordingID.String(), len(trimmed), len(chunks), numWorkers, targetLang)
 
 	jobChan := make(chan summaryChunkJob, len(chunks))
 	for _, c := range chunks {
@@ -488,6 +496,8 @@ func (s *Service) condenseTranscriptForSummary(ctx context.Context, recordingID 
 		sb.WriteString(fmt.Sprintf("--- [Part %d/%d] ---\n%s\n\n", i+1, len(results), strings.TrimSpace(digest)))
 	}
 	combined := strings.TrimSpace(sb.String())
+	log.Printf("[SUMMARY MAP-REDUCE DONE] recording %s: condensed into %d runes in %s",
+		recordingID.String(), utf8.RuneCountInString(combined), time.Since(start).Round(time.Millisecond))
 	if utf8.RuneCountInString(combined) > maxCombinedDigestRunes {
 		return smartDeterministicCondense(combined, maxCombinedDigestRunes)
 	}

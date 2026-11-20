@@ -143,3 +143,28 @@ func TestRabbitMQ_PublishOptions(t *testing.T) {
 		t.Errorf("expected Headers['source'] == 'test-suite', got %v", pub.Headers["source"])
 	}
 }
+
+func TestRabbitMQ_SubscribeOptions(t *testing.T) {
+	cfg := rabbitmq.ConsumeConfig{
+		Concurrency:   1,
+		PrefetchCount: 1,
+	}
+
+	optConc := rabbitmq.WithConcurrency(8)
+	optPref := rabbitmq.WithPrefetch(16)
+
+	optConc(&cfg)
+	optPref(&cfg)
+
+	if cfg.Concurrency != 8 {
+		t.Errorf("expected Concurrency 8, got %d", cfg.Concurrency)
+	}
+	if cfg.PrefetchCount != 16 {
+		t.Errorf("expected PrefetchCount 16, got %d", cfg.PrefetchCount)
+	}
+
+	var r *rabbitmq.RabbitMQ
+	if err := r.SubscribeWithOptions("test.topic", func(ctx context.Context, msg []byte) bool { return true }, optConc, optPref); err == nil {
+		t.Error("expected error calling SubscribeWithOptions on nil RabbitMQ, got nil")
+	}
+}

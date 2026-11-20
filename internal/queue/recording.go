@@ -4,6 +4,7 @@ import "github.com/google/uuid"
 
 // RecordingPipelinePayload represents the standard message body dispatched across pipeline worker stages.
 type RecordingPipelinePayload struct {
+	RequestID   string    `json:"request_id,omitempty"`  // Correlation / trace identifier
 	RecordingID uuid.UUID `json:"recording_id"`
 	SourcePath  string    `json:"source_path,omitempty"` // Uploaded media file path (S3 object key)
 	AudioPath   string    `json:"audio_path,omitempty"`  // Extracted mono audio path (S3 object key)

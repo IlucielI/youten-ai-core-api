@@ -172,3 +172,64 @@ func TestMockEmbedding(t *testing.T) {
 	// Verify interface compliance
 	var _ services.EmbeddingProvider = mock
 }
+
+func TestOmniRouteEmbedding_CreateEmbeddings_MultiBatchConcurrent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		inputs, _ := reqBody["input"].([]interface{})
+		data := make([]map[string]interface{}, len(inputs))
+		for i, inp := range inputs {
+			textStr, _ := inp.(string)
+			data[i] = map[string]interface{}{
+				"object":    "embedding",
+				"index":     i,
+				"embedding": []float32{float32(len(textStr)), 0.5, 0.9},
+			}
+		}
+
+		resp := map[string]interface{}{
+			"object": "list",
+			"data":   data,
+			"model":  "cf/@cf/baai/bge-m3",
+			"usage": map[string]interface{}{
+				"prompt_tokens": len(inputs) * 2,
+				"total_tokens":  len(inputs) * 2,
+			},
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		LLMBaseURL:          server.URL,
+		EmbeddingModel:      "cf/@cf/baai/bge-m3",
+		MaxEmbeddingWorkers: 4,
+	}
+	adapter := embedding.NewOmniRoute(cfg)
+
+	// Create 120 texts (exceeds default batchSize 50 -> 3 batches: 50 + 50 + 20)
+	texts := make([]string, 120)
+	for i := 0; i < 120; i++ {
+		texts[i] = fmt.Sprintf("chunk-%d", i)
+	}
+
+	embeddings, err := adapter.CreateEmbeddings(context.Background(), texts)
+	if err != nil {
+		t.Fatalf("unexpected error during multi-batch embeddings: %v", err)
+	}
+
+	if len(embeddings) != 120 {
+		t.Fatalf("expected 120 embeddings, got %d", len(embeddings))
+	}
+
+	for i := 0; i < 120; i++ {
+		expectedDim0 := float32(len(texts[i]))
+		if embeddings[i][0] != expectedDim0 {
+			t.Errorf("chunk %d: expected first dim %v, got %v", i, expectedDim0, embeddings[i][0])
+		}
+	}
+}

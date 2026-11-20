@@ -150,7 +150,7 @@ func TestMockAudioExtractor_SliceAudioOnSilence(t *testing.T) {
 	ctx := context.Background()
 
 	// Default behavior
-	chunks, err := mock.SliceAudioOnSilence(ctx, strings.NewReader("dummy audio bytes"), "sample.mp3", 120.0)
+	chunks, err := mock.SliceAudioOnSilence(ctx, strings.NewReader("dummy audio bytes"), "sample.wav", 120.0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,6 +159,19 @@ func TestMockAudioExtractor_SliceAudioOnSilence(t *testing.T) {
 	}
 	if chunks[0].DurationSeconds != 120.0 {
 		t.Errorf("expected 120.0s, got %f", chunks[0].DurationSeconds)
+	}
+	if chunks[0].Format != "wav" {
+		t.Errorf("expected format wav, got %s", chunks[0].Format)
+	}
+
+	// Empty input checks
+	_, err = mock.SliceAudioOnSilence(ctx, nil, "sample.mp3", 120.0)
+	if err != audio.ErrEmptyInput {
+		t.Errorf("expected ErrEmptyInput on nil reader, got %v", err)
+	}
+	_, err = mock.SliceAudioOnSilence(ctx, strings.NewReader(""), "sample.mp3", 120.0)
+	if err != audio.ErrEmptyInput {
+		t.Errorf("expected ErrEmptyInput on empty reader, got %v", err)
 	}
 
 	// Custom slice behavior

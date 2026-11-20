@@ -219,7 +219,7 @@ func ComputeChunkBoundaries(totalDuration float64, silencePoints []float64, minS
 			}
 		}
 
-		cutPoint := idealTarget
+		cutPoint := math.Max(windowMin, math.Min(idealTarget, windowMax))
 		if bestPoint > 0 {
 			cutPoint = bestPoint
 		}
@@ -252,7 +252,9 @@ func (f *FFmpegExtractor) SliceAudioOnSilence(ctx context.Context, input io.Read
 	defer os.RemoveAll(tempDir)
 
 	ext := filepath.Ext(filename)
-	if ext == "" {
+	format := strings.TrimPrefix(strings.ToLower(ext), ".")
+	if format == "" {
+		format = "mp3"
 		ext = ".mp3"
 	}
 	inputPath := filepath.Join(tempDir, "input"+ext)
@@ -288,7 +290,7 @@ func (f *FFmpegExtractor) SliceAudioOnSilence(ctx context.Context, input io.Read
 			StartOffsetSec:  0,
 			DurationSeconds: totalDurationSec,
 			Data:            data,
-			Format:          "mp3",
+			Format:          format,
 		}}, nil
 	}
 
@@ -316,7 +318,7 @@ func (f *FFmpegExtractor) SliceAudioOnSilence(ctx context.Context, input io.Read
 			StartOffsetSec:  0,
 			DurationSeconds: totalDurationSec,
 			Data:            data,
-			Format:          "mp3",
+			Format:          format,
 		}}, nil
 	}
 

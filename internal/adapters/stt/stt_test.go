@@ -378,6 +378,9 @@ func TestStitchChunkResults(t *testing.T) {
 					SpeakerLabel: "Speaker 0",
 				},
 			},
+			DiarizedSegments: []dtos.SegmentResult{
+				{ID: 0, Start: 5.0, End: 15.0, Text: "First chunk intro.", SpeakerLabel: "Speaker 0"},
+			},
 		},
 		{
 			Text:     "Second chunk dialogue.",
@@ -396,6 +399,9 @@ func TestStitchChunkResults(t *testing.T) {
 					},
 					SpeakerLabel: "Speaker 1",
 				},
+			},
+			DiarizedSegments: []dtos.SegmentResult{
+				{ID: 0, Start: 10.0, End: 25.0, Text: "Second chunk dialogue.", SpeakerLabel: "Speaker 1"},
 			},
 		},
 	}
@@ -427,6 +433,17 @@ func TestStitchChunkResults(t *testing.T) {
 	}
 	if stitched.Segments[1].Words[0].Start != 310.0 || stitched.Segments[1].Words[0].End != 315.0 {
 		t.Errorf("expected word 0 in chunk 1 [310, 315], got [%f, %f]", stitched.Segments[1].Words[0].Start, stitched.Segments[1].Words[0].End)
+	}
+
+	// Verify diarized segments
+	if len(stitched.DiarizedSegments) != 2 {
+		t.Fatalf("expected 2 diarized segments, got %d", len(stitched.DiarizedSegments))
+	}
+	if stitched.DiarizedSegments[0].Start != 5.0 || stitched.DiarizedSegments[0].ID != 0 {
+		t.Errorf("expected diarized segment 0 [5.0, ID: 0], got [%f, ID: %d]", stitched.DiarizedSegments[0].Start, stitched.DiarizedSegments[0].ID)
+	}
+	if stitched.DiarizedSegments[1].Start != 310.0 || stitched.DiarizedSegments[1].ID != 1 {
+		t.Errorf("expected diarized segment 1 [310.0, ID: 1], got [%f, ID: %d]", stitched.DiarizedSegments[1].Start, stitched.DiarizedSegments[1].ID)
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
+	"strings"
 
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/services"
@@ -44,12 +46,19 @@ func NewMock() *MockAudioExtractor {
 			if err != nil {
 				return nil, err
 			}
+			if len(data) == 0 {
+				return nil, ErrEmptyInput
+			}
+			format := strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), ".")
+			if format == "" {
+				format = "mp3"
+			}
 			return []dtos.AudioChunk{{
 				Index:           0,
 				StartOffsetSec:  0,
 				DurationSeconds: totalDurationSec,
 				Data:            data,
-				Format:          "mp3",
+				Format:          format,
 			}}, nil
 		},
 	}

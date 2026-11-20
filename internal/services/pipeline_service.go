@@ -401,11 +401,23 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		}
 	}
 
-	// 2. Smart Diarization Bypass: if segments already contain acoustic/native speaker labels
-	// from modern STT models (e.g. Deepgram Nova-3, Whisper Diarize), bypass expensive LLM diarization loops.
-	shouldRunLLMDiarization := len(sttResult.Segments) > 0 && s.llm != nil && !HasNativeSpeakerLabels(sttResult.Segments)
-	if shouldRunLLMDiarization {
+	// 2. Diarization & Refinement:
+	// If native acoustic speaker labels are present from STT, preserve them to avoid
+	// unnecessary speaker re-clustering, while still allowing text refinement and role discovery.
+	shouldRunRefinement := len(sttResult.Segments) > 0 && s.llm != nil
+	if shouldRunRefinement {
 		s.publishCustomProgress(recording.ID, models.RecordingStatusTranscribing, "TRANSCRIBING", 35)
+		if HasNativeSpeakerLabels(sttResult.Segments) {
+			log.Printf("[PIPELINE] recording %s: smart diarization bypass active (native acoustic speaker labels locked)", recording.ID.String())
+			for i := range sttResult.Segments {
+				if sttResult.Segments[i].SpeakerLabel != "" {
+					sttResult.Segments[i].AcousticSpeaker = sttResult.Segments[i].SpeakerLabel
+					if sttResult.Segments[i].AcousticConfidence == 0 {
+						sttResult.Segments[i].AcousticConfidence = 0.95
+					}
+				}
+			}
+		}
 		sttResult.Segments = s.diarizeAndCorrectSegmentsWithLLM(ctx, sttResult.Segments, sttResult.DiarizedText, sttResult.DiarizedSegments, recording.AnalyticsData, recording.ID)
 		refinedSegments := s.buildModelTranscriptSegments(recording.ID, sttResult.Segments, sttResult.Text, durationToSave)
 		if len(refinedSegments) > 0 {
@@ -415,8 +427,6 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 				modelSegments = refinedSegments
 			}
 		}
-	} else if len(sttResult.Segments) > 0 && HasNativeSpeakerLabels(sttResult.Segments) {
-		log.Printf("[PIPELINE] recording %s: smart diarization bypass active (native acoustic speaker labels present)", recording.ID.String())
 	}
 
 	rawLang := strings.TrimSpace(sttResult.Language)
@@ -1236,10 +1246,18 @@ func (s *Service) TranscribeAudioAdaptive(ctx context.Context, reader io.Reader,
 	if s.stt == nil {
 		return nil, errors.New("stt provider is not configured")
 	}
+	if reader == nil {
+		return nil, errors.New("audio reader is nil")
+	}
+
+	audioData, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read audio: %w", err)
+	}
 
 	// Adaptive silence slicing path
 	if slicer, ok := s.audioExtractor.(AudioSlicer); ok && durationSec >= constants.MinAudioDurationForChunkingSeconds {
-		chunks, sliceErr := slicer.SliceAudioOnSilence(ctx, reader, "audio.mp3", durationSec)
+		chunks, sliceErr := slicer.SliceAudioOnSilence(ctx, bytes.NewReader(audioData), "audio.mp3", durationSec)
 		if sliceErr == nil && len(chunks) > 1 {
 			if parallelSTT, ok := s.stt.(ParallelSTTProvider); ok {
 				log.Printf("[PIPELINE] recording %s: dispatching %d silence-aligned audio chunks in parallel", recordingID.String(), len(chunks))
@@ -1253,7 +1271,7 @@ func (s *Service) TranscribeAudioAdaptive(ctx context.Context, reader io.Reader,
 	}
 
 	// Standard single-pass transcription
-	return s.stt.Transcribe(ctx, reader, "audio.mp3", opts)
+	return s.stt.Transcribe(ctx, bytes.NewReader(audioData), "audio.mp3", opts)
 }
 
 var speakerExtractRegex = regexp.MustCompile(`(?i)(?:\[)?(Speaker\s*\d+|Pembicara\s*\d+)(?:\])?\s*:`)
@@ -1580,8 +1598,8 @@ func (s *Service) diarizeAndCorrectSegmentsWithLLM(ctx context.Context, segments
 		}
 	}
 
-	// Pre-pass: If acoustic segments provided, perform acoustic alignment & speaker-turn splitting
-	if len(diarizedList) > 0 {
+	// Pre-pass: If acoustic segments provided and native labels not already present, perform acoustic alignment & speaker-turn splitting
+	if len(diarizedList) > 0 && !HasNativeSpeakerLabels(segments) {
 		segments = sttalign.AlignSegments(segments, diarizedList)
 	}
 

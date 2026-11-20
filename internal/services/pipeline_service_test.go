@@ -713,5 +713,32 @@ func TestPipelineService_TranscribeAudioAdaptive(t *testing.T) {
 	if resLong.Text != "parallel chunks transcribed" {
 		t.Errorf("expected parallel chunks transcribed, got %s", resLong.Text)
 	}
+
+	// 3. Nil reader -> error
+	_, err = svc.TranscribeAudioAdaptive(context.Background(), nil, 300.0, opts, recID)
+	if err == nil {
+		t.Error("expected error for nil reader")
+	}
+
+	// 4. Slicing error falls back cleanly to single-pass STT without empty audio
+	mockExtractor.SliceFn = func(ctx context.Context, input io.Reader, filename string, totalDurationSec float64) ([]dtos.AudioChunk, error) {
+		return nil, errors.New("slice failed")
+	}
+	var receivedAudio []byte
+	mockSTT.TranscribeFunc = func(ctx context.Context, reader io.Reader, filename string, opts dtos.STTOptions) (*dtos.TranscriptionResult, error) {
+		receivedAudio, _ = io.ReadAll(reader)
+		return &dtos.TranscriptionResult{Text: "fallback success"}, nil
+	}
+
+	resFallback, err := svc.TranscribeAudioAdaptive(context.Background(), strings.NewReader("buffered audio stream"), 720.0, opts, recID)
+	if err != nil {
+		t.Fatalf("unexpected fallback error: %v", err)
+	}
+	if resFallback.Text != "fallback success" {
+		t.Errorf("expected fallback success, got %s", resFallback.Text)
+	}
+	if string(receivedAudio) != "buffered audio stream" {
+		t.Errorf("expected 'buffered audio stream', got '%s'", string(receivedAudio))
+	}
 }
 

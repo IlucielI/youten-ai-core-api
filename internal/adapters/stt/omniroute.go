@@ -614,6 +614,12 @@ func StitchChunkResults(chunks []dtos.AudioChunk, results []*dtos.TranscriptionR
 	sort.SliceStable(allSegments, func(i, j int) bool {
 		return allSegments[i].Start < allSegments[j].Start
 	})
+	sort.SliceStable(allDiarizedSegments, func(i, j int) bool {
+		return allDiarizedSegments[i].Start < allDiarizedSegments[j].Start
+	})
+	for i := range allDiarizedSegments {
+		allDiarizedSegments[i].ID = i
+	}
 
 	return &dtos.TranscriptionResult{
 		Text:             strings.Join(textParts, " "),
@@ -631,7 +637,9 @@ func (o *OmniRouteSTT) TranscribeChunksParallel(ctx context.Context, chunks []dt
 		return &dtos.TranscriptionResult{}, nil
 	}
 	if len(chunks) == 1 {
-		res, err := o.Transcribe(ctx, bytes.NewReader(chunks[0].Data), "chunk_0.mp3", opts)
+		singleOpts := opts
+		singleOpts.AudioDuration = chunks[0].DurationSeconds
+		res, err := o.Transcribe(ctx, bytes.NewReader(chunks[0].Data), "chunk_0.mp3", singleOpts)
 		if err != nil {
 			return nil, err
 		}

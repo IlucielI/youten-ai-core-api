@@ -199,5 +199,28 @@ func TestLikePattern(t *testing.T) {
 	}
 }
 
+func TestSlugify(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"normal text", "Engineering Team", "engineering-team"},
+		{"with special characters", "Acme & Co. (Q4)", "acme-co-q4"},
+		{"empty string", "", "workspace"},
+		{"symbols only", "!!! $$$", "workspace"},
+		{"already kebab case", "product-design", "product-design"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := strutil.Slugify(tt.input); got != tt.expected {
+				t.Errorf("Slugify(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+
 
 

@@ -15,6 +15,7 @@ const (
 	authUserKey      contextKey = "auth_user"
 	adminAuthUserKey contextKey = "admin_auth_user"
 	requestIDKey     contextKey = "request_id"
+	workspaceIDKey   contextKey = "workspace_id"
 )
 
 // AuthUser represents authenticated user identity extracted from JWT and session.
@@ -69,6 +70,26 @@ func GetAuthUserID(ctx context.Context) (uuid.UUID, bool) {
 func IsAuthenticated(ctx context.Context) bool {
 	user, ok := GetAuthUser(ctx)
 	return ok && !user.IsGuest && user.UserID != uuid.Nil
+}
+
+// WithWorkspaceID injects active workspace ID into the context.
+func WithWorkspaceID(ctx context.Context, wsID uuid.UUID) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, workspaceIDKey, wsID)
+}
+
+// GetWorkspaceID retrieves the active workspace ID from context.
+func GetWorkspaceID(ctx context.Context) (uuid.UUID, bool) {
+	if ctx == nil {
+		return uuid.Nil, false
+	}
+	wsID, ok := ctx.Value(workspaceIDKey).(uuid.UUID)
+	if !ok || wsID == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return wsID, true
 }
 
 // WithClientMeta injects client IP and User-Agent metadata into the context.

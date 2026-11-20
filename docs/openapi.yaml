@@ -28,6 +28,8 @@ tags:
     description: Cross-recording semantic vector search and AI chat with workspace memory
   - name: Collaboration
     description: Shared viewing, inline comments, speaker labeling, and exports
+  - name: Workspaces
+    description: Collaborative multi-tenant workspaces, member roles, and settings
   - name: Admin Users
     description: Administrative user management, quota overrides, and session revocation
   - name: Admin RBAC
@@ -695,6 +697,185 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SpeakersListResponse'
+
+  /v1/workspaces:
+    get:
+      tags: [Workspaces]
+      summary: List User Workspaces
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of workspaces user belongs to
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags: [Workspaces]
+      summary: Create Team Workspace
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Engineering
+                logo_url:
+                  type: string
+                  nullable: true
+      responses:
+        '201':
+          description: Workspace created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v1/workspaces/{id}:
+    get:
+      tags: [Workspaces]
+      summary: Get Workspace Detail
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workspace details
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      tags: [Workspaces]
+      summary: Update Workspace
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                logo_url:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Workspace updated
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      tags: [Workspaces]
+      summary: Delete Workspace
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workspace deleted
+
+  /v1/workspaces/{id}/members:
+    get:
+      tags: [Workspaces]
+      summary: List Workspace Members
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of members
+
+  /v1/workspaces/{id}/members/{userId}:
+    patch:
+      tags: [Workspaces]
+      summary: Update Member Role
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [owner, admin, member, viewer]
+      responses:
+        '200':
+          description: Member role updated
+    delete:
+      tags: [Workspaces]
+      summary: Remove Member or Leave Workspace
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Member removed
 
   /v1/recordings:
     get:

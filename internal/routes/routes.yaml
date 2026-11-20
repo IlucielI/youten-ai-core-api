@@ -150,6 +150,54 @@ routes:
     handler: GetWorkspaceSpeakers
     auth: true
 
+  # List all workspaces the authenticated user belongs to.
+  - method: GET
+    path: /v1/workspaces
+    handler: ListWorkspaces
+    auth: true
+
+  # Create a new collaborative team workspace.
+  - method: POST
+    path: /v1/workspaces
+    handler: CreateWorkspace
+    auth: true
+
+  # Retrieve workspace detail and caller's role.
+  - method: GET
+    path: /v1/workspaces/:id
+    handler: GetWorkspaceDetail
+    auth: true
+
+  # Update workspace metadata (name, logo).
+  - method: PATCH
+    path: /v1/workspaces/:id
+    handler: UpdateWorkspace
+    auth: true
+
+  # Terminate a team workspace.
+  - method: DELETE
+    path: /v1/workspaces/:id
+    handler: DeleteWorkspace
+    auth: true
+
+  # List registered members of a workspace.
+  - method: GET
+    path: /v1/workspaces/:id/members
+    handler: ListWorkspaceMembers
+    auth: true
+
+  # Update a workspace member's role.
+  - method: PATCH
+    path: /v1/workspaces/:id/members/:userId
+    handler: UpdateWorkspaceMemberRole
+    auth: true
+
+  # Remove a member or leave a workspace.
+  - method: DELETE
+    path: /v1/workspaces/:id/members/:userId
+    handler: RemoveWorkspaceMember
+    auth: true
+
   # Retrieve recording detail (owner via token or registered user).
   - method: GET
     path: /v1/recordings/:id

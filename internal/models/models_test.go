@@ -32,6 +32,8 @@ func TestTableNames(t *testing.T) {
 		{model: UserRole{}, expected: "user_roles"},
 		{model: BotSession{}, expected: "bot_sessions"},
 		{model: Feedback{}, expected: "feedbacks"},
+		{model: Workspace{}, expected: "workspaces"},
+		{model: WorkspaceMember{}, expected: "workspace_members"},
 	}
 
 	for _, tc := range testCases {

@@ -150,3 +150,58 @@ func TestWorkspaceAskRequest_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkspaceManagement_Validations(t *testing.T) {
+	t.Run("CreateWorkspace", func(t *testing.T) {
+		valid := dtos.CreateWorkspaceRequest{Name: "Acme Corp"}
+		if err := validations.ValidateCreateWorkspaceRequest(&valid); err != nil {
+			t.Errorf("expected valid, got: %v", err)
+		}
+
+		short := dtos.CreateWorkspaceRequest{Name: "A"}
+		if err := validations.ValidateCreateWorkspaceRequest(&short); err == nil {
+			t.Error("expected error for 1-char name")
+		}
+
+		empty := dtos.CreateWorkspaceRequest{Name: "   "}
+		if err := validations.ValidateCreateWorkspaceRequest(&empty); err == nil {
+			t.Error("expected error for empty name")
+		}
+	})
+
+	t.Run("UpdateWorkspace", func(t *testing.T) {
+		name := "New Name"
+		valid := dtos.UpdateWorkspaceRequest{Name: &name}
+		if err := validations.ValidateUpdateWorkspaceRequest(&valid); err != nil {
+			t.Errorf("expected valid, got: %v", err)
+		}
+
+		logo := "https://example.com/logo.png"
+		logoOnly := dtos.UpdateWorkspaceRequest{LogoURL: &logo}
+		if err := validations.ValidateUpdateWorkspaceRequest(&logoOnly); err != nil {
+			t.Errorf("expected logo only to be valid, got: %v", err)
+		}
+
+		emptyStr := ""
+		empty := dtos.UpdateWorkspaceRequest{Name: &emptyStr}
+		if err := validations.ValidateUpdateWorkspaceRequest(&empty); err == nil {
+			t.Error("expected error for empty name")
+		}
+	})
+
+	t.Run("UpdateMemberRole", func(t *testing.T) {
+		validRoles := []string{"owner", "admin", "member", "viewer", " ADMIN "}
+		for _, r := range validRoles {
+			req := dtos.UpdateWorkspaceMemberRoleRequest{Role: r}
+			if err := validations.ValidateUpdateWorkspaceMemberRoleRequest(&req); err != nil {
+				t.Errorf("expected valid role %q, got: %v", r, err)
+			}
+		}
+
+		invalid := dtos.UpdateWorkspaceMemberRoleRequest{Role: "superuser"}
+		if err := validations.ValidateUpdateWorkspaceMemberRoleRequest(&invalid); err == nil {
+			t.Error("expected error for invalid role")
+		}
+	})
+}
+

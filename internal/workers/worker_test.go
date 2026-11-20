@@ -13,11 +13,13 @@ import (
 type mockSubscriber struct {
 	subscribedTopics []string
 	handlers         map[string]workers.WorkerHandler
+	options          map[string][]workers.SubscribeOption
 }
 
 func newMockSubscriber() *mockSubscriber {
 	return &mockSubscriber{
 		handlers: make(map[string]workers.WorkerHandler),
+		options:  make(map[string][]workers.SubscribeOption),
 	}
 }
 
@@ -29,6 +31,17 @@ func (m *mockSubscriber) Subscribe(topic string, handler workers.WorkerHandler) 
 
 func (m *mockSubscriber) MustSubscribe(topic string, handler workers.WorkerHandler) {
 	_ = m.Subscribe(topic, handler)
+}
+
+func (m *mockSubscriber) SubscribeWithOptions(topic string, handler workers.WorkerHandler, opts ...workers.SubscribeOption) error {
+	m.subscribedTopics = append(m.subscribedTopics, topic)
+	m.handlers[topic] = handler
+	m.options[topic] = opts
+	return nil
+}
+
+func (m *mockSubscriber) MustSubscribeWithOptions(topic string, handler workers.WorkerHandler, opts ...workers.SubscribeOption) {
+	_ = m.SubscribeWithOptions(topic, handler, opts...)
 }
 
 func TestWorkerServer_RegisterWorker(t *testing.T) {

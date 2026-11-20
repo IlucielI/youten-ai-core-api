@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -379,8 +380,8 @@ func (s *Service) generateStructuredSummary(
 		log.Printf("[SUMMARY WARN] recording %s: summarization attempt %d failed: %v", recordingID.String(), attempt, lastErr)
 		if isPromptTooLongError(lastErr) {
 			shrunkTarget := len(effectiveTranscript) * 60 / 100
-			if shrunkTarget < 4000 {
-				shrunkTarget = 4000
+			if shrunkTarget < 1000 && len(effectiveTranscript) >= 1000 {
+				shrunkTarget = 1000
 			}
 			effectiveTranscript = deterministicCondenseChunk(effectiveTranscript, shrunkTarget)
 		}
@@ -535,7 +536,7 @@ func (s *Service) condenseSingleSummaryChunk(
 }
 
 func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []string {
-	if maxChunkChars <= 0 || len(transcriptBody) <= maxChunkChars {
+	if maxChunkChars <= 0 || utf8.RuneCountInString(transcriptBody) <= maxChunkChars {
 		return []string{transcriptBody}
 	}
 
@@ -548,9 +549,20 @@ func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []strin
 		if trimmed == "" {
 			continue
 		}
-		if len(trimmed) > maxChunkChars {
-			trimmed = trimmed[:maxChunkChars]
+
+		for utf8.RuneCountInString(trimmed) > maxChunkChars {
+			if current.Len() > 0 {
+				chunks = append(chunks, strings.TrimSpace(current.String()))
+				current.Reset()
+			}
+			runes := []rune(trimmed)
+			chunks = append(chunks, string(runes[:maxChunkChars]))
+			trimmed = strings.TrimSpace(string(runes[maxChunkChars:]))
 		}
+		if trimmed == "" {
+			continue
+		}
+
 		if current.Len() > 0 && current.Len()+len(trimmed)+1 > maxChunkChars {
 			chunks = append(chunks, strings.TrimSpace(current.String()))
 			current.Reset()
@@ -564,21 +576,33 @@ func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []strin
 	return chunks
 }
 
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	return string(r[:maxRunes])
+}
+
 func deterministicCondenseChunk(text string, maxChars int) string {
 	trimmed := strings.TrimSpace(text)
-	if maxChars <= 0 || len(trimmed) <= maxChars {
+	if maxChars <= 0 || utf8.RuneCountInString(trimmed) <= maxChars {
 		return trimmed
 	}
 
 	lines := strings.Split(trimmed, "\n")
 	if len(lines) <= 1 {
-		return trimmed[:maxChars]
+		return truncateRunes(trimmed, maxChars)
 	}
 
 	// Sample evenly across chronological lines so start, middle, and end of the slice are preserved.
 	var selected []string
-	totalLen := 0
-	avgLineLen := len(trimmed) / len(lines)
+	totalRunes := 0
+	runeCount := utf8.RuneCountInString(trimmed)
+	avgLineLen := runeCount / len(lines)
 	if avgLineLen < 20 {
 		avgLineLen = 20
 	}
@@ -596,20 +620,22 @@ func deterministicCondenseChunk(text string, maxChars int) string {
 		if line == "" {
 			continue
 		}
-		if totalLen+len(line)+1 > maxChars {
+		lineRunes := utf8.RuneCountInString(line)
+		if totalRunes+lineRunes+1 > maxChars {
 			break
 		}
 		selected = append(selected, line)
-		totalLen += len(line) + 1
+		totalRunes += lineRunes + 1
 	}
 
 	lastLine := strings.TrimSpace(lines[len(lines)-1])
-	if len(selected) > 0 && lastLine != "" && selected[len(selected)-1] != lastLine && totalLen+len(lastLine)+1 <= maxChars {
+	lastLineRunes := utf8.RuneCountInString(lastLine)
+	if len(selected) > 0 && lastLine != "" && selected[len(selected)-1] != lastLine && totalRunes+lastLineRunes+1 <= maxChars {
 		selected = append(selected, lastLine)
 	}
 
 	if len(selected) == 0 {
-		return trimmed[:maxChars]
+		return truncateRunes(trimmed, maxChars)
 	}
 	return strings.Join(selected, "\n")
 }

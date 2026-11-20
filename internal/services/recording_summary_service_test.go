@@ -918,10 +918,21 @@ func TestService_RegenerateSummary_LongTranscriptMapReduce(t *testing.T) {
 	ctx := context.Background()
 
 	var chatCalls int32
+	var currentConcurrent int32
+	var maxConcurrent int32
 	var structuredPromptLen int
 	mockLLM := llm.NewMock()
 	mockLLM.GenerateChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
 		atomic.AddInt32(&chatCalls, 1)
+		cur := atomic.AddInt32(&currentConcurrent, 1)
+		for {
+			oldMax := atomic.LoadInt32(&maxConcurrent)
+			if cur <= oldMax || atomic.CompareAndSwapInt32(&maxConcurrent, oldMax, cur) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		atomic.AddInt32(&currentConcurrent, -1)
 		return &dtos.ChatResponse{
 			Content: "[00:00 - 05:00] Speaker 1: Condensed digest of segment topics, decisions, and action items.",
 		}, nil
@@ -985,6 +996,9 @@ func TestService_RegenerateSummary_LongTranscriptMapReduce(t *testing.T) {
 	}
 	if chatCalls < 2 {
 		t.Errorf("expected map-reduce chunk condensation calls >= 2, got %d", chatCalls)
+	}
+	if maxConcurrent < 2 {
+		t.Errorf("expected concurrent condensation calls >= 2, got %d", maxConcurrent)
 	}
 	if structuredPromptLen > 20000 {
 		t.Errorf("expected condensed structured userPrompt <= 20000 chars, got %d", structuredPromptLen)

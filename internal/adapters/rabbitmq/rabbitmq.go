@@ -563,15 +563,11 @@ func (r *RabbitMQ) SubscribeWithOptions(topic string, handler WorkerHandler, opt
 	if concurrency <= 0 {
 		concurrency = 4
 	}
-	prefetch := r.defaultPrefetch
-	if prefetch <= 0 {
-		prefetch = concurrency * 2
-	}
 
 	subCfg := workers.SubscribeConfig{
 		Concurrency: concurrency,
 		MinWorkers:  0,
-		Prefetch:    prefetch,
+		Prefetch:    r.defaultPrefetch, // 0 if not preset globally
 		IdleTimeout: 30 * time.Second,
 	}
 
@@ -581,6 +577,7 @@ func (r *RabbitMQ) SubscribeWithOptions(topic string, handler WorkerHandler, opt
 		}
 	}
 
+	// Calculate default prefetch dynamically based on final resolved concurrency if not explicitly set
 	if subCfg.Prefetch <= 0 {
 		subCfg.Prefetch = subCfg.Concurrency * 2
 	}

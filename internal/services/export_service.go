@@ -183,25 +183,530 @@ func parseSummaryData(summary *models.Summary) (map[string]interface{}, string) 
 	return data, rawMd
 }
 
-func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
-	var res dtos.FormattedSummary
-	if summary == nil {
-		return res
+func appendSection(res *dtos.FormattedSummary, heading string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	for i, sec := range res.Sections {
+		if sec.Heading == heading {
+			res.Sections[i].Items = append(res.Sections[i].Items, items...)
+			return
+		}
+	}
+	res.Sections = append(res.Sections, dtos.FormattedSection{
+		Heading: heading,
+		Items:   items,
+	})
+}
+
+func appendOverviewParagraph(res *dtos.FormattedSummary, p string) {
+	trimmed := strings.TrimSpace(p)
+	if trimmed == "" {
+		return
+	}
+	if res.Overview == "" {
+		res.Overview = trimmed
+		return
+	}
+	for _, existing := range strings.Split(res.Overview, "\n\n") {
+		if strings.TrimSpace(existing) == trimmed {
+			return
+		}
+	}
+	res.Overview = res.Overview + "\n\n" + trimmed
+}
+
+func extractOverviewFromData(res *dtos.FormattedSummary, data map[string]interface{}) {
+	if mg, ok := data["meeting_goal"].(string); ok && strings.TrimSpace(mg) != "" {
+		appendOverviewParagraph(res, fmt.Sprintf("Tujuan Pertemuan: %s", strings.TrimSpace(mg)))
 	}
 
-	data, rawMd := parseSummaryData(summary)
+	var musicMeta []string
+	if artist, ok := data["artist_or_performers"].(string); ok && strings.TrimSpace(artist) != "" {
+		musicMeta = append(musicMeta, fmt.Sprintf("Artis/Penyanyi: %s", strings.TrimSpace(artist)))
+	}
+	if style, ok := data["musical_style"].(string); ok && strings.TrimSpace(style) != "" {
+		musicMeta = append(musicMeta, fmt.Sprintf("Aliran Musik: %s", strings.TrimSpace(style)))
+	}
+	if len(musicMeta) > 0 {
+		appendOverviewParagraph(res, strings.Join(musicMeta, " | "))
+	}
 
-	// 1. Daily Standup Schema
+	for _, key := range []string{"executive_summary", "executive_overview", "course_summary", "show_notes", "core_message", "context"} {
+		if val, ok := data[key].(string); ok && strings.TrimSpace(val) != "" {
+			appendOverviewParagraph(res, val)
+		}
+	}
+
 	if sh, ok := data["sprint_health"].(map[string]interface{}); ok {
 		status, _ := sh["status"].(string)
 		sum, _ := sh["summary"].(string)
 		if status != "" && sum != "" {
-			res.Overview = fmt.Sprintf("Status Sprint: %s\n%s", status, sum)
+			appendOverviewParagraph(res, fmt.Sprintf("Status Sprint: %s\n%s", status, sum))
 		} else if sum != "" {
-			res.Overview = sum
+			appendOverviewParagraph(res, sum)
 		}
 	}
 
+	if cand, ok := data["candidate_name"].(string); ok && cand != "" {
+		role, _ := data["target_role"].(string)
+		rec, _ := data["recommendation"].(string)
+		just, _ := data["justification"].(string)
+		appendOverviewParagraph(res, fmt.Sprintf("Kandidat: %s | Posisi: %s\nRekomendasi: %s\n\n%s", cand, role, rec, just))
+	}
+
+	if wb, ok := data["wellbeing_assessment"].(map[string]interface{}); ok {
+		score, _ := wb["sentiment_score"].(string)
+		sum, _ := wb["summary"].(string)
+		if score != "" && sum != "" {
+			appendOverviewParagraph(res, fmt.Sprintf("Sentimen Kesejahteraan: %s\n%s", score, sum))
+		} else if sum != "" {
+			appendOverviewParagraph(res, sum)
+		}
+	}
+
+	if pc, ok := data["prospect_company"].(string); ok && pc != "" {
+		st, _ := data["deal_stage_suggested"].(string)
+		appendOverviewParagraph(res, fmt.Sprintf("Perusahaan Prospek: %s (Tahap: %s)", pc, st))
+	}
+}
+
+func appendDiscussionTopics(res *dtos.FormattedSummary, data map[string]interface{}) {
+	rawTopics, ok := data["discussion_topics"].([]interface{})
+	heading := "Sub Pembahasan & Poin Kunci"
+	if !ok || len(rawTopics) == 0 {
+		rawTopics, ok = data["core_themes"].([]interface{})
+		if ok && len(rawTopics) > 0 {
+			heading = "Sub Pembahasan (Core Themes)"
+		}
+	}
+	if !ok || len(rawTopics) == 0 {
+		rawTopics, ok = data["topic_notes"].([]interface{})
+		if ok && len(rawTopics) > 0 {
+			heading = "Catatan Topik Kuliah (Topic Notes)"
+		}
+	}
+	if !ok || len(rawTopics) == 0 {
+		return
+	}
+
+	var items []string
+	for idx, t := range rawTopics {
+		tm, ok := t.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		top := extractFirstString(tm, "topic", "theme", "title", "name")
+		if top == "" {
+			top = fmt.Sprintf("Topik %d", idx+1)
+		}
+
+		rawPts, ok := tm["key_points"].([]interface{})
+		if !ok {
+			rawPts, _ = tm["summary_points"].([]interface{})
+		}
+
+		if len(rawPts) > 0 {
+			var pts []string
+			for _, p := range rawPts {
+				if p != nil && strings.TrimSpace(fmt.Sprintf("%v", p)) != "" {
+					pts = append(pts, fmt.Sprintf("  - %v", p))
+				}
+			}
+			if len(pts) > 0 {
+				items = append(items, fmt.Sprintf("**%s**\n%s", top, strings.Join(pts, "\n")))
+			} else {
+				items = append(items, fmt.Sprintf("**%s**", top))
+			}
+		} else {
+			items = append(items, fmt.Sprintf("**%s**", top))
+		}
+	}
+
+	appendSection(res, heading, items)
+}
+
+func appendLectureSections(res *dtos.FormattedSummary, data map[string]interface{}) {
+	if lo, ok := data["learning_objectives"].([]interface{}); ok && len(lo) > 0 {
+		var items []string
+		for _, o := range lo {
+			if str := strings.TrimSpace(fmt.Sprintf("%v", o)); str != "" {
+				items = append(items, fmt.Sprintf("• %s", str))
+			}
+		}
+		appendSection(res, "Tujuan Pembelajaran (Learning Objectives)", items)
+	}
+
+	if cc, ok := data["core_concepts"].([]interface{}); ok && len(cc) > 0 {
+		var items []string
+		for _, c := range cc {
+			cm, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			cp := extractFirstString(cm, "concept", "term", "name")
+			exp := extractFirstString(cm, "explanation", "description")
+			ex := extractFirstString(cm, "examples", "example")
+			if cp == "" && exp == "" {
+				continue
+			}
+			line := fmt.Sprintf("• %s: %s", cp, exp)
+			if ex != "" {
+				line = fmt.Sprintf("%s (Contoh: %s)", line, ex)
+			}
+			items = append(items, line)
+		}
+		appendSection(res, "Konsep & Teori Utama", items)
+	}
+
+	if tg, ok := data["technical_glossary"].([]interface{}); ok && len(tg) > 0 {
+		var items []string
+		for _, g := range tg {
+			gm, ok := g.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			term := extractFirstString(gm, "term", "word")
+			def := extractFirstString(gm, "definition", "meaning")
+			if term != "" || def != "" {
+				items = append(items, fmt.Sprintf("• %s: %s", term, def))
+			}
+		}
+		appendSection(res, "Glosarium Istilah Teknis", items)
+	}
+
+	if erq, ok := data["exam_review_questions"].([]interface{}); ok && len(erq) > 0 {
+		var items []string
+		for _, q := range erq {
+			qm, ok := q.(map[string]interface{})
+			if !ok {
+				if str := strings.TrimSpace(fmt.Sprintf("%v", q)); str != "" {
+					items = append(items, fmt.Sprintf("• %s", str))
+				}
+				continue
+			}
+			ques := extractFirstString(qm, "question")
+			hint := extractFirstString(qm, "hint_or_key_answer", "answer", "hint")
+			if ques == "" {
+				continue
+			}
+			if hint != "" {
+				items = append(items, fmt.Sprintf("• %s\n  - Petunjuk / Kunci Jawaban: %s", ques, hint))
+			} else {
+				items = append(items, fmt.Sprintf("• %s", ques))
+			}
+		}
+		appendSection(res, "Pertanyaan Ujian & Diskusi", items)
+	}
+}
+
+func appendTechReviewSections(res *dtos.FormattedSummary, data map[string]interface{}) {
+	if da, ok := data["decisions_adopted"].([]interface{}); ok && len(da) > 0 {
+		var items []string
+		for _, d := range da {
+			dm, ok := d.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			dec := extractFirstString(dm, "decision", "text")
+			just := extractFirstString(dm, "technical_justification", "justification")
+			if dec != "" && just != "" {
+				items = append(items, fmt.Sprintf("• %s: %s", dec, just))
+			} else if dec != "" {
+				items = append(items, fmt.Sprintf("• %s", dec))
+			}
+		}
+		appendSection(res, "Keputusan Diadopsi", items)
+	}
+
+	if ra, ok := data["rejected_alternatives"].([]interface{}); ok && len(ra) > 0 {
+		var items []string
+		for _, a := range ra {
+			am, ok := a.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			alt := extractFirstString(am, "alternative", "option")
+			reason := extractFirstString(am, "rejection_reason", "reason")
+			if alt != "" && reason != "" {
+				items = append(items, fmt.Sprintf("• %s (Alasan Penolakan: %s)", alt, reason))
+			} else if alt != "" {
+				items = append(items, fmt.Sprintf("• %s", alt))
+			}
+		}
+		appendSection(res, "Alternatif yang Ditolak (Rejected Alternatives)", items)
+	}
+
+	if nfr, ok := data["nfr_assessment"].(map[string]interface{}); ok && len(nfr) > 0 {
+		var items []string
+		if sec := extractFirstString(nfr, "security"); sec != "" {
+			items = append(items, fmt.Sprintf("• Keamanan (Security): %s", sec))
+		}
+		if perf := extractFirstString(nfr, "performance_scalability", "performance"); perf != "" {
+			items = append(items, fmt.Sprintf("• Performa & Skalabilitas: %s", perf))
+		}
+		if rel := extractFirstString(nfr, "reliability_resilience", "reliability"); rel != "" {
+			items = append(items, fmt.Sprintf("• Keandalan & Ketahanan: %s", rel))
+		}
+		appendSection(res, "Penilaian Non-Functional Requirements (NFR)", items)
+	}
+
+	if td := extractFirstString(data, "technical_debt_impact"); td != "" {
+		appendSection(res, "Dampak Hutang Teknis (Technical Debt Impact)", []string{fmt.Sprintf("• %s", td)})
+	}
+}
+
+func appendMOMDynamicsAndPerspectives(res *dtos.FormattedSummary, data map[string]interface{}) {
+	if dyn, ok := data["meeting_dynamics"].(map[string]interface{}); ok && len(dyn) > 0 {
+		var items []string
+		if score := extractFirstString(dyn, "consensus_score"); score != "" {
+			items = append(items, fmt.Sprintf("• Skor Konsensus: %s", score))
+		}
+		if traj := extractFirstString(dyn, "sentiment_trajectory"); traj != "" {
+			items = append(items, fmt.Sprintf("• Trajektori Sentimen: %s", traj))
+		}
+		if stt, ok := dyn["speaker_talk_time"].([]interface{}); ok && len(stt) > 0 {
+			items = append(items, "• Distribusi Waktu Bicara:")
+			for _, s := range stt {
+				sm, ok := s.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				spk := extractFirstString(sm, "speaker")
+				var pct float64
+				if pNum, ok := sm["percentage"].(float64); ok {
+					pct = pNum
+				}
+				var dur float64
+				if dNum, ok := sm["duration_minutes"].(float64); ok {
+					dur = dNum
+				}
+				if spk != "" {
+					items = append(items, fmt.Sprintf("  - %s: %.1f%% (%.1f menit)", spk, pct, dur))
+				}
+			}
+		}
+		appendSection(res, "Dinamika Pertemuan (Meeting Dynamics)", items)
+	}
+
+	if sp, ok := data["stakeholder_perspectives"].(map[string]interface{}); ok && len(sp) > 0 {
+		var items []string
+		if eb := extractFirstString(sp, "executive_brief"); eb != "" {
+			items = append(items, fmt.Sprintf("• Ringkasan Eksekutif: %s", eb))
+		}
+		if ef := extractFirstString(sp, "engineering_focus"); ef != "" {
+			items = append(items, fmt.Sprintf("• Fokus Rekayasa (Engineering): %s", ef))
+		}
+		if pd := extractFirstString(sp, "product_delivery"); pd != "" {
+			items = append(items, fmt.Sprintf("• Pengiriman Produk (Product Delivery): %s", pd))
+		}
+		appendSection(res, "Perspektif Pemangku Kepentingan (Stakeholder Perspectives)", items)
+	}
+
+	if nm := extractFirstString(data, "next_meeting"); nm != "" {
+		appendSection(res, "Agenda Pertemuan Berikutnya (Next Meeting)", []string{fmt.Sprintf("• %s", nm)})
+	}
+}
+
+func appendKeyDecisions(res *dtos.FormattedSummary, data map[string]interface{}) {
+	kd, ok := data["key_decisions"].([]interface{})
+	if !ok || len(kd) == 0 {
+		return
+	}
+
+	var items []string
+	for _, d := range kd {
+		dm, ok := d.(map[string]interface{})
+		if !ok {
+			if str := strings.TrimSpace(fmt.Sprintf("%v", d)); str != "" {
+				items = append(items, fmt.Sprintf("• %s", str))
+			}
+			continue
+		}
+		dec := extractFirstString(dm, "decision", "text")
+		if dec == "" {
+			continue
+		}
+
+		app := extractFirstString(dm, "approved_by")
+		trigger := extractFirstString(dm, "root_cause_trigger")
+		contested := extractFirstString(dm, "contested_points")
+		impact := extractFirstString(dm, "quantitative_impact")
+
+		itemStr := fmt.Sprintf("• %s", dec)
+		var subDetails []string
+		if app != "" {
+			subDetails = append(subDetails, fmt.Sprintf("  - Disetujui: %s", app))
+		}
+		if trigger != "" {
+			subDetails = append(subDetails, fmt.Sprintf("  - Pemicu Masalah: %s", trigger))
+		}
+		if contested != "" {
+			subDetails = append(subDetails, fmt.Sprintf("  - Poin Perdebatan: %s", contested))
+		}
+		if impact != "" {
+			subDetails = append(subDetails, fmt.Sprintf("  - Dampak Kuantitatif: %s", impact))
+		}
+
+		if len(subDetails) > 0 {
+			itemStr = fmt.Sprintf("%s\n%s", itemStr, strings.Join(subDetails, "\n"))
+		}
+		items = append(items, itemStr)
+	}
+
+	appendSection(res, "Keputusan Kunci (Key Decisions)", items)
+}
+
+func appendPodcastSections(res *dtos.FormattedSummary, data map[string]interface{}) {
+	if goMap, ok := data["guest_overview"].(map[string]interface{}); ok && len(goMap) > 0 {
+		var items []string
+		name := extractFirstString(goMap, "guest_name", "name")
+		title := extractFirstString(goMap, "guest_title", "title", "role")
+		bio := extractFirstString(goMap, "bio_or_background", "bio", "background")
+		if name != "" {
+			items = append(items, fmt.Sprintf("• Nama: %s", name))
+		}
+		if title != "" {
+			items = append(items, fmt.Sprintf("• Peran / Jabatan: %s", title))
+		}
+		if bio != "" {
+			items = append(items, fmt.Sprintf("• Profil / Latar Belakang: %s", bio))
+		}
+		appendSection(res, "Profil Narasumber (Guest Overview)", items)
+	}
+
+	if tc, ok := data["topic_chapters"].([]interface{}); ok && len(tc) > 0 {
+		var items []string
+		for _, c := range tc {
+			cm, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			ts := extractFirstString(cm, "timestamp", "time")
+			top := extractFirstString(cm, "topic", "title")
+			sm := extractFirstString(cm, "summary")
+			if ts != "" && top != "" {
+				items = append(items, fmt.Sprintf("[%s] %s: %s", ts, top, sm))
+			} else if top != "" {
+				items = append(items, fmt.Sprintf("• %s: %s", top, sm))
+			}
+		}
+		appendSection(res, "Topik Pembahasan (Chapters)", items)
+	}
+
+	var rawQuotes []interface{}
+	if gq, ok := data["golden_quotes"].([]interface{}); ok && len(gq) > 0 {
+		rawQuotes = gq
+	} else if nq, ok := data["notable_quotes"].([]interface{}); ok && len(nq) > 0 {
+		rawQuotes = nq
+	}
+	if len(rawQuotes) > 0 {
+		var items []string
+		for _, q := range rawQuotes {
+			qm, ok := q.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			quote := extractFirstString(qm, "quote", "text")
+			spk := extractFirstString(qm, "speaker", "author")
+			ctxStr := extractFirstString(qm, "context")
+			if quote == "" {
+				continue
+			}
+			line := fmt.Sprintf("\"%s\"", quote)
+			if spk != "" {
+				line = fmt.Sprintf("%s — %s", line, spk)
+			}
+			if ctxStr != "" {
+				line = fmt.Sprintf("%s (Konteks: %s)", line, ctxStr)
+			}
+			items = append(items, line)
+		}
+		appendSection(res, "Kutipan Berkesan (Quotes)", items)
+	}
+}
+
+func appendMusicSections(res *dtos.FormattedSummary, data map[string]interface{}) {
+	if sl, ok := data["structured_lyrics"].([]interface{}); ok && len(sl) > 0 {
+		var items []string
+		for _, l := range sl {
+			lm, ok := l.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			sec := extractFirstString(lm, "section", "part")
+			lyr := extractFirstString(lm, "lyrics", "text")
+			if sec != "" && lyr != "" {
+				items = append(items, fmt.Sprintf("[%s]\n%s", sec, lyr))
+			} else if lyr != "" {
+				items = append(items, lyr)
+			}
+		}
+		appendSection(res, "Struktur Lirik Lagu", items)
+	}
+
+	if et, ok := data["emotional_tone"].(map[string]interface{}); ok && len(et) > 0 {
+		var items []string
+		mood := extractFirstString(et, "primary_mood", "mood")
+		energy := extractFirstString(et, "energy_level", "energy")
+		sent := extractFirstString(et, "sentiment_analysis", "sentiment")
+		if mood != "" || energy != "" {
+			items = append(items, fmt.Sprintf("• Suasana Hati: %s, Tingkat Energi: %s", mood, energy))
+		}
+		if sent != "" {
+			items = append(items, fmt.Sprintf("• Analisis Sentimen: %s", sent))
+		}
+		appendSection(res, "Analisis Suasana & Emosi", items)
+	}
+}
+
+func appendGeneralSections(res *dtos.FormattedSummary, data map[string]interface{}) {
+	if rr, ok := data["referenced_resources"].([]interface{}); ok && len(rr) > 0 {
+		var items []string
+		for _, r := range rr {
+			if str := strings.TrimSpace(fmt.Sprintf("%v", r)); str != "" {
+				items = append(items, fmt.Sprintf("• %s", str))
+			}
+		}
+		appendSection(res, "Referensi & Sumber Daya (Referenced Resources)", items)
+	}
+
+	if kt, ok := data["key_takeaways"].([]interface{}); ok && len(kt) > 0 {
+		var items []string
+		for _, t := range kt {
+			if str := strings.TrimSpace(fmt.Sprintf("%v", t)); str != "" {
+				items = append(items, fmt.Sprintf("• %s", str))
+			}
+		}
+		appendSection(res, "Poin Kunci (Key Takeaways)", items)
+	}
+}
+
+func appendOpenPoints(res *dtos.FormattedSummary, data map[string]interface{}) {
+	addList := func(key, heading string) {
+		rawList, ok := data[key].([]interface{})
+		if !ok || len(rawList) == 0 {
+			return
+		}
+		var items []string
+		for _, raw := range rawList {
+			if raw == nil {
+				continue
+			}
+			str := strings.TrimSpace(fmt.Sprintf("%v", raw))
+			if str == "" {
+				continue
+			}
+			items = append(items, fmt.Sprintf("• %s", str))
+		}
+		appendSection(res, heading, items)
+	}
+
+	addList("open_issues", "Isu Terbuka (Open Issues)")
+	addList("open_points", "Isu Terbuka (Open Points)")
+}
+
+func appendLegacyTemplateSections(res *dtos.FormattedSummary, data map[string]interface{}) {
 	if mu, ok := data["member_updates"].([]interface{}); ok && len(mu) > 0 {
 		var items []string
 		for _, item := range mu {
@@ -209,7 +714,7 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 			if !ok {
 				continue
 			}
-			name, _ := m["member_name"].(string)
+			name := extractFirstString(m, "member_name")
 			if name == "" {
 				name = "Anggota Tim"
 			}
@@ -234,12 +739,7 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 				}
 			}
 		}
-		if len(items) > 0 {
-			res.Sections = append(res.Sections, dtos.FormattedSection{
-				Heading: "Pembaruan Anggota (Member Updates)",
-				Items:   items,
-			})
-		}
+		appendSection(res, "Pembaruan Anggota (Member Updates)", items)
 	}
 
 	if cb, ok := data["critical_blockers"].([]interface{}); ok && len(cb) > 0 {
@@ -248,10 +748,7 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 			items = append(items, fmt.Sprintf("• %v", b))
 			res.ActionItems = append(res.ActionItems, fmt.Sprintf("Kendala Kritis: %v", b))
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{
-			Heading: "Kendala Kritis (Critical Blockers)",
-			Items:   items,
-		})
+		appendSection(res, "Kendala Kritis (Critical Blockers)", items)
 	}
 
 	if pld, ok := data["parking_lot_discussions"].([]interface{}); ok && len(pld) > 0 {
@@ -273,69 +770,42 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 				items = append(items, fmt.Sprintf("• %v", p))
 			}
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{
-			Heading: "Diskusi Lanjutan (Parking Lot)",
-			Items:   items,
-		})
+		appendSection(res, "Diskusi Lanjutan (Parking Lot)", items)
 	}
 
-	// 2. Interview Schema
-	if cand, ok := data["candidate_name"].(string); ok && cand != "" {
-		role, _ := data["target_role"].(string)
-		rec, _ := data["recommendation"].(string)
-		just, _ := data["justification"].(string)
-		res.Overview = fmt.Sprintf("Kandidat: %s | Posisi: %s\nRekomendasi: %s\n\n%s", cand, role, rec, just)
-	}
 	if str, ok := data["strengths"].([]interface{}); ok && len(str) > 0 {
 		var items []string
 		for _, s := range str {
 			items = append(items, fmt.Sprintf("• %v", s))
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{
-			Heading: "Kekuatan Utama (Strengths)",
-			Items:   items,
-		})
+		appendSection(res, "Kekuatan Utama (Strengths)", items)
 	}
 	if con, ok := data["concerns"].([]interface{}); ok && len(con) > 0 {
 		var items []string
 		for _, c := range con {
 			items = append(items, fmt.Sprintf("• %v", c))
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{
-			Heading: "Catatan & Kekhawatiran (Concerns)",
-			Items:   items,
-		})
+		appendSection(res, "Catatan & Kekhawatiran (Concerns)", items)
 	}
 	if cs, ok := data["competency_scores"].([]interface{}); ok && len(cs) > 0 {
 		var items []string
 		for _, c := range cs {
 			if cm, ok := c.(map[string]interface{}); ok {
-				comp, _ := cm["competency"].(string)
-				rating, _ := cm["rating"].(string)
-				evidence, _ := cm["evidence"].(string)
+				comp := extractFirstString(cm, "competency")
+				rating := extractFirstString(cm, "rating")
+				evidence := extractFirstString(cm, "evidence")
 				items = append(items, fmt.Sprintf("• %s [%s]: %s", comp, rating, evidence))
 			}
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{
-			Heading: "Penilaian Kompetensi",
-			Items:   items,
-		})
+		appendSection(res, "Penilaian Kompetensi", items)
 	}
 
-	// 3. One on One Schema
-	if wb, ok := data["wellbeing_assessment"].(map[string]interface{}); ok {
-		score, _ := wb["sentiment_score"].(string)
-		sum, _ := wb["summary"].(string)
-		if res.Overview == "" {
-			res.Overview = fmt.Sprintf("Sentimen Kesejahteraan: %s\n%s", score, sum)
-		}
-	}
 	if kw, ok := data["key_wins"].([]interface{}); ok && len(kw) > 0 {
 		var items []string
 		for _, w := range kw {
 			items = append(items, fmt.Sprintf("• %v", w))
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Pencapaian Utama (Key Wins)", Items: items})
+		appendSection(res, "Pencapaian Utama (Key Wins)", items)
 	}
 	if bl, ok := data["blockers"].([]interface{}); ok && len(bl) > 0 {
 		var items []string
@@ -343,273 +813,55 @@ func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
 			items = append(items, fmt.Sprintf("• %v", b))
 			res.ActionItems = append(res.ActionItems, fmt.Sprintf("Kendala 1-on-1: %v", b))
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Kendala (Blockers)", Items: items})
+		appendSection(res, "Kendala (Blockers)", items)
 	}
 	if com, ok := data["commitments"].([]interface{}); ok && len(com) > 0 {
 		for _, c := range com {
 			if cm, ok := c.(map[string]interface{}); ok {
-				act, _ := cm["action_item"].(string)
-				party, _ := cm["party"].(string)
-				tl, _ := cm["timeline"].(string)
+				act := extractFirstString(cm, "action_item", "task")
+				party := extractFirstString(cm, "party", "owner")
+				tl := extractFirstString(cm, "timeline", "target_date")
 				res.ActionItems = append(res.ActionItems, fmt.Sprintf("[%s] %s (%s)", party, act, tl))
 			}
 		}
 	}
 
-	// 4. MOM / Standard Meeting Schema
-	if mg, ok := data["meeting_goal"].(string); ok && strings.TrimSpace(mg) != "" {
-		if res.Overview == "" {
-			res.Overview = fmt.Sprintf("Tujuan Rapat: %s", mg)
-		} else {
-			res.Overview = fmt.Sprintf("Tujuan Rapat: %s\n\n%s", mg, res.Overview)
-		}
-	}
-	appendOverviewParagraph := func(p string) {
-		trimmed := strings.TrimSpace(p)
-		if trimmed == "" {
-			return
-		}
-		if res.Overview == "" {
-			res.Overview = trimmed
-			return
-		}
-		for _, existing := range strings.Split(res.Overview, "\n\n") {
-			if strings.TrimSpace(existing) == trimmed {
-				return
-			}
-		}
-		res.Overview = res.Overview + "\n\n" + trimmed
-	}
-	if es, ok := data["executive_summary"].(string); ok {
-		appendOverviewParagraph(es)
-	}
-	if eo, ok := data["executive_overview"].(string); ok {
-		appendOverviewParagraph(eo)
-	}
-	// Discussion Topics & Core Themes
-	if dt, ok := data["discussion_topics"].([]interface{}); ok && len(dt) > 0 {
-		var items []string
-		for idx, t := range dt {
-			if tm, ok := t.(map[string]interface{}); ok {
-				top, _ := tm["topic"].(string)
-				if top == "" {
-					top = fmt.Sprintf("Topik %d", idx+1)
-				}
-				if kp, ok := tm["key_points"].([]interface{}); ok && len(kp) > 0 {
-					var pts []string
-					for _, p := range kp {
-						pts = append(pts, fmt.Sprintf("  - %v", p))
-					}
-					items = append(items, fmt.Sprintf("**%s**\n%s", top, strings.Join(pts, "\n")))
-				} else {
-					items = append(items, fmt.Sprintf("**%s**", top))
-				}
-			}
-		}
-		if len(items) > 0 {
-			res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Sub Pembahasan & Poin Kunci", Items: items})
-		}
-	} else if ct, ok := data["core_themes"].([]interface{}); ok && len(ct) > 0 {
-		var items []string
-		for idx, t := range ct {
-			if tm, ok := t.(map[string]interface{}); ok {
-				theme, _ := tm["theme"].(string)
-				if theme == "" {
-					theme = fmt.Sprintf("Topik %d", idx+1)
-				}
-				if sp, ok := tm["summary_points"].([]interface{}); ok && len(sp) > 0 {
-					var pts []string
-					for _, p := range sp {
-						pts = append(pts, fmt.Sprintf("  - %v", p))
-					}
-					items = append(items, fmt.Sprintf("**%s**\n%s", theme, strings.Join(pts, "\n")))
-				} else {
-					items = append(items, fmt.Sprintf("**%s**", theme))
-				}
-			}
-		}
-		if len(items) > 0 {
-			res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Sub Pembahasan (Core Themes)", Items: items})
-		}
-	}
-
-	if kd, ok := data["key_decisions"].([]interface{}); ok && len(kd) > 0 {
-		var items []string
-		for _, d := range kd {
-			if dm, ok := d.(map[string]interface{}); ok {
-				dec, _ := dm["decision"].(string)
-				app, _ := dm["approved_by"].(string)
-				if app != "" {
-					items = append(items, fmt.Sprintf("• %s (Disetujui: %s)", dec, app))
-				} else {
-					items = append(items, fmt.Sprintf("• %s", dec))
-				}
-			} else {
-				items = append(items, fmt.Sprintf("• %v", d))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Keputusan Kunci (Key Decisions)", Items: items})
-	}
-
-	if oi, ok := data["open_issues"].([]interface{}); ok && len(oi) > 0 {
-		var items []string
-		for _, o := range oi {
-			items = append(items, fmt.Sprintf("• %v", o))
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Isu Terbuka (Open Issues)", Items: items})
-	}
-	if op, ok := data["open_points"].([]interface{}); ok && len(op) > 0 {
-		var items []string
-		for _, o := range op {
-			items = append(items, fmt.Sprintf("• %v", o))
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Isu Terbuka (Open Points)", Items: items})
-	}
-
-	// 5. Tech Review Schema
-	if ctxStr, ok := data["context"].(string); ok && ctxStr != "" && res.Overview == "" {
-		res.Overview = ctxStr
-	}
-	if da, ok := data["decisions_adopted"].([]interface{}); ok && len(da) > 0 {
-		var items []string
-		for _, d := range da {
-			if dm, ok := d.(map[string]interface{}); ok {
-				dec, _ := dm["decision"].(string)
-				just, _ := dm["technical_justification"].(string)
-				items = append(items, fmt.Sprintf("• %s: %s", dec, just))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Keputusan Diadopsi", Items: items})
-	}
-
-	// 6. Sales Discovery Schema
-	if pc, ok := data["prospect_company"].(string); ok && pc != "" && res.Overview == "" {
-		st, _ := data["deal_stage_suggested"].(string)
-		res.Overview = fmt.Sprintf("Perusahaan Prospek: %s (Tahap: %s)", pc, st)
-	}
 	if pp, ok := data["pain_points"].([]interface{}); ok && len(pp) > 0 {
 		var items []string
 		for _, p := range pp {
 			if pm, ok := p.(map[string]interface{}); ok {
-				pain, _ := pm["pain"].(string)
-				cost, _ := pm["cost_of_inaction"].(string)
+				pain := extractFirstString(pm, "pain")
+				cost := extractFirstString(pm, "cost_of_inaction")
 				items = append(items, fmt.Sprintf("• %s (Biaya Inaksi: %s)", pain, cost))
 			}
 		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Titik Kendala (Pain Points)", Items: items})
+		appendSection(res, "Titik Kendala (Pain Points)", items)
 	}
-	if ns, ok := data["next_steps"].([]interface{}); ok && len(ns) > 0 {
-		for _, n := range ns {
-			if nm, ok := n.(map[string]interface{}); ok {
-				act, _ := nm["action"].(string)
-				own, _ := nm["owner"].(string)
-				dt, _ := nm["target_date"].(string)
-				res.ActionItems = append(res.ActionItems, fmt.Sprintf("%s (PIC: %s, Target: %s)", act, own, dt))
-			}
-		}
+}
+
+func formatSummaryContent(summary *models.Summary) dtos.FormattedSummary {
+	var res dtos.FormattedSummary
+	if summary == nil {
+		return res
 	}
 
-	// 7. Podcast Schema
-	if sn, ok := data["show_notes"].(string); ok && sn != "" && res.Overview == "" {
-		res.Overview = sn
-	}
-	if tc, ok := data["topic_chapters"].([]interface{}); ok && len(tc) > 0 {
-		var items []string
-		for _, c := range tc {
-			if cm, ok := c.(map[string]interface{}); ok {
-				ts, _ := cm["timestamp"].(string)
-				top, _ := cm["topic"].(string)
-				sm, _ := cm["summary"].(string)
-				items = append(items, fmt.Sprintf("[%s] %s: %s", ts, top, sm))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Topik Pembahasan (Chapters)", Items: items})
-	}
-	if gq, ok := data["golden_quotes"].([]interface{}); ok && len(gq) > 0 {
-		var items []string
-		for _, q := range gq {
-			if qm, ok := q.(map[string]interface{}); ok {
-				quote, _ := qm["quote"].(string)
-				spk, _ := qm["speaker"].(string)
-				items = append(items, fmt.Sprintf("\"%s\" — %s", quote, spk))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Kutipan Berkesan (Golden Quotes)", Items: items})
-	}
+	data, rawMd := parseSummaryData(summary)
 
-	// 8. Lecture Schema
-	if cs, ok := data["course_summary"].(string); ok && cs != "" && res.Overview == "" {
-		res.Overview = cs
-	}
-	if cc, ok := data["core_concepts"].([]interface{}); ok && len(cc) > 0 {
-		var items []string
-		for _, c := range cc {
-			if cm, ok := c.(map[string]interface{}); ok {
-				cp, _ := cm["concept"].(string)
-				exp, _ := cm["explanation"].(string)
-				items = append(items, fmt.Sprintf("• %s: %s", cp, exp))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Konsep & Teori Utama", Items: items})
-	}
-	if tg, ok := data["technical_glossary"].([]interface{}); ok && len(tg) > 0 {
-		var items []string
-		for _, g := range tg {
-			if gm, ok := g.(map[string]interface{}); ok {
-				term, _ := gm["term"].(string)
-				def, _ := gm["definition"].(string)
-				items = append(items, fmt.Sprintf("• %s: %s", term, def))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Glosarium Istilah Teknis", Items: items})
-	}
-	if erq, ok := data["exam_review_questions"].([]interface{}); ok && len(erq) > 0 {
-		var items []string
-		for _, q := range erq {
-			if qm, ok := q.(map[string]interface{}); ok {
-				ques, _ := qm["question"].(string)
-				items = append(items, fmt.Sprintf("• %s", ques))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Pertanyaan Ujian & Diskusi", Items: items})
-	}
+	extractOverviewFromData(&res, data)
+	appendDiscussionTopics(&res, data)
+	appendLectureSections(&res, data)
+	appendPodcastSections(&res, data)
+	appendMusicSections(&res, data)
+	appendTechReviewSections(&res, data)
+	appendMOMDynamicsAndPerspectives(&res, data)
+	appendKeyDecisions(&res, data)
+	appendGeneralSections(&res, data)
+	appendOpenPoints(&res, data)
+	appendLegacyTemplateSections(&res, data)
 
-	// 9. Music Lyrics Schema
-	if cm, ok := data["core_message"].(string); ok && cm != "" && res.Overview == "" {
-		res.Overview = cm
-	}
-	if sl, ok := data["structured_lyrics"].([]interface{}); ok && len(sl) > 0 {
-		var items []string
-		for _, l := range sl {
-			if lm, ok := l.(map[string]interface{}); ok {
-				sec, _ := lm["section"].(string)
-				lyr, _ := lm["lyrics"].(string)
-				items = append(items, fmt.Sprintf("[%s]\n%s", sec, lyr))
-			}
-		}
-		res.Sections = append(res.Sections, dtos.FormattedSection{Heading: "Struktur Lirik Lagu", Items: items})
-	}
-	if et, ok := data["emotional_tone"].(map[string]interface{}); ok {
-		mood, _ := et["primary_mood"].(string)
-		energy, _ := et["energy_level"].(string)
-		if mood != "" {
-			res.Sections = append(res.Sections, dtos.FormattedSection{
-				Heading: "Analisis Suasana & Emosi",
-				Items:   []string{fmt.Sprintf("Suasana Hati: %s, Tingkat Energi: %s", mood, energy)},
-			})
-		}
-	}
-
-	// Action Items from standard fields
+	// Action items from standard fields
 	for _, item := range extractActionItems(summary) {
-		found := false
-		for _, existing := range res.ActionItems {
-			if existing == item {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !sliceContains(res.ActionItems, item) {
 			res.ActionItems = append(res.ActionItems, item)
 		}
 	}
@@ -646,50 +898,59 @@ func extractActionItems(summary *models.Summary) []string {
 		rawItems = ai
 	} else if kai, ok := summary.StructuredData["key_action_items"]; ok {
 		rawItems = kai
+	} else if ns, ok := summary.StructuredData["next_steps"]; ok {
+		rawItems = ns
 	}
 	if rawItems == nil {
 		return nil
 	}
 
 	var results []string
-	switch items := rawItems.(type) {
-	case []interface{}:
-		for _, item := range items {
-			switch v := item.(type) {
-			case string:
-				if s := strings.TrimSpace(v); s != "" {
-					results = append(results, s)
-				}
-			case map[string]interface{}:
-				if task, ok := v["task"].(string); ok && strings.TrimSpace(task) != "" {
-					pic, _ := v["pic"].(string)
-					assignee, _ := v["assignee"].(string)
-					owner := strings.TrimSpace(pic)
-					if owner == "" {
-						owner = strings.TrimSpace(assignee)
-					}
-					dueDate, _ := v["due_date"].(string)
-					targetSprint, _ := v["target_sprint"].(string)
-					target := strings.TrimSpace(dueDate)
-					if target == "" {
-						target = strings.TrimSpace(targetSprint)
-					}
-					var meta []string
-					if owner != "" {
-						meta = append(meta, fmt.Sprintf("PIC: %s", owner))
-					}
-					if target != "" {
-						meta = append(meta, fmt.Sprintf("Target: %s", target))
-					}
-					if len(meta) > 0 {
-						results = append(results, fmt.Sprintf("%s (%s)", task, strings.Join(meta, ", ")))
-					} else {
-						results = append(results, task)
-					}
-				} else if text, ok := v["text"].(string); ok && strings.TrimSpace(text) != "" {
-					results = append(results, text)
-				}
+	items, ok := rawItems.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	for _, item := range items {
+		switch v := item.(type) {
+		case string:
+			if s := strings.TrimSpace(v); s != "" {
+				results = append(results, s)
 			}
+		case map[string]interface{}:
+			task := extractFirstString(v, "task", "action", "text", "action_item")
+			if task == "" {
+				continue
+			}
+
+			priority := strings.TrimSpace(extractFirstString(v, "priority"))
+			owner := extractFirstString(v, "pic", "assignee", "owner", "party")
+			target := extractFirstString(v, "due_date", "target_date", "target_sprint", "timeline")
+			dod := extractFirstString(v, "definition_of_done")
+			cost := extractFirstString(v, "cost_of_inaction")
+
+			var meta []string
+			if owner != "" {
+				meta = append(meta, fmt.Sprintf("PIC: %s", owner))
+			}
+			if target != "" {
+				meta = append(meta, fmt.Sprintf("Target: %s", target))
+			}
+			if dod != "" {
+				meta = append(meta, fmt.Sprintf("DoD: %s", dod))
+			}
+			if cost != "" {
+				meta = append(meta, fmt.Sprintf("Biaya Inaksi: %s", cost))
+			}
+
+			line := task
+			if priority != "" && !strings.HasPrefix(strings.ToUpper(line), "["+strings.ToUpper(priority)+"]") {
+				line = fmt.Sprintf("[%s] %s", priority, line)
+			}
+			if len(meta) > 0 {
+				line = fmt.Sprintf("%s (%s)", line, strings.Join(meta, ", "))
+			}
+			results = append(results, line)
 		}
 	}
 	return results
@@ -796,12 +1057,17 @@ func buildMarkdownExport(rec *models.Recording, summary *models.Summary, chapter
 	sb.WriteString(fmt.Sprintf("- **Tanggal:** %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
 	sb.WriteString(fmt.Sprintf("- **Durasi:** %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
 	sb.WriteString(fmt.Sprintf("- **Status:** %s\n", rec.Status))
-	if summary != nil && summary.Version > 0 {
-		templateLabel := summary.TemplateCategory
-		if templateLabel == "" {
-			templateLabel = "General"
+	if summary != nil {
+		if summary.CustomAngle != nil && strings.TrimSpace(*summary.CustomAngle) != "" {
+			sb.WriteString(fmt.Sprintf("- **Sudut Pandang Khusus:** %s\n", strings.TrimSpace(*summary.CustomAngle)))
 		}
-		sb.WriteString(fmt.Sprintf("- **Versi Ringkasan:** Versi %d (%s)\n", summary.Version, templateLabel))
+		if summary.Version > 0 {
+			templateLabel := summary.TemplateCategory
+			if templateLabel == "" {
+				templateLabel = "General"
+			}
+			sb.WriteString(fmt.Sprintf("- **Versi Ringkasan:** Versi %d (%s)\n", summary.Version, templateLabel))
+		}
 	}
 	sb.WriteString("\n")
 
@@ -917,12 +1183,17 @@ func buildTextExport(rec *models.Recording, summary *models.Summary, chapters []
 	sb.WriteString(fmt.Sprintf("Tanggal:  %s\n", rec.CreatedAt.Format("2006-01-02 15:04:05 MST")))
 	sb.WriteString(fmt.Sprintf("Durasi:   %s\n", timeutil.FormatTimestamp(rec.DurationSeconds)))
 	sb.WriteString(fmt.Sprintf("Status:   %s\n", rec.Status))
-	if summary != nil && summary.Version > 0 {
-		templateLabel := summary.TemplateCategory
-		if templateLabel == "" {
-			templateLabel = "General"
+	if summary != nil {
+		if summary.CustomAngle != nil && strings.TrimSpace(*summary.CustomAngle) != "" {
+			sb.WriteString(fmt.Sprintf("Sudut Pandang Khusus: %s\n", strings.TrimSpace(*summary.CustomAngle)))
 		}
-		sb.WriteString(fmt.Sprintf("Versi:    Versi %d (%s)\n", summary.Version, templateLabel))
+		if summary.Version > 0 {
+			templateLabel := summary.TemplateCategory
+			if templateLabel == "" {
+				templateLabel = "General"
+			}
+			sb.WriteString(fmt.Sprintf("Versi:    Versi %d (%s)\n", summary.Version, templateLabel))
+		}
 	}
 	sb.WriteString("\n")
 
@@ -1035,9 +1306,18 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 	formatted := formatSummaryContent(summary)
 	summaryVersion := 0
 	templateCategory := ""
+	customAngle := ""
+	var structuredMap map[string]interface{}
 	if summary != nil {
 		summaryVersion = summary.Version
 		templateCategory = summary.TemplateCategory
+		if summary.CustomAngle != nil {
+			customAngle = strings.TrimSpace(*summary.CustomAngle)
+		}
+		data, _ := parseSummaryData(summary)
+		if len(data) > 0 {
+			structuredMap = data
+		}
 	}
 
 	payload := dtos.JSONExportPayload{
@@ -1047,9 +1327,12 @@ func buildJSONExport(rec *models.Recording, summary *models.Summary, chapters []
 		Status:           rec.Status,
 		CreatedAt:        rec.CreatedAt,
 		ExecutiveSummary: formatted.Overview,
+		CustomAngle:      customAngle,
 		SummaryVersion:   summaryVersion,
 		TemplateCategory: templateCategory,
+		Sections:         formatted.Sections,
 		ActionItems:      formatted.ActionItems,
+		StructuredData:   structuredMap,
 		Analytics:        computeExportAnalytics(segments),
 	}
 

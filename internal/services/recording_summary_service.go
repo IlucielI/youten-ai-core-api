@@ -379,8 +379,9 @@ func (s *Service) generateStructuredSummary(
 		}
 		log.Printf("[SUMMARY WARN] recording %s: summarization attempt %d failed: %v", recordingID.String(), attempt, lastErr)
 		if isPromptTooLongError(lastErr) {
-			shrunkTarget := len(effectiveTranscript) * 60 / 100
-			if shrunkTarget < 1000 && len(effectiveTranscript) >= 1000 {
+			transcriptRunes := utf8.RuneCountInString(effectiveTranscript)
+			shrunkTarget := transcriptRunes * 60 / 100
+			if shrunkTarget < 1000 && transcriptRunes >= 1000 {
 				shrunkTarget = 1000
 			}
 			effectiveTranscript = deterministicCondenseChunk(effectiveTranscript, shrunkTarget)
@@ -543,6 +544,7 @@ func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []strin
 	lines := strings.Split(transcriptBody, "\n")
 	var chunks []string
 	var current strings.Builder
+	currentRunes := 0
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -554,6 +556,7 @@ func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []strin
 			if current.Len() > 0 {
 				chunks = append(chunks, strings.TrimSpace(current.String()))
 				current.Reset()
+				currentRunes = 0
 			}
 			runes := []rune(trimmed)
 			chunks = append(chunks, string(runes[:maxChunkChars]))
@@ -563,12 +566,15 @@ func splitTranscriptIntoChunks(transcriptBody string, maxChunkChars int) []strin
 			continue
 		}
 
-		if current.Len() > 0 && current.Len()+len(trimmed)+1 > maxChunkChars {
+		trimmedRunes := utf8.RuneCountInString(trimmed)
+		if currentRunes > 0 && currentRunes+trimmedRunes+1 > maxChunkChars {
 			chunks = append(chunks, strings.TrimSpace(current.String()))
 			current.Reset()
+			currentRunes = 0
 		}
 		current.WriteString(trimmed)
 		current.WriteByte('\n')
+		currentRunes += trimmedRunes + 1
 	}
 	if current.Len() > 0 {
 		chunks = append(chunks, strings.TrimSpace(current.String()))
@@ -610,9 +616,12 @@ func deterministicCondenseChunk(text string, maxChars int) string {
 	if targetLines < 3 {
 		targetLines = 3
 	}
-	step := len(lines) / targetLines
-	if step < 1 {
-		step = 1
+	step := 1
+	if len(lines) > targetLines {
+		step = (len(lines) - 1) / (targetLines - 1)
+		if step < 1 {
+			step = 1
+		}
 	}
 
 	for i := 0; i < len(lines); i += step {

@@ -155,3 +155,38 @@ func TestControllers_DeleteWorkspaceChatSession(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_StreamWorkspaceChat_Validation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("empty body triggers bad request", func(t *testing.T) {
+		ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/stream", bytes.NewReader([]byte("{}")))
+		c.Request.Header.Set("Content-Type", "application/json")
+
+		ctrls.StreamWorkspaceChat(c)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("invalid json triggers bad request", func(t *testing.T) {
+		ctrls, _, _, cleanup := setupRecordingTestControllers(t)
+		defer cleanup()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/stream", bytes.NewReader([]byte("not-json")))
+		c.Request.Header.Set("Content-Type", "application/json")
+
+		ctrls.StreamWorkspaceChat(c)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+}
+

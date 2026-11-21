@@ -1,5 +1,5 @@
-ARG BUILDER_BASE=code-base-golang-api-builder-base:latest
-ARG RUNTIME_BASE=code-base-golang-api-runtime-base:latest
+ARG BUILDER_BASE=golang:1.26-alpine
+ARG RUNTIME_BASE=nbsbayu/youten-ai-core-api-runtime-base:latest
 
 FROM --platform=$BUILDPLATFORM ${BUILDER_BASE} AS builder
 
@@ -7,6 +7,9 @@ ARG TARGETOS=linux
 ARG TARGETARCH
 
 WORKDIR /src
+
+COPY go.mod go.sum* ./
+RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /out/api ./cmd/api

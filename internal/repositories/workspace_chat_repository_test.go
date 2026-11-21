@@ -156,7 +156,7 @@ func TestRepositories_SearchWorkspaceTranscriptChunksByFolderRecursive(t *testin
 	embedding := []float32{0.1, 0.2, 0.3}
 
 	mock.ExpectQuery(`WITH RECURSIVE folder_tree AS`).
-		WithArgs(folderID, wsID, models.Vector(embedding), wsID, models.Vector(embedding), 0.45, models.Vector(embedding), 5).
+		WithArgs(folderID, wsID, wsID, models.Vector(embedding), wsID, models.Vector(embedding), 0.45, models.Vector(embedding), 5).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "folder_id", "folder_name", "chunk_index", "content", "start_time", "end_time", "distance"}).
 			AddRow(chunkID, recID, "Sprint Review", folderID, "Dev Folder", 0, "Discussion on Q4 roadmap", 0.0, 10.0, 0.25))
 
@@ -169,5 +169,27 @@ func TestRepositories_SearchWorkspaceTranscriptChunksByFolderRecursive(t *testin
 	}
 	if results[0].RecordingTitle != "Sprint Review" {
 		t.Errorf("expected recording title 'Sprint Review', got %s", results[0].RecordingTitle)
+	}
+}
+
+func TestRepositories_CountWorkspaceChatMessagesBySessions(t *testing.T) {
+	repo, mock, cleanup := setupMockChatDB(t)
+	defer cleanup()
+
+	sessID1 := uuid.New()
+	sessID2 := uuid.New()
+
+	mock.ExpectQuery(`SELECT session_id, count\(\*\) as count FROM "workspace_chat_messages"`).
+		WithArgs(sessID1, sessID2).
+		WillReturnRows(sqlmock.NewRows([]string{"session_id", "count"}).
+			AddRow(sessID1, 5).
+			AddRow(sessID2, 3))
+
+	res, err := repo.CountWorkspaceChatMessagesBySessions(context.Background(), []uuid.UUID{sessID1, sessID2})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res[sessID1] != 5 || res[sessID2] != 3 {
+		t.Errorf("unexpected counts: %+v", res)
 	}
 }

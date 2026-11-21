@@ -258,7 +258,7 @@ func (r *Repositories) SearchWorkspaceTranscriptChunksByFolderRecursive(
 			UNION ALL
 			SELECT f.id FROM folders f
 			INNER JOIN folder_tree ft ON f.parent_id = ft.id
-			WHERE f.deleted_at IS NULL
+			WHERE f.deleted_at IS NULL AND f.workspace_id = ?
 		)
 		SELECT 
 			tc.id,
@@ -278,7 +278,7 @@ func (r *Repositories) SearchWorkspaceTranscriptChunksByFolderRecursive(
 		  AND r.folder_id IN (SELECT id FROM folder_tree)
 		  AND r.deleted_at IS NULL
 	`
-	args := []interface{}{folderID, workspaceID, vec, workspaceID}
+	args := []interface{}{folderID, workspaceID, workspaceID, vec, workspaceID}
 
 	if maxDistance > 0 {
 		rawQuery += " AND (tc.embedding <=> ?) <= ?"

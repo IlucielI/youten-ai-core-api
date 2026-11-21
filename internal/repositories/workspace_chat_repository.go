@@ -95,3 +95,29 @@ func (r *Repositories) CountWorkspaceChatMessagesBySession(ctx context.Context, 
 		Count(&count).Error
 	return count, err
 }
+
+// CountWorkspaceChatMessagesBySessions batch counts messages for multiple sessions in a single query.
+func (r *Repositories) CountWorkspaceChatMessagesBySessions(ctx context.Context, sessionIDs []uuid.UUID) (map[uuid.UUID]int64, error) {
+	result := make(map[uuid.UUID]int64)
+	if len(sessionIDs) == 0 {
+		return result, nil
+	}
+	type countRow struct {
+		SessionID uuid.UUID `gorm:"column:session_id"`
+		Count     int64     `gorm:"column:count"`
+	}
+	var rows []countRow
+	err := r.db.WithContext(ctx).
+		Model(&models.WorkspaceChatMessage{}).
+		Select("session_id, count(*) as count").
+		Where("session_id IN ?", sessionIDs).
+		Group("session_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.SessionID] = row.Count
+	}
+	return result, nil
+}

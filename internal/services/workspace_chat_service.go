@@ -141,9 +141,14 @@ func (s *Service) CreateWorkspaceChatSession(ctx context.Context, workspaceID uu
 		title = "New Chat"
 	}
 
+	var targetFolderID *uuid.UUID
+	if req.FolderID != nil && *req.FolderID != uuid.Nil {
+		targetFolderID = req.FolderID
+	}
+
 	session := &models.WorkspaceChatSession{
 		WorkspaceID: workspaceID,
-		FolderID:    req.FolderID,
+		FolderID:    targetFolderID,
 		UserID:      userID,
 		Title:       title,
 	}
@@ -181,15 +186,20 @@ func (s *Service) ListWorkspaceChatSessions(ctx context.Context, workspaceID uui
 		return nil, constants.ErrInternalServerError.Wrap(err)
 	}
 
+	sessionIDs := make([]uuid.UUID, len(sessions))
+	for i, sess := range sessions {
+		sessionIDs[i] = sess.ID
+	}
+	counts, err := s.repo.CountWorkspaceChatMessagesBySessions(ctx, sessionIDs)
+	if err != nil {
+		return nil, constants.ErrInternalServerError.Wrap(err)
+	}
+
 	res := make([]dtos.WorkspaceChatSessionResponse, 0, len(sessions))
 	for _, sess := range sessions {
 		fName := ""
 		if sess.Folder != nil {
 			fName = sess.Folder.Name
-		}
-		cnt, err := s.repo.CountWorkspaceChatMessagesBySession(ctx, sess.ID)
-		if err != nil {
-			return nil, constants.ErrInternalServerError.Wrap(err)
 		}
 		res = append(res, dtos.WorkspaceChatSessionResponse{
 			ID:           sess.ID,
@@ -200,7 +210,7 @@ func (s *Service) ListWorkspaceChatSessions(ctx context.Context, workspaceID uui
 			Title:        sess.Title,
 			CreatedAt:    sess.CreatedAt,
 			UpdatedAt:    sess.UpdatedAt,
-			MessageCount: int(cnt),
+			MessageCount: int(counts[sess.ID]),
 		})
 	}
 	return res, nil
@@ -298,15 +308,20 @@ func (s *Service) InitiateWorkspaceChatStream(
 	} else {
 		// Auto-provision session with title based on first query
 		title := strings.TrimSpace(req.Question)
-		if len(title) > 40 {
-			title = title[:40] + "..."
+		runes := []rune(title)
+		if len(runes) > 40 {
+			title = string(runes[:40]) + "..."
 		}
 		if title == "" {
 			title = "New Chat"
 		}
+		var targetFolderID *uuid.UUID
+		if req.FolderID != nil && *req.FolderID != uuid.Nil {
+			targetFolderID = req.FolderID
+		}
 		session = &models.WorkspaceChatSession{
 			WorkspaceID: workspaceID,
-			FolderID:    req.FolderID,
+			FolderID:    targetFolderID,
 			UserID:      userID,
 			Title:       title,
 		}
@@ -427,6 +442,11 @@ func (s *Service) SaveAssistantWorkspaceChatMessage(
 	citations []dtos.MeetingSourceCitation,
 	retrievedChunkIDs []uuid.UUID,
 ) (*models.WorkspaceChatMessage, error) {
+	sess, err := s.repo.FindWorkspaceChatSessionByID(ctx, sessionID)
+	if err != nil || sess.WorkspaceID != workspaceID {
+		return nil, constants.ErrSessionNotFound
+	}
+
 	citationsBytes, _ := json.Marshal(citations)
 	chunksBytes, _ := json.Marshal(retrievedChunkIDs)
 

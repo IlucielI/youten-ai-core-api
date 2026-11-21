@@ -63,9 +63,9 @@ func TestControllers_ListWorkspaceChatSessions(t *testing.T) {
 				AddRow(sessID, wsID, userID, "Planning Chat", time.Now()))
 
 		// Count messages
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "workspace_chat_messages" WHERE session_id = $1 AND "workspace_chat_messages"."deleted_at" IS NULL`)).
+		mock.ExpectQuery(`SELECT session_id, count\(\*\) as count FROM "workspace_chat_messages"`).
 			WithArgs(sessID).
-			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+			WillReturnRows(sqlmock.NewRows([]string{"session_id", "count"}).AddRow(sessID, 2))
 
 		ctrls.ListWorkspaceChatSessions(c)
 		if w.Code != http.StatusOK {

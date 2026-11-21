@@ -711,6 +711,7 @@ func TestRouter_OpenAPISpecCompleteness(t *testing.T) {
 		openApiPath = strings.ReplaceAll(openApiPath, ":userId", "{userId}")
 		openApiPath = strings.ReplaceAll(openApiPath, ":folderId", "{folderId}")
 		openApiPath = strings.ReplaceAll(openApiPath, ":inviteId", "{inviteId}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":sessionId", "{sessionId}")
 
 		methods, exists := spec.Paths[openApiPath]
 		if !exists {
@@ -738,6 +739,7 @@ func TestRouter_OpenAPISpecCompleteness(t *testing.T) {
 		openApiPath = strings.ReplaceAll(openApiPath, ":userId", "{userId}")
 		openApiPath = strings.ReplaceAll(openApiPath, ":folderId", "{folderId}")
 		openApiPath = strings.ReplaceAll(openApiPath, ":inviteId", "{inviteId}")
+		openApiPath = strings.ReplaceAll(openApiPath, ":sessionId", "{sessionId}")
 
 		if registeredRoutes[openApiPath] == nil {
 			registeredRoutes[openApiPath] = make(map[string]bool)

@@ -1133,10 +1133,10 @@ func TestRepositories_SearchWorkspaceTranscriptChunksByWorkspace(t *testing.T) {
 	recID := uuid.New()
 	embedding := []float32{0.1, 0.2, 0.3}
 
-	mock.ExpectQuery(`SELECT tc\.id, tc\.recording_id, r\.title as recording_title, tc\.chunk_index, tc\.content, tc\.start_time, tc\.end_time, \(tc\.embedding <=> \$1\) as distance FROM transcript_chunks tc JOIN recordings r ON tc\.recording_id = r\.id WHERE \(r\.workspace_id = \$2 AND r\.deleted_at IS NULL\) AND \(tc\.embedding <=> \$3\) <= \$4 ORDER BY tc\.embedding <=> \$5 LIMIT \$6`).
+	mock.ExpectQuery(`SELECT tc\.id, tc\.recording_id, r\.title as recording_title, r\.folder_id, f\.name as folder_name, tc\.chunk_index, tc\.content, tc\.start_time, tc\.end_time, \(tc\.embedding <=> \$1\) as distance FROM transcript_chunks tc JOIN recordings r ON tc\.recording_id = r\.id LEFT JOIN folders f ON r\.folder_id = f\.id WHERE \(r\.workspace_id = \$2 AND r\.deleted_at IS NULL\) AND \(tc\.embedding <=> \$3\) <= \$4 ORDER BY tc\.embedding <=> \$5 LIMIT \$6`).
 		WithArgs(models.Vector(embedding), wsID, models.Vector(embedding), 0.45, models.Vector(embedding), 5).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}).
-			AddRow(chunkID, recID, "Workspace Meeting", 0, "Discussion on Q4 roadmap", 0.0, 10.0, 0.25))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "folder_id", "folder_name", "chunk_index", "content", "start_time", "end_time", "distance"}).
+			AddRow(chunkID, recID, "Workspace Meeting", nil, nil, 0, "Discussion on Q4 roadmap", 0.0, 10.0, 0.25))
 
 	results, err := repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, wsID, embedding, 5, 0.45)
 	if err != nil {

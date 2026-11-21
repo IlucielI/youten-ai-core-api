@@ -39,6 +39,8 @@ type Recording struct {
 	BaseModel
 	WorkspaceID      *uuid.UUID `gorm:"type:uuid;index:idx_recordings_workspace_id" json:"workspace_id,omitempty"`
 	Workspace        *Workspace `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:CASCADE" json:"workspace,omitempty"`
+	FolderID         *uuid.UUID `gorm:"type:uuid;index:idx_recordings_folder_id" json:"folder_id,omitempty"`
+	Folder           *Folder    `gorm:"foreignKey:FolderID;constraint:OnDelete:SET NULL" json:"folder,omitempty"`
 	UserID           *uuid.UUID `gorm:"type:uuid;index:idx_recordings_user_id" json:"user_id,omitempty"`
 	User             *User      `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"user,omitempty"`
 	OwnershipToken   string     `gorm:"type:varchar(255);not null;index:idx_recordings_ownership_token" json:"-"`

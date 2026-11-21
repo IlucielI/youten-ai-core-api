@@ -115,6 +115,12 @@ var (
 	// ErrInvalidWorkspaceRole is returned when an invalid role is provided for a workspace member.
 	ErrInvalidWorkspaceRole = apperror.New(http.StatusBadRequest, "ERR_INVALID_WORKSPACE_ROLE", "invalid workspace role specified")
 
+	// ErrFolderNotFound is returned when a requested folder does not exist or has been deleted.
+	ErrFolderNotFound = apperror.New(http.StatusNotFound, "ERR_FOLDER_NOT_FOUND", "folder not found")
+
+	// ErrCircularFolderReference is returned when moving a folder into its own descendant.
+	ErrCircularFolderReference = apperror.New(http.StatusBadRequest, "ERR_CIRCULAR_FOLDER_REFERENCE", "cannot move folder into itself or its child")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

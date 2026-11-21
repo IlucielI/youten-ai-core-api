@@ -68,9 +68,21 @@ func (s *Service) GetRecordingDetail(ctx context.Context, id uuid.UUID, ownershi
 		str := rec.UserID.String()
 		userIDStr = &str
 	}
+	var wsIDStr *string
+	if rec.WorkspaceID != nil {
+		str := rec.WorkspaceID.String()
+		wsIDStr = &str
+	}
+	var folderIDStr *string
+	if rec.FolderID != nil {
+		str := rec.FolderID.String()
+		folderIDStr = &str
+	}
 
 	return &dtos.RecordingDetailResponse{
 		ID:               rec.ID.String(),
+		WorkspaceID:      wsIDStr,
+		FolderID:         folderIDStr,
 		UserID:           userIDStr,
 		Title:            rec.Title,
 		OriginalFilename: rec.OriginalFilename,
@@ -120,6 +132,23 @@ func (s *Service) ListRecordings(ctx context.Context, query dtos.RecordingFilter
 		Offset:    offset,
 	}
 
+	if query.WorkspaceID != nil && *query.WorkspaceID != "" {
+		if parsedWS, err := uuid.Parse(*query.WorkspaceID); err == nil && parsedWS != uuid.Nil {
+			repoFilter.WorkspaceID = &parsedWS
+		}
+	} else if activeWS, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWS != uuid.Nil {
+		repoFilter.WorkspaceID = &activeWS
+	}
+
+	if query.FolderID != nil && *query.FolderID != "" {
+		fVal := strings.ToLower(strings.TrimSpace(*query.FolderID))
+		if fVal == "root" || fVal == "unassigned" {
+			repoFilter.UnassignedFolder = true
+		} else if parsedFolder, err := uuid.Parse(*query.FolderID); err == nil && parsedFolder != uuid.Nil {
+			repoFilter.FolderID = &parsedFolder
+		}
+	}
+
 	recordings, total, err := s.repo.ListRecordingsWithFilter(ctx, userID, repoFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list recordings: %w", err)
@@ -127,8 +156,20 @@ func (s *Service) ListRecordings(ctx context.Context, query dtos.RecordingFilter
 
 	items := make([]dtos.RecordingListItem, len(recordings))
 	for i, rec := range recordings {
+		var wsIDStr, folderIDStr *string
+		if rec.WorkspaceID != nil {
+			s := rec.WorkspaceID.String()
+			wsIDStr = &s
+		}
+		if rec.FolderID != nil {
+			s := rec.FolderID.String()
+			folderIDStr = &s
+		}
+
 		items[i] = dtos.RecordingListItem{
 			ID:               rec.ID.String(),
+			WorkspaceID:      wsIDStr,
+			FolderID:         folderIDStr,
 			Title:            rec.Title,
 			OriginalFilename: rec.OriginalFilename,
 			FileSizeBytes:    rec.FileSizeBytes,

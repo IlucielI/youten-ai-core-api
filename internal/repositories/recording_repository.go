@@ -149,14 +149,16 @@ func (r *Repositories) DeleteRecording(ctx context.Context, id uuid.UUID) error 
 
 // RecordingFilter specifies filtering and pagination criteria for user recordings.
 type RecordingFilter struct {
-	Search      string
-	Status      string
-	Template    string
-	WorkspaceID *uuid.UUID
-	SortBy      string
-	SortOrder   string
-	Limit       int
-	Offset      int
+	Search           string
+	Status           string
+	Template         string
+	WorkspaceID      *uuid.UUID
+	FolderID         *uuid.UUID
+	UnassignedFolder bool
+	SortBy           string
+	SortOrder        string
+	Limit            int
+	Offset           int
 }
 
 func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
@@ -171,6 +173,11 @@ func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
 	}
 	if f.WorkspaceID != nil && *f.WorkspaceID != uuid.Nil {
 		db = db.Where("workspace_id = ?", *f.WorkspaceID)
+	}
+	if f.FolderID != nil && *f.FolderID != uuid.Nil {
+		db = db.Where("folder_id = ?", *f.FolderID)
+	} else if f.UnassignedFolder {
+		db = db.Where("folder_id IS NULL")
 	}
 	return db
 }
@@ -230,6 +237,21 @@ func (r *Repositories) ListRecordingsByUserID(ctx context.Context, userID uuid.U
 		Limit:  limit,
 		Offset: offset,
 	})
+}
+
+// MoveRecording updates the folder assignment of a recording.
+func (r *Repositories) MoveRecording(ctx context.Context, recordingID uuid.UUID, folderID *uuid.UUID) error {
+	updates := map[string]interface{}{
+		"folder_id": folderID,
+	}
+	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", recordingID).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // UpdateRecordingAudioURL sets the audio_url, duration_seconds, and optional file_size_bytes of a recording.

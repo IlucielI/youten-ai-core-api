@@ -198,6 +198,36 @@ routes:
     handler: RemoveWorkspaceMember
     auth: true
 
+  # List all folders in a workspace.
+  - method: GET
+    path: /v1/workspaces/:id/folders
+    handler: ListWorkspaceFolders
+    auth: true
+
+  # Create a folder in a workspace.
+  - method: POST
+    path: /v1/workspaces/:id/folders
+    handler: CreateFolder
+    auth: true
+
+  # Update folder metadata or parent folder.
+  - method: PATCH
+    path: /v1/workspaces/:id/folders/:folderId
+    handler: UpdateFolder
+    auth: true
+
+  # Delete a folder in a workspace.
+  - method: DELETE
+    path: /v1/workspaces/:id/folders/:folderId
+    handler: DeleteFolder
+    auth: true
+
+  # Move a recording into a folder (or unassign).
+  - method: PATCH
+    path: /v1/recordings/:id/move
+    handler: MoveRecording
+    auth: true
+
   # Retrieve recording detail (owner via token or registered user).
   - method: GET
     path: /v1/recordings/:id

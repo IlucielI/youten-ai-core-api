@@ -877,6 +877,144 @@ paths:
         '200':
           description: Member removed
 
+  /v1/workspaces/{id}/folders:
+    get:
+      tags: [Workspaces]
+      summary: List Workspace Folders
+      description: Returns the hierarchical folder tree for the workspace.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Folder tree retrieved
+    post:
+      tags: [Workspaces]
+      summary: Create Folder
+      description: Create a new folder inside a workspace (or under a parent folder).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                parent_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Folder created
+
+  /v1/workspaces/{id}/folders/{folderId}:
+    patch:
+      tags: [Workspaces]
+      summary: Update Folder
+      description: Update folder name, color, or parent folder.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                parent_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Folder updated
+    delete:
+      tags: [Workspaces]
+      summary: Delete Folder
+      description: Delete a folder and its children from the workspace.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Folder deleted
+
+  /v1/recordings/{id}/move:
+    patch:
+      tags: [Recordings]
+      summary: Move Recording to Folder
+      description: Move a recording into a folder, or set folder_id to null to unassign.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '200':
+          description: Recording moved
+
   /v1/recordings:
     get:
       tags: [Recordings]

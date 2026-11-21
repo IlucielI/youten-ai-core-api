@@ -1253,6 +1253,10 @@ paths:
                   type: string
                   format: uuid
                   nullable: true
+                workspace_id:
+                  type: string
+                  format: uuid
+                  nullable: true
       responses:
         '200':
           description: Recording moved
@@ -1279,6 +1283,10 @@ paths:
               type: object
               properties:
                 folder_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                workspace_id:
                   type: string
                   format: uuid
                   nullable: true
@@ -1420,10 +1428,6 @@ paths:
       responses:
         '200':
           description: Server-sent events stream
-          content:
-            text/event-stream:
-              schema:
-                type: string
           content:
             text/event-stream:
               schema:

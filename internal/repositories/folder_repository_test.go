@@ -212,3 +212,23 @@ func TestRepositories_MoveRecording(t *testing.T) {
 		t.Fatalf("unexpected error moving recording: %v", err)
 	}
 }
+
+func TestRepositories_MoveRecordingToWorkspace(t *testing.T) {
+	repo, mock, cleanup := setupMockFolderDB(t)
+	defer cleanup()
+
+	recID := uuid.New()
+	targetWsID := uuid.New()
+	folderID := uuid.New()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "folder_id"=$1,"is_share_enabled"=$2,"workspace_id"=$3,"updated_at"=$4 WHERE id = $5 AND "recordings"."deleted_at" IS NULL`)).
+		WithArgs(folderID, false, targetWsID, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := repo.MoveRecordingToWorkspace(context.Background(), recID, targetWsID, &folderID)
+	if err != nil {
+		t.Fatalf("unexpected error moving recording to workspace: %v", err)
+	}
+}

@@ -440,9 +440,11 @@ type RecordingAccessPolicy struct {
 	AllowShareOpen bool
 }
 
-// MoveRecordingRequest represents the payload to move a recording into a folder (or root if nil).
+// MoveRecordingRequest represents the payload to move a recording into a folder (or root if nil)
+// and optionally transfer it to another workspace.
 type MoveRecordingRequest struct {
-	FolderID *uuid.UUID `json:"folder_id"`
+	FolderID    *uuid.UUID `json:"folder_id"`
+	WorkspaceID *uuid.UUID `json:"workspace_id,omitempty"`
 }
 
 

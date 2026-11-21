@@ -206,7 +206,8 @@ func (s *Service) DeleteFolder(ctx context.Context, workspaceID, folderID uuid.U
 	return s.repo.DeleteFolder(ctx, folderID)
 }
 
-// MoveRecording reassigns a recording to a different folder within its workspace.
+// MoveRecording reassigns a recording to a different folder within its workspace,
+// or transfers it to a different workspace if requested.
 func (s *Service) MoveRecording(ctx context.Context, recordingID uuid.UUID, req dtos.MoveRecordingRequest) error {
 	userID, ok := ctxmeta.GetAuthUserID(ctx)
 	if !ok {
@@ -219,6 +220,11 @@ func (s *Service) MoveRecording(ctx context.Context, recordingID uuid.UUID, req 
 			return constants.ErrRecordingNotFound
 		}
 		return err
+	}
+
+	isCrossWorkspace := req.WorkspaceID != nil && (rec.WorkspaceID == nil || *rec.WorkspaceID != *req.WorkspaceID)
+	if isCrossWorkspace {
+		return s.moveRecordingCrossWorkspace(ctx, rec, *req.WorkspaceID, req.FolderID, userID)
 	}
 
 	// Validate authorization: user must own recording or have edit rights in workspace
@@ -253,6 +259,61 @@ func (s *Service) MoveRecording(ctx context.Context, recordingID uuid.UUID, req 
 	}
 
 	return s.repo.MoveRecording(ctx, recordingID, req.FolderID)
+}
+
+// moveRecordingCrossWorkspace handles transferring a recording to a different workspace with strict guards.
+func (s *Service) moveRecordingCrossWorkspace(ctx context.Context, rec *models.Recording, targetWorkspaceID uuid.UUID, targetFolderID *uuid.UUID, userID uuid.UUID) error {
+	// Guard 1: Only final processing states can be transferred across workspaces
+	if rec.Status != models.RecordingStatusCompleted &&
+		rec.Status != models.RecordingStatusCompletedAudioOnly &&
+		rec.Status != models.RecordingStatusFailed {
+		return constants.ErrRecordingProcessing
+	}
+
+	// Guard 2: Origin authorization - caller must be original creator OR source workspace owner
+	isCreator := rec.UserID != nil && *rec.UserID == userID
+	isSourceOwner := false
+	if !isCreator && rec.WorkspaceID != nil {
+		sourceMember, err := s.repo.FindWorkspaceMember(ctx, *rec.WorkspaceID, userID)
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else if sourceMember != nil {
+			isSourceOwner = sourceMember.Role == constants.WorkspaceRoleOwner
+		}
+	}
+	if !isCreator && !isSourceOwner {
+		return constants.ErrForbidden
+	}
+
+	// Guard 3: Destination authorization - caller must be an active member of target workspace
+	targetMember, err := s.repo.FindWorkspaceMember(ctx, targetWorkspaceID, userID)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return constants.ErrForbidden
+	}
+	if targetMember == nil {
+		return constants.ErrForbidden
+	}
+
+	// Guard 4: If target folder is specified, verify it exists and belongs to target workspace
+	if targetFolderID != nil && *targetFolderID != uuid.Nil {
+		folder, err := s.repo.FindFolderByID(ctx, *targetFolderID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return constants.ErrFolderNotFound
+			}
+			return err
+		}
+		if folder.WorkspaceID != targetWorkspaceID {
+			return constants.ErrForbidden
+		}
+	}
+
+	return s.repo.MoveRecordingToWorkspace(ctx, rec.ID, targetWorkspaceID, targetFolderID)
 }
 
 // buildFolderTree transforms a flat list of folders into a nested tree.

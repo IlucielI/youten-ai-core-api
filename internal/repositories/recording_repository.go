@@ -254,6 +254,23 @@ func (r *Repositories) MoveRecording(ctx context.Context, recordingID uuid.UUID,
 	return nil
 }
 
+// MoveRecordingToWorkspace transfers a recording to a target workspace, reassigns its folder, and resets public sharing.
+func (r *Repositories) MoveRecordingToWorkspace(ctx context.Context, recordingID uuid.UUID, workspaceID uuid.UUID, folderID *uuid.UUID) error {
+	updates := map[string]interface{}{
+		"workspace_id":     workspaceID,
+		"folder_id":        folderID,
+		"is_share_enabled": false,
+	}
+	res := r.db.WithContext(ctx).Model(&models.Recording{}).Where("id = ?", recordingID).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // UpdateRecordingAudioURL sets the audio_url, duration_seconds, and optional file_size_bytes of a recording.
 func (r *Repositories) UpdateRecordingAudioURL(ctx context.Context, id uuid.UUID, audioURL string, durationSeconds float64, fileSizeBytes ...int64) error {
 	updates := map[string]interface{}{

@@ -297,10 +297,18 @@ func TestControllers_ListInlineComments_Success_GuestWithHeader(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
 			AddRow(commID, recID, 14.0, "Alice", "Top question", nil, time.Now(), time.Now()))
 
+	mock.ExpectQuery(`SELECT \* FROM "comment_mentions" WHERE "comment_mentions"\."comment_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id"}))
+
 	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
 		WithArgs(commID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
 			AddRow(replyID, recID, 14.0, "Bob", "Reply here", commID, time.Now(), time.Now()))
+
+	mock.ExpectQuery(`SELECT \* FROM "comment_mentions" WHERE "comment_mentions"\."comment_id" = \$1`).
+		WithArgs(replyID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id"}))
 
 	ctrls.ListInlineComments(c)
 

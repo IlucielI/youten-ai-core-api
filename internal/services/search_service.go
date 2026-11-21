@@ -10,6 +10,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/repositories"
 )
 
 // SearchWorkspaceSemantic performs cross-meeting semantic search across all recordings owned by the authenticated user.
@@ -45,9 +46,21 @@ func (s *Service) SearchWorkspaceSemantic(ctx context.Context, query dtos.Semant
 		maxDistance = math.Round((1.0-threshold)*10000) / 10000
 	}
 
-	matches, err := s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], query.Limit, maxDistance)
-	if err != nil {
-		return nil, constants.ErrInternalServerError.Wrap(err)
+	var (
+		matches []repositories.WorkspaceChunkMatch
+		mErr    error
+	)
+	if activeWsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWsID != uuid.Nil {
+		if _, err := s.repo.FindWorkspaceMember(ctx, activeWsID, authUser.UserID); err == nil {
+			matches, mErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, activeWsID, embeddings[0], query.Limit, maxDistance)
+		} else {
+			matches, mErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], query.Limit, maxDistance)
+		}
+	} else {
+		matches, mErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], query.Limit, maxDistance)
+	}
+	if mErr != nil {
+		return nil, constants.ErrInternalServerError.Wrap(mErr)
 	}
 
 	results := make([]dtos.SearchResultItem, 0, len(matches))

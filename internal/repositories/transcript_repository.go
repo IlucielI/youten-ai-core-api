@@ -199,6 +199,40 @@ func (r *Repositories) SearchWorkspaceTranscriptChunks(ctx context.Context, user
 	return results, nil
 }
 
+// SearchWorkspaceTranscriptChunksByWorkspace performs cross-meeting semantic vector search scoped to a workspace.
+func (r *Repositories) SearchWorkspaceTranscriptChunksByWorkspace(ctx context.Context, workspaceID uuid.UUID, queryEmbedding []float32, topK int, maxDistance float64) ([]WorkspaceChunkMatch, error) {
+	if topK <= 0 {
+		topK = 10
+	}
+	vec := models.Vector(queryEmbedding)
+	var results []WorkspaceChunkMatch
+
+	query := r.db.WithContext(ctx).
+		Table("transcript_chunks tc").
+		Select("tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> ?) as distance", vec).
+		Joins("JOIN recordings r ON tc.recording_id = r.id").
+		Where("r.workspace_id = ? AND r.deleted_at IS NULL", workspaceID)
+
+	if maxDistance > 0 {
+		query = query.Where("(tc.embedding <=> ?) <= ?", vec, maxDistance)
+	}
+
+	err := query.
+		Order(clause.OrderBy{
+			Expression: clause.Expr{
+				SQL:  "tc.embedding <=> ?",
+				Vars: []interface{}{vec},
+			},
+		}).
+		Limit(topK).
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // WorkspaceSpeakerStat represents aggregated speaker participation data returned from database queries.
 type WorkspaceSpeakerStat struct {
 	Name          string    `gorm:"column:name"`

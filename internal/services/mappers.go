@@ -122,5 +122,20 @@ func toCommentResponse(comment models.InlineComment) dtos.CommentResponse {
 			resp.Replies = append(resp.Replies, toCommentResponse(reply))
 		}
 	}
+	if len(comment.Mentions) > 0 {
+		resp.Mentions = make([]dtos.CommentMentionResponse, 0, len(comment.Mentions))
+		for _, m := range comment.Mentions {
+			var fullName, email string
+			if m.MentionedUser != nil {
+				fullName = m.MentionedUser.FullName
+				email = m.MentionedUser.Email
+			}
+			resp.Mentions = append(resp.Mentions, dtos.CommentMentionResponse{
+				UserID:   m.MentionedUserID,
+				FullName: fullName,
+				Email:    email,
+			})
+		}
+	}
 	return resp
 }

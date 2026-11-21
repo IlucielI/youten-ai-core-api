@@ -81,8 +81,74 @@ func (s *Service) CreateInlineComment(ctx context.Context, id uuid.UUID, ownersh
 		return nil, fmt.Errorf("failed to create inline comment: %w", err)
 	}
 
+	mentions := s.processCommentMentions(ctx, rec, comment.ID, req.MentionedUserIDs, comment.CommentText)
+	if len(mentions) > 0 {
+		comment.Mentions = mentions
+		s.dispatchCommentMentionNotifications(ctx, rec, authorName, comment.CommentText, mentions)
+	}
+
 	resp := toCommentResponse(comment)
 	return &resp, nil
+}
+
+func (s *Service) processCommentMentions(ctx context.Context, rec *models.Recording, commentID uuid.UUID, explicitUserIDs []uuid.UUID, commentText string) []models.CommentMention {
+	uniqueIDs := make(map[uuid.UUID]bool)
+	for _, uid := range explicitUserIDs {
+		if uid != uuid.Nil {
+			uniqueIDs[uid] = true
+		}
+	}
+
+	if len(uniqueIDs) == 0 {
+		return nil
+	}
+
+	var mentions []models.CommentMention
+	for uid := range uniqueIDs {
+		user, err := s.repo.FindUserByID(ctx, uid)
+		if err != nil || user == nil {
+			continue
+		}
+		mentions = append(mentions, models.CommentMention{
+			ID:              uuid.New(),
+			CommentID:       commentID,
+			MentionedUserID: uid,
+			MentionedUser:   user,
+		})
+	}
+
+	if len(mentions) > 0 {
+		_ = s.repo.CreateCommentMentions(ctx, mentions)
+	}
+	return mentions
+}
+
+func (s *Service) dispatchCommentMentionNotifications(ctx context.Context, rec *models.Recording, authorName, commentText string, mentions []models.CommentMention) {
+	if s.mailer == nil || len(mentions) == 0 {
+		return
+	}
+
+	recTitle := rec.Title
+	if recTitle == "" {
+		recTitle = "Recording"
+	}
+
+	for _, m := range mentions {
+		if m.MentionedUser == nil || m.MentionedUser.Email == "" {
+			continue
+		}
+		userEmail := m.MentionedUser.Email
+		userName := m.MentionedUser.FullName
+		msg := dtos.EmailMessage{
+			To:       []string{userEmail},
+			Subject:  fmt.Sprintf("%s mentioned you in a comment on %s", authorName, recTitle),
+			TextBody: fmt.Sprintf("Hi %s,\n\n%s mentioned you in a comment on %s:\n\"%s\"\n\nView recording: https://youten.bayuanugerah.my.id/recordings/%s", userName, authorName, recTitle, commentText, rec.ID),
+			HTMLBody: fmt.Sprintf("<p>Hi %s,</p><p><strong>%s</strong> mentioned you in a comment on <strong>%s</strong>:</p><blockquote>%s</blockquote><p><a href=\"https://youten.bayuanugerah.my.id/recordings/%s\">View recording</a></p>", userName, authorName, recTitle, commentText, rec.ID),
+		}
+		go func(m dtos.EmailMessage) {
+			_ = s.mailer.Send(context.Background(), m)
+		}(msg)
+	}
 }
 
 // ListInlineComments retrieves all top-level inline comments with nested replies for a recording.

@@ -358,29 +358,38 @@ type SummaryVersionResponse struct {
 
 // CreateCommentRequest represents the payload to create a timestamped inline comment or reply.
 type CreateCommentRequest struct {
-	TimestampSec   float64    `json:"timestamp_sec"`
-	SegmentID      *uuid.UUID `json:"segment_id,omitempty"`
-	SelectedText   *string    `json:"selected_text,omitempty"`
-	CommentText    string     `json:"comment_text"`
-	AuthorName     string     `json:"author_name"`
-	ParentID       *uuid.UUID `json:"parent_id,omitempty"`
-	OwnershipToken string     `json:"ownership_token,omitempty"`
+	TimestampSec     float64     `json:"timestamp_sec"`
+	SegmentID        *uuid.UUID  `json:"segment_id,omitempty"`
+	SelectedText     *string     `json:"selected_text,omitempty"`
+	CommentText      string      `json:"comment_text"`
+	AuthorName       string      `json:"author_name"`
+	ParentID         *uuid.UUID  `json:"parent_id,omitempty"`
+	MentionedUserIDs []uuid.UUID `json:"mentioned_user_ids,omitempty"`
+	OwnershipToken   string      `json:"ownership_token,omitempty"`
+}
+
+// CommentMentionResponse represents a user mentioned in a comment.
+type CommentMentionResponse struct {
+	UserID   uuid.UUID `json:"user_id"`
+	FullName string    `json:"full_name,omitempty"`
+	Email    string    `json:"email,omitempty"`
 }
 
 // CommentResponse represents the comment returned after creation or listing.
 type CommentResponse struct {
-	ID           string            `json:"id"`
-	RecordingID  string            `json:"recording_id,omitempty"`
-	UserID       *string           `json:"user_id,omitempty"`
-	SegmentID    *string           `json:"segment_id,omitempty"`
-	TimestampSec float64           `json:"timestamp_sec"`
-	SelectedText *string           `json:"selected_text,omitempty"`
-	AuthorName   string            `json:"author_name"`
-	CommentText  string            `json:"comment_text"`
-	ParentID     *string           `json:"parent_id,omitempty"`
-	Replies      []CommentResponse `json:"replies,omitempty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at,omitempty"`
+	ID           string                   `json:"id"`
+	RecordingID  string                   `json:"recording_id,omitempty"`
+	UserID       *string                  `json:"user_id,omitempty"`
+	SegmentID    *string                  `json:"segment_id,omitempty"`
+	TimestampSec float64                  `json:"timestamp_sec"`
+	SelectedText *string                  `json:"selected_text,omitempty"`
+	AuthorName   string                   `json:"author_name"`
+	CommentText  string                   `json:"comment_text"`
+	ParentID     *string                  `json:"parent_id,omitempty"`
+	Replies      []CommentResponse        `json:"replies,omitempty"`
+	Mentions     []CommentMentionResponse `json:"mentions,omitempty"`
+	CreatedAt    time.Time                `json:"created_at"`
+	UpdatedAt    time.Time                `json:"updated_at,omitempty"`
 }
 
 // RecordingChatStreamResult carries the stream channel, session ID, and retrieved context chunk IDs.

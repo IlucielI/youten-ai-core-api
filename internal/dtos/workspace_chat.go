@@ -47,7 +47,14 @@ type StreamWorkspaceChatRequest struct {
 	SessionID *uuid.UUID         `json:"session_id,omitempty"`
 	FolderID  *uuid.UUID         `json:"folder_id,omitempty"`
 	Question  string             `json:"question"`
+	Query     string             `json:"query,omitempty"`
 	History   []ChatMessageInput `json:"history,omitempty"`
+}
+
+func (r *StreamWorkspaceChatRequest) SetDefaults() {
+	if r.Question == "" && r.Query != "" {
+		r.Question = r.Query
+	}
 }
 
 func (r StreamWorkspaceChatRequest) Validate() error {

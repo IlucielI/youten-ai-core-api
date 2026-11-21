@@ -124,6 +124,7 @@ func (c *Controllers) StreamWorkspaceChat(ctx *gin.Context) {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
 		return
 	}
+	req.SetDefaults()
 
 	if err := req.Validate(); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
@@ -211,3 +212,4 @@ func (c *Controllers) StreamWorkspaceChat(ctx *gin.Context) {
 		MessageID: asstMsg.ID.String(),
 	})
 }
+

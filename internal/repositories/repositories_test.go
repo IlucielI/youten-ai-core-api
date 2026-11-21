@@ -337,10 +337,18 @@ func TestRepositories_ListInlineCommentsByRecordingID(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "comment_text", "parent_id"}).
 			AddRow(commID, recID, 12.0, "Top level comment", nil))
 
+	mock.ExpectQuery(`SELECT \* FROM "comment_mentions" WHERE "comment_mentions"\."comment_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id"}))
+
 	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
 		WithArgs(commID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "comment_text", "parent_id"}).
 			AddRow(replyID, recID, 12.0, "Child reply", commID))
+
+	mock.ExpectQuery(`SELECT \* FROM "comment_mentions" WHERE "comment_mentions"\."comment_id" = \$1`).
+		WithArgs(replyID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id"}))
 
 	comments, err := repo.ListInlineCommentsByRecordingID(context.Background(), recID)
 	if err != nil {
@@ -1032,6 +1040,113 @@ func TestRepositories_ReplaceTranscriptSegments(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestRepositories_CommentMentions(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	ctx := context.Background()
+	commentID := uuid.New()
+	userID := uuid.New()
+
+	t.Run("CreateCommentMentions empty", func(t *testing.T) {
+		err := repo.CreateCommentMentions(ctx, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("CreateCommentMentions success", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "comment_mentions"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+		mock.ExpectCommit()
+
+		mentions := []models.CommentMention{
+			{ID: uuid.New(), CommentID: commentID, MentionedUserID: userID},
+		}
+		err := repo.CreateCommentMentions(ctx, mentions)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("ListCommentMentionsByUserID success", func(t *testing.T) {
+		mentionID := uuid.New()
+		recID := uuid.New()
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "comment_mentions" WHERE mentioned_user_id = $1 ORDER BY created_at DESC LIMIT $2`)).
+			WithArgs(userID, 20).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id", "mentioned_user_id"}).
+				AddRow(mentionID, commentID, userID))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "inline_comments" WHERE "inline_comments"."id" = $1`)).
+			WithArgs(commentID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "comment_text"}).
+				AddRow(commentID, recID, "Hello mention"))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE "recordings"."id" = $1 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(recID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).
+				AddRow(recID, "Team Sync"))
+
+		results, err := repo.ListCommentMentionsByUserID(ctx, userID, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 mention, got %d", len(results))
+		}
+	})
+}
+
+func TestRepositories_SearchWorkspaceTranscriptChunksByWorkspace(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+	defer sqlDB.Close()
+
+	gormDB, err := gorm.Open(gormPostgres.New(gormPostgres.Config{
+		Conn: sqlDB,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open gorm: %v", err)
+	}
+
+	repo := New(gormDB)
+	ctx := context.Background()
+	wsID := uuid.New()
+	chunkID := uuid.New()
+	recID := uuid.New()
+	embedding := []float32{0.1, 0.2, 0.3}
+
+	mock.ExpectQuery(`SELECT tc\.id, tc\.recording_id, r\.title as recording_title, tc\.chunk_index, tc\.content, tc\.start_time, tc\.end_time, \(tc\.embedding <=> \$1\) as distance FROM transcript_chunks tc JOIN recordings r ON tc\.recording_id = r\.id WHERE \(r\.workspace_id = \$2 AND r\.deleted_at IS NULL\) AND \(tc\.embedding <=> \$3\) <= \$4 ORDER BY tc\.embedding <=> \$5 LIMIT \$6`).
+		WithArgs(models.Vector(embedding), wsID, models.Vector(embedding), 0.45, models.Vector(embedding), 5).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}).
+			AddRow(chunkID, recID, "Workspace Meeting", 0, "Discussion on Q4 roadmap", 0.0, 10.0, 0.25))
+
+	results, err := repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, wsID, embedding, 5, 0.45)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].RecordingTitle != "Workspace Meeting" {
+		t.Errorf("expected recording title 'Workspace Meeting', got %s", results[0].RecordingTitle)
 	}
 }
 

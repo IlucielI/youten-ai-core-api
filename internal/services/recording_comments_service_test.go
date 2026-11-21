@@ -107,6 +107,51 @@ func TestService_CreateInlineComment_Success_PubliclyShared(t *testing.T) {
 	}
 }
 
+func TestService_CreateInlineComment_Success_WithMentions(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	guestToken := "guest-token"
+	mentionedUserID := uuid.New()
+	ctx := context.Background()
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "is_share_enabled", "title"}).
+			AddRow(recID, guestToken, nil, false, "Standup"))
+
+	commentID := uuid.New()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "inline_comments"`).
+		WithArgs(recID, nil, nil, 0.0, nil, "Anonymous", "Hey @bob check this", nil, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow(commentID, time.Now(), time.Now()))
+	mock.ExpectCommit()
+
+	// FindUserByID for mentioned user
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(mentionedUserID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "full_name"}).
+			AddRow(mentionedUserID, "bob@example.com", "Bob Smith"))
+
+	// CreateCommentMentions
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "comment_mentions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	resp, err := svc.CreateInlineComment(ctx, recID, guestToken, dtos.CreateCommentRequest{
+		CommentText:      "Hey @bob check this",
+		MentionedUserIDs: []uuid.UUID{mentionedUserID},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Mentions) != 1 || resp.Mentions[0].UserID != mentionedUserID {
+		t.Fatalf("expected 1 mention for user %s, got %+v", mentionedUserID, resp.Mentions)
+	}
+}
+
 func TestService_CreateInlineComment_Success_ReplyToParent(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 	recID := uuid.New()
@@ -279,6 +324,10 @@ func TestService_ListInlineComments_Success_AuthenticatedOwner(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "timestamp_sec", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
 			AddRow(commID, recID, 5.5, "Owner", "Note on start", nil, time.Now(), time.Now()))
 
+	mock.ExpectQuery(`SELECT \* FROM "comment_mentions" WHERE "comment_mentions"\."comment_id" = \$1`).
+		WithArgs(commID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id"}))
+
 	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
 		WithArgs(commID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "parent_id"}))
@@ -317,10 +366,18 @@ func TestService_ListInlineComments_Success_GuestWithToken_Threaded(t *testing.T
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "segment_id", "timestamp_sec", "selected_text", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
 			AddRow(parentID, recID, &segID, 10.0, "Selected quote", "Alice", "Top question", nil, time.Now(), time.Now()))
 
+	mock.ExpectQuery(`SELECT \* FROM "comment_mentions" WHERE "comment_mentions"\."comment_id" = \$1`).
+		WithArgs(parentID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id"}))
+
 	mock.ExpectQuery(`SELECT \* FROM "inline_comments" WHERE "inline_comments"\."parent_id" = \$1`).
 		WithArgs(parentID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "segment_id", "timestamp_sec", "selected_text", "author_name", "comment_text", "parent_id", "created_at", "updated_at"}).
 			AddRow(replyID, recID, nil, 10.0, nil, "Bob", "Reply answer", parentID, time.Now(), time.Now()))
+
+	mock.ExpectQuery(`SELECT \* FROM "comment_mentions" WHERE "comment_mentions"\."comment_id" = \$1`).
+		WithArgs(replyID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "comment_id"}))
 
 	comments, err := svc.ListInlineComments(ctx, recID, guestToken)
 	if err != nil {

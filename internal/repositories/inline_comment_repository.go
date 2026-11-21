@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm/clause"
 
 	"code-base-golang/internal/models"
 )
@@ -13,11 +14,23 @@ func (r *Repositories) CreateInlineComment(ctx context.Context, comment *models.
 	return r.db.WithContext(ctx).Create(comment).Error
 }
 
-// ListInlineCommentsByRecordingID retrieves top-level comments with preloaded threaded replies.
+// CreateCommentMentions batch inserts comment mentions.
+func (r *Repositories) CreateCommentMentions(ctx context.Context, mentions []models.CommentMention) error {
+	if len(mentions) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Omit(clause.Associations).Create(&mentions).Error
+}
+
+// ListInlineCommentsByRecordingID retrieves top-level comments with preloaded threaded replies and mentions.
 func (r *Repositories) ListInlineCommentsByRecordingID(ctx context.Context, recordingID uuid.UUID) ([]models.InlineComment, error) {
 	var comments []models.InlineComment
 	err := r.db.WithContext(ctx).
 		Preload("Replies").
+		Preload("Replies.Mentions").
+		Preload("Replies.Mentions.MentionedUser").
+		Preload("Mentions").
+		Preload("Mentions.MentionedUser").
 		Where("recording_id = ? AND parent_id IS NULL", recordingID).
 		Order("timestamp_sec ASC, created_at ASC").
 		Find(&comments).Error
@@ -36,7 +49,23 @@ func (r *Repositories) FindInlineCommentByID(ctx context.Context, id uuid.UUID) 
 	return &comment, nil
 }
 
-// DeleteInlineComment deletes a comment and cascades to child replies.
+// DeleteInlineComment deletes a comment and cascades to child replies and mentions.
 func (r *Repositories) DeleteInlineComment(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Delete(&models.InlineComment{}, "id = ?", id).Error
+}
+
+// ListCommentMentionsByUserID returns recent mentions for a user.
+func (r *Repositories) ListCommentMentionsByUserID(ctx context.Context, userID uuid.UUID, limit int) ([]models.CommentMention, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var mentions []models.CommentMention
+	err := r.db.WithContext(ctx).
+		Preload("Comment").
+		Preload("Comment.Recording").
+		Where("mentioned_user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&mentions).Error
+	return mentions, err
 }

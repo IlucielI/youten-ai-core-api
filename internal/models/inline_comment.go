@@ -21,6 +21,7 @@ type InlineComment struct {
 	CommentText  string               `gorm:"type:text;not null" json:"comment_text"`
 	ParentID     *uuid.UUID           `gorm:"type:uuid;index:idx_comments_parent_id" json:"parent_id,omitempty"`
 	Replies      []InlineComment      `gorm:"foreignKey:ParentID;constraint:OnDelete:CASCADE" json:"replies,omitempty"`
+	Mentions     []CommentMention     `gorm:"foreignKey:CommentID;constraint:OnDelete:CASCADE" json:"mentions,omitempty"`
 	CreatedAt    time.Time            `gorm:"not null;default:now()" json:"created_at"`
 	UpdatedAt    time.Time            `gorm:"not null;default:now()" json:"updated_at"`
 }

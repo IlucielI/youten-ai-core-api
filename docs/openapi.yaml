@@ -3162,6 +3162,21 @@ components:
           type: string
         author_name:
           type: string
+        mentions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              user_id:
+                type: string
+                format: uuid
+              full_name:
+                type: string
+              email:
+                type: string
 
     CreateInlineCommentRequest:
       type: object
@@ -3171,6 +3186,11 @@ components:
           type: number
         content:
           type: string
+        mentioned_user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
 
     BotWaitlistRequest:
       type: object

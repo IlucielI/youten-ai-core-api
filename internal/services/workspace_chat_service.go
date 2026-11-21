@@ -49,7 +49,19 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 
 	var matches []repositories.WorkspaceChunkMatch
 	if len(embeddings) > 0 && len(embeddings[0]) > 0 {
-		m, searchErr := s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], 5, 0.45)
+		var (
+			m         []repositories.WorkspaceChunkMatch
+			searchErr error
+		)
+		if activeWsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWsID != uuid.Nil {
+			if _, err := s.repo.FindWorkspaceMember(ctx, activeWsID, authUser.UserID); err == nil {
+				m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, activeWsID, embeddings[0], 5, 0.45)
+			} else {
+				m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], 5, 0.45)
+			}
+		} else {
+			m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], 5, 0.45)
+		}
 		if searchErr != nil {
 			return nil, constants.ErrInternalServerError.Wrap(searchErr)
 		}

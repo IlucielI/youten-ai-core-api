@@ -976,6 +976,149 @@ paths:
         '200':
           description: Invitation accepted
 
+  /v1/workspaces/invitations/{token}:
+    get:
+      tags: [Workspaces]
+      summary: Get Invitation Details (Alias)
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation details
+
+  /v1/workspaces/invitations/{token}/accept:
+    post:
+      tags: [Workspaces]
+      summary: Accept Workspace Invitation (Alias)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation accepted
+
+  /v1/folders:
+    get:
+      tags: [Workspaces]
+      summary: List Folders in Current Workspace
+      description: Returns the hierarchical folder tree for the active workspace context.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Folder tree retrieved
+    post:
+      tags: [Workspaces]
+      summary: Create Folder in Current Workspace
+      description: Create a new folder inside the active workspace context.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                parent_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Folder created
+
+  /v1/folders/{folderId}:
+    put:
+      tags: [Workspaces]
+      summary: Update Folder (PUT)
+      description: Update folder name, color, or parent folder.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                parent_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Folder updated
+    patch:
+      tags: [Workspaces]
+      summary: Update Folder (PATCH)
+      description: Update folder name, color, or parent folder.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                parent_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Folder updated
+    delete:
+      tags: [Workspaces]
+      summary: Delete Folder
+      description: Delete a folder from the active workspace.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Folder deleted
+
   /v1/workspaces/{id}/folders:
     get:
       tags: [Workspaces]
@@ -1089,6 +1232,35 @@ paths:
     patch:
       tags: [Recordings]
       summary: Move Recording to Folder
+      description: Move a recording into a folder, or set folder_id to null to unassign.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '200':
+          description: Recording moved
+
+  /v1/recordings/{id}/folder:
+    patch:
+      tags: [Recordings]
+      summary: Move Recording to Folder (Alias)
       description: Move a recording into a folder, or set folder_id to null to unassign.
       security:
         - BearerAuth: []

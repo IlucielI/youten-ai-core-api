@@ -222,9 +222,21 @@ routes:
     handler: GetInvitationDetail
     auth: false
 
+  # Inspect invitation token details (public alias).
+  - method: GET
+    path: /v1/workspaces/invitations/:token
+    handler: GetInvitationDetail
+    auth: false
+
   # Accept a workspace invitation.
   - method: POST
     path: /v1/invites/:token/accept
+    handler: AcceptWorkspaceInvitation
+    auth: true
+
+  # Accept a workspace invitation (alias).
+  - method: POST
+    path: /v1/workspaces/invitations/:token/accept
     handler: AcceptWorkspaceInvitation
     auth: true
 
@@ -234,9 +246,21 @@ routes:
     handler: ListWorkspaceFolders
     auth: true
 
+  # List all folders in active workspace (via X-Workspace-ID or default).
+  - method: GET
+    path: /v1/folders
+    handler: ListWorkspaceFolders
+    auth: true
+
   # Create a folder in a workspace.
   - method: POST
     path: /v1/workspaces/:id/folders
+    handler: CreateFolder
+    auth: true
+
+  # Create a folder in active workspace.
+  - method: POST
+    path: /v1/folders
     handler: CreateFolder
     auth: true
 
@@ -246,15 +270,35 @@ routes:
     handler: UpdateFolder
     auth: true
 
+  - method: PUT
+    path: /v1/folders/:folderId
+    handler: UpdateFolder
+    auth: true
+
+  - method: PATCH
+    path: /v1/folders/:folderId
+    handler: UpdateFolder
+    auth: true
+
   # Delete a folder in a workspace.
   - method: DELETE
     path: /v1/workspaces/:id/folders/:folderId
     handler: DeleteFolder
     auth: true
 
+  - method: DELETE
+    path: /v1/folders/:folderId
+    handler: DeleteFolder
+    auth: true
+
   # Move a recording into a folder (or unassign).
   - method: PATCH
     path: /v1/recordings/:id/move
+    handler: MoveRecording
+    auth: true
+
+  - method: PATCH
+    path: /v1/recordings/:id/folder
     handler: MoveRecording
     auth: true
 

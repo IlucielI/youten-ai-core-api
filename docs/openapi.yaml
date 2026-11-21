@@ -1286,6 +1286,244 @@ paths:
         '200':
           description: Recording moved
 
+  /v1/workspaces/{id}/chat/sessions:
+    get:
+      tags: [Workspaces]
+      summary: List Workspace or Folder Chat Sessions
+      description: Returns all past multi-meeting chat conversation sessions for the caller in the specified workspace, optionally filtered by folder_id.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: folder_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of chat sessions
+    post:
+      tags: [Workspaces]
+      summary: Create Workspace or Folder Chat Session
+      description: Creates a new persistent conversation session scoped to the workspace or a specific folder.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                folder_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '201':
+          description: Session created
+
+  /v1/workspaces/{id}/chat/sessions/{sessionId}:
+    get:
+      tags: [Workspaces]
+      summary: Get Chat Session Message History
+      description: Retrieves all past messages with citations in chronological order for the session.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session message history retrieved
+    delete:
+      tags: [Workspaces]
+      summary: Delete Chat Session
+      description: Deletes a conversation session and all its messages.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session deleted
+
+  /v1/workspaces/{id}/chat/stream:
+    post:
+      tags: [Workspaces]
+      summary: Stream Multi-Meeting RAG Chat
+      description: SSE stream answering user questions across meetings in the workspace or folder with citations.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                session_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                folder_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '200':
+          description: Server-sent events stream
+
+  /v1/chat/sessions:
+    get:
+      tags: [Workspaces]
+      summary: List Active Workspace Chat Sessions
+      description: Returns chat sessions for caller's active workspace.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: folder_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of chat sessions
+    post:
+      tags: [Workspaces]
+      summary: Create Active Workspace Chat Session
+      description: Creates a new chat session for caller's active workspace.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                folder_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '201':
+          description: Session created
+
+  /v1/chat/sessions/{sessionId}:
+    get:
+      tags: [Workspaces]
+      summary: Get Chat Session Message History (Active Workspace)
+      description: Retrieves message history for a session in active workspace.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session message history retrieved
+    delete:
+      tags: [Workspaces]
+      summary: Delete Chat Session (Active Workspace)
+      description: Deletes a chat session in active workspace.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session deleted
+
+  /v1/chat/stream:
+    post:
+      tags: [Workspaces]
+      summary: Stream Multi-Meeting RAG Chat (Active Workspace)
+      description: SSE stream answering user questions across meetings in active workspace or folder with citations.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                session_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                folder_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '200':
+          description: Server-sent events stream
+
   /v1/recordings:
     get:
       tags: [Recordings]

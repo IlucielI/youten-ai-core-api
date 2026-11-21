@@ -136,6 +136,9 @@ var (
 	// ErrInvitationEmailMismatch is returned when the accepting user's email doesn't match the invitation.
 	ErrInvitationEmailMismatch = apperror.New(http.StatusForbidden, "ERR_INVITATION_EMAIL_MISMATCH", "logged-in user email does not match invitation recipient")
 
+	// ErrSessionNotFound is returned when a requested chat session is not found or has been deleted.
+	ErrSessionNotFound = apperror.New(http.StatusNotFound, "ERR_SESSION_NOT_FOUND", "chat session not found")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

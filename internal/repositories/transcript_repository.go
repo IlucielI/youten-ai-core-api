@@ -155,14 +155,16 @@ func (r *Repositories) DeleteTranscriptChunksByRecordingID(ctx context.Context, 
 
 // WorkspaceChunkMatch holds the search result for cross-meeting vector similarity matches.
 type WorkspaceChunkMatch struct {
-	ID             uuid.UUID `gorm:"column:id"`
-	RecordingID    uuid.UUID `gorm:"column:recording_id"`
-	RecordingTitle string    `gorm:"column:recording_title"`
-	ChunkIndex     int       `gorm:"column:chunk_index"`
-	Content        string    `gorm:"column:content"`
-	StartTime      float64   `gorm:"column:start_time"`
-	EndTime        float64   `gorm:"column:end_time"`
-	Distance       float64   `gorm:"column:distance"`
+	ID             uuid.UUID  `gorm:"column:id"`
+	RecordingID    uuid.UUID  `gorm:"column:recording_id"`
+	RecordingTitle string     `gorm:"column:recording_title"`
+	FolderID       *uuid.UUID `gorm:"column:folder_id"`
+	FolderName     string     `gorm:"column:folder_name"`
+	ChunkIndex     int        `gorm:"column:chunk_index"`
+	Content        string     `gorm:"column:content"`
+	StartTime      float64    `gorm:"column:start_time"`
+	EndTime        float64    `gorm:"column:end_time"`
+	Distance       float64    `gorm:"column:distance"`
 }
 
 // SearchWorkspaceTranscriptChunks performs cross-meeting semantic vector search using pgvector cosine distance.
@@ -209,8 +211,9 @@ func (r *Repositories) SearchWorkspaceTranscriptChunksByWorkspace(ctx context.Co
 
 	query := r.db.WithContext(ctx).
 		Table("transcript_chunks tc").
-		Select("tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> ?) as distance", vec).
+		Select("tc.id, tc.recording_id, r.title as recording_title, r.folder_id, f.name as folder_name, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> ?) as distance", vec).
 		Joins("JOIN recordings r ON tc.recording_id = r.id").
+		Joins("LEFT JOIN folders f ON r.folder_id = f.id").
 		Where("r.workspace_id = ? AND r.deleted_at IS NULL", workspaceID)
 
 	if maxDistance > 0 {
@@ -227,6 +230,65 @@ func (r *Repositories) SearchWorkspaceTranscriptChunksByWorkspace(ctx context.Co
 		Limit(topK).
 		Scan(&results).Error
 
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// SearchWorkspaceTranscriptChunksByFolderRecursive performs cross-meeting semantic vector search
+// scoped to a specific folder and all of its sub-folders recursively.
+func (r *Repositories) SearchWorkspaceTranscriptChunksByFolderRecursive(
+	ctx context.Context,
+	workspaceID uuid.UUID,
+	folderID uuid.UUID,
+	queryEmbedding []float32,
+	topK int,
+	maxDistance float64,
+) ([]WorkspaceChunkMatch, error) {
+	if topK <= 0 {
+		topK = 10
+	}
+	vec := models.Vector(queryEmbedding)
+	var results []WorkspaceChunkMatch
+
+	rawQuery := `
+		WITH RECURSIVE folder_tree AS (
+			SELECT id FROM folders WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+			UNION ALL
+			SELECT f.id FROM folders f
+			INNER JOIN folder_tree ft ON f.parent_id = ft.id
+			WHERE f.deleted_at IS NULL
+		)
+		SELECT 
+			tc.id,
+			tc.recording_id,
+			r.title AS recording_title,
+			r.folder_id,
+			f.name AS folder_name,
+			tc.chunk_index,
+			tc.content,
+			tc.start_time,
+			tc.end_time,
+			(tc.embedding <=> ?) AS distance
+		FROM transcript_chunks tc
+		JOIN recordings r ON tc.recording_id = r.id
+		LEFT JOIN folders f ON r.folder_id = f.id
+		WHERE r.workspace_id = ?
+		  AND r.folder_id IN (SELECT id FROM folder_tree)
+		  AND r.deleted_at IS NULL
+	`
+	args := []interface{}{folderID, workspaceID, vec, workspaceID}
+
+	if maxDistance > 0 {
+		rawQuery += " AND (tc.embedding <=> ?) <= ?"
+		args = append(args, vec, maxDistance)
+	}
+
+	rawQuery += " ORDER BY tc.embedding <=> ? ASC LIMIT ?"
+	args = append(args, vec, topK)
+
+	err := r.db.WithContext(ctx).Raw(rawQuery, args...).Scan(&results).Error
 	if err != nil {
 		return nil, err
 	}

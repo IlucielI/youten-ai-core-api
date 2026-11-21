@@ -302,6 +302,61 @@ routes:
     handler: MoveRecording
     auth: true
 
+  # List multi-meeting chat conversation sessions.
+  - method: GET
+    path: /v1/workspaces/:id/chat/sessions
+    handler: ListWorkspaceChatSessions
+    auth: true
+
+  - method: GET
+    path: /v1/chat/sessions
+    handler: ListWorkspaceChatSessions
+    auth: true
+
+  # Create a new multi-meeting chat session.
+  - method: POST
+    path: /v1/workspaces/:id/chat/sessions
+    handler: CreateWorkspaceChatSession
+    auth: true
+
+  - method: POST
+    path: /v1/chat/sessions
+    handler: CreateWorkspaceChatSession
+    auth: true
+
+  # Retrieve conversation history for a multi-meeting chat session.
+  - method: GET
+    path: /v1/workspaces/:id/chat/sessions/:sessionId
+    handler: GetWorkspaceChatSessionHistory
+    auth: true
+
+  - method: GET
+    path: /v1/chat/sessions/:sessionId
+    handler: GetWorkspaceChatSessionHistory
+    auth: true
+
+  # Delete a multi-meeting chat session.
+  - method: DELETE
+    path: /v1/workspaces/:id/chat/sessions/:sessionId
+    handler: DeleteWorkspaceChatSession
+    auth: true
+
+  - method: DELETE
+    path: /v1/chat/sessions/:sessionId
+    handler: DeleteWorkspaceChatSession
+    auth: true
+
+  # Interactive grounded multi-meeting chat with SSE typewriter streaming.
+  - method: POST
+    path: /v1/workspaces/:id/chat/stream
+    handler: StreamWorkspaceChat
+    auth: true
+
+  - method: POST
+    path: /v1/chat/stream
+    handler: StreamWorkspaceChat
+    auth: true
+
   # Retrieve recording detail (owner via token or registered user).
   - method: GET
     path: /v1/recordings/:id

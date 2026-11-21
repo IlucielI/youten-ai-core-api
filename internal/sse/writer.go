@@ -54,6 +54,14 @@ func WriteChatSession(w io.Writer, sessionID string) error {
 	})
 }
 
+// WriteChatCitations serializes and writes a citations list as an SSE event named "citations".
+func WriteChatCitations(w io.Writer, citations interface{}) error {
+	return WriteEvent(w, Event{
+		Event: "citations",
+		Data:  citations,
+	})
+}
+
 // WriteChatDone serializes and writes a ChatDoneEvent as an SSE event named "done".
 func WriteChatDone(w io.Writer, event ChatDoneEvent) error {
 	return WriteEvent(w, Event{

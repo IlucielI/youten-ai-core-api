@@ -41,12 +41,14 @@ type WorkspaceAskRequest struct {
 
 // MeetingSourceCitation represents a citation reference to a specific meeting and timestamp segment.
 type MeetingSourceCitation struct {
-	RecordingID    uuid.UUID `json:"recording_id"`
-	RecordingTitle string    `json:"recording_title"`
-	ChunkIndex     int       `json:"chunk_index"`
-	Snippet        string    `json:"snippet"`
-	StartTime      float64   `json:"start_time"`
-	EndTime        float64   `json:"end_time"`
+	RecordingID    uuid.UUID  `json:"recording_id"`
+	RecordingTitle string     `json:"recording_title"`
+	FolderID       *uuid.UUID `json:"folder_id,omitempty"`
+	FolderName     string     `json:"folder_name,omitempty"`
+	ChunkIndex     int        `json:"chunk_index"`
+	Snippet        string     `json:"snippet"`
+	StartTime      float64    `json:"start_time"`
+	EndTime        float64    `json:"end_time"`
 }
 
 // WorkspaceAskResponse represents the response containing synthesized answer and meeting citations.

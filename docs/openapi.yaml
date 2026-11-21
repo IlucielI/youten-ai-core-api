@@ -1420,6 +1420,14 @@ paths:
       responses:
         '200':
           description: Server-sent events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+          content:
+            text/event-stream:
+              schema:
+                type: string
 
   /v1/chat/sessions:
     get:
@@ -1523,6 +1531,10 @@ paths:
       responses:
         '200':
           description: Server-sent events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
 
   /v1/recordings:
     get:

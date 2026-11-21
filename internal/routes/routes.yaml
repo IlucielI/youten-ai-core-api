@@ -198,6 +198,36 @@ routes:
     handler: RemoveWorkspaceMember
     auth: true
 
+  # Invite a new member to a workspace via email.
+  - method: POST
+    path: /v1/workspaces/:id/invites
+    handler: InviteWorkspaceMember
+    auth: true
+
+  # List pending invitations for a workspace.
+  - method: GET
+    path: /v1/workspaces/:id/invites
+    handler: ListWorkspaceInvitations
+    auth: true
+
+  # Revoke a pending workspace invitation.
+  - method: DELETE
+    path: /v1/workspaces/:id/invites/:inviteId
+    handler: RevokeWorkspaceInvitation
+    auth: true
+
+  # Inspect invitation token details (public).
+  - method: GET
+    path: /v1/invites/:token
+    handler: GetInvitationDetail
+    auth: false
+
+  # Accept a workspace invitation.
+  - method: POST
+    path: /v1/invites/:token/accept
+    handler: AcceptWorkspaceInvitation
+    auth: true
+
   # List all folders in a workspace.
   - method: GET
     path: /v1/workspaces/:id/folders

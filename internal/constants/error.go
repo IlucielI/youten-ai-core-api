@@ -121,6 +121,21 @@ var (
 	// ErrCircularFolderReference is returned when moving a folder into its own descendant.
 	ErrCircularFolderReference = apperror.New(http.StatusBadRequest, "ERR_CIRCULAR_FOLDER_REFERENCE", "cannot move folder into itself or its child")
 
+	// ErrInvitationNotFound is returned when an invitation is not found.
+	ErrInvitationNotFound = apperror.New(http.StatusNotFound, "ERR_INVITATION_NOT_FOUND", "workspace invitation not found")
+
+	// ErrInvitationExpired is returned when attempting to accept an expired invitation.
+	ErrInvitationExpired = apperror.New(http.StatusBadRequest, "ERR_INVITATION_EXPIRED", "workspace invitation has expired")
+
+	// ErrInvitationAlreadyAccepted is returned when an invitation has already been accepted.
+	ErrInvitationAlreadyAccepted = apperror.New(http.StatusBadRequest, "ERR_INVITATION_ALREADY_ACCEPTED", "workspace invitation has already been accepted")
+
+	// ErrAlreadyWorkspaceMember is returned when the invited email is already a member.
+	ErrAlreadyWorkspaceMember = apperror.New(http.StatusConflict, "ERR_ALREADY_WORKSPACE_MEMBER", "user is already a member of this workspace")
+
+	// ErrInvitationEmailMismatch is returned when the accepting user's email doesn't match the invitation.
+	ErrInvitationEmailMismatch = apperror.New(http.StatusForbidden, "ERR_INVITATION_EMAIL_MISMATCH", "logged-in user email does not match invitation recipient")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

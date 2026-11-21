@@ -877,6 +877,105 @@ paths:
         '200':
           description: Member removed
 
+  /v1/workspaces/{id}/invites:
+    get:
+      tags: [Workspaces]
+      summary: List Pending Workspace Invitations
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Pending invitations list
+    post:
+      tags: [Workspaces]
+      summary: Invite Member to Workspace
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, member, viewer]
+      responses:
+        '201':
+          description: Invitation sent
+
+  /v1/workspaces/{id}/invites/{inviteId}:
+    delete:
+      tags: [Workspaces]
+      summary: Revoke Workspace Invitation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: inviteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invitation revoked
+
+  /v1/invites/{token}:
+    get:
+      tags: [Workspaces]
+      summary: Get Invitation Details
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation details
+
+  /v1/invites/{token}/accept:
+    post:
+      tags: [Workspaces]
+      summary: Accept Workspace Invitation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation accepted
+
   /v1/workspaces/{id}/folders:
     get:
       tags: [Workspaces]

@@ -2,6 +2,7 @@ package services_test
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 )
 
@@ -200,6 +202,99 @@ func TestService_MoveRecording(t *testing.T) {
 		err := svc.MoveRecording(ctx, recID, dtos.MoveRecordingRequest{FolderID: &folderID})
 		if err != nil {
 			t.Fatalf("unexpected error moving recording: %v", err)
+		}
+	})
+
+	t.Run("success cross-workspace move as creator", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		userID := uuid.New()
+		sourceWsID := uuid.New()
+		targetWsID := uuid.New()
+		recID := uuid.New()
+		targetFolderID := uuid.New()
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+		// FindRecordingByID returns COMPLETED status and owned by userID
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "workspace_id", "status"}).
+				AddRow(recID, &userID, &sourceWsID, models.RecordingStatusCompleted))
+
+		// FindWorkspaceMember on target workspace (member exists)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_members" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_members"."deleted_at" IS NULL ORDER BY "workspace_members"."id" LIMIT $3`)).
+			WithArgs(targetWsID, userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "role"}).
+				AddRow(uuid.New(), targetWsID, userID, constants.WorkspaceRoleMember))
+
+		// FindFolderByID on target folder
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "folders" WHERE id = $1 AND "folders"."deleted_at" IS NULL ORDER BY "folders"."id" LIMIT $2`)).
+			WithArgs(targetFolderID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id"}).AddRow(targetFolderID, targetWsID))
+
+		// MoveRecordingToWorkspace update
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "folder_id"=$1,"is_share_enabled"=$2,"workspace_id"=$3,"updated_at"=$4 WHERE id = $5 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(targetFolderID, false, targetWsID, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.MoveRecording(ctx, recID, dtos.MoveRecordingRequest{
+			WorkspaceID: &targetWsID,
+			FolderID:    &targetFolderID,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error in cross-workspace move: %v", err)
+		}
+	})
+
+	t.Run("fail cross-workspace move when recording is processing", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		userID := uuid.New()
+		sourceWsID := uuid.New()
+		targetWsID := uuid.New()
+		recID := uuid.New()
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+		// FindRecordingByID returns TRANSCRIBING
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "workspace_id", "status"}).
+				AddRow(recID, &userID, &sourceWsID, models.RecordingStatusTranscribing))
+
+		err := svc.MoveRecording(ctx, recID, dtos.MoveRecordingRequest{
+			WorkspaceID: &targetWsID,
+		})
+		if !errors.Is(err, constants.ErrRecordingProcessing) {
+			t.Fatalf("expected ErrRecordingProcessing, got %v", err)
+		}
+	})
+
+	t.Run("fail cross-workspace move when not creator and not source owner", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		otherUser := uuid.New()
+		callerID := uuid.New()
+		sourceWsID := uuid.New()
+		targetWsID := uuid.New()
+		recID := uuid.New()
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: callerID})
+
+		// FindRecordingByID owned by otherUser
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "workspace_id", "status"}).
+				AddRow(recID, &otherUser, &sourceWsID, models.RecordingStatusCompleted))
+
+		// FindWorkspaceMember on source workspace returns role 'member' (not owner)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_members" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_members"."deleted_at" IS NULL ORDER BY "workspace_members"."id" LIMIT $3`)).
+			WithArgs(sourceWsID, callerID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "role"}).
+				AddRow(uuid.New(), sourceWsID, callerID, constants.WorkspaceRoleMember))
+
+		err := svc.MoveRecording(ctx, recID, dtos.MoveRecordingRequest{
+			WorkspaceID: &targetWsID,
+		})
+		if !errors.Is(err, constants.ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
 		}
 	})
 }

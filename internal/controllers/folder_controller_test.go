@@ -16,6 +16,7 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
+	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 )
 
@@ -140,6 +141,48 @@ func TestControllers_MoveRecording(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "folder_id"=$1,"updated_at"=$2 WHERE id = $3 AND "recordings"."deleted_at" IS NULL`)).
 			WithArgs(folderID, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		ctrls.MoveRecording(c)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("success cross-workspace move", func(t *testing.T) {
+		ctrls, mock, _, cleanup := setupRecordingTestControllers(t)
+		defer cleanup()
+
+		userID := uuid.New()
+		recID := uuid.New()
+		sourceWsID := uuid.New()
+		targetWsID := uuid.New()
+
+		body, _ := json.Marshal(dtos.MoveRecordingRequest{
+			WorkspaceID: &targetWsID,
+		})
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Params = gin.Params{{Key: "id", Value: recID.String()}}
+		req := httptest.NewRequest(http.MethodPatch, "/v1/recordings/"+recID.String()+"/move", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		c.Request = req.WithContext(ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID}))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "workspace_id", "status"}).
+				AddRow(recID, &userID, &sourceWsID, models.RecordingStatusCompleted))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_members" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_members"."deleted_at" IS NULL ORDER BY "workspace_members"."id" LIMIT $3`)).
+			WithArgs(targetWsID, userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "role"}).
+				AddRow(uuid.New(), targetWsID, userID, constants.WorkspaceRoleMember))
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "folder_id"=$1,"is_share_enabled"=$2,"workspace_id"=$3,"updated_at"=$4 WHERE id = $5 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(nil, false, targetWsID, sqlmock.AnyArg(), recID).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 

@@ -139,6 +139,9 @@ var (
 	// ErrSessionNotFound is returned when a requested chat session is not found or has been deleted.
 	ErrSessionNotFound = apperror.New(http.StatusNotFound, "ERR_SESSION_NOT_FOUND", "chat session not found")
 
+	// ErrRecordingProcessing is returned when attempting to move or alter a recording that is currently being processed.
+	ErrRecordingProcessing = apperror.New(http.StatusConflict, "ERR_RECORDING_PROCESSING", "recording is currently processing and cannot be transferred until finished")
+
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
 )

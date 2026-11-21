@@ -133,9 +133,11 @@ func (s *Service) ListRecordings(ctx context.Context, query dtos.RecordingFilter
 	}
 
 	if query.WorkspaceID != nil && *query.WorkspaceID != "" {
-		if parsedWS, err := uuid.Parse(*query.WorkspaceID); err == nil && parsedWS != uuid.Nil {
-			repoFilter.WorkspaceID = &parsedWS
+		parsedWS, err := uuid.Parse(*query.WorkspaceID)
+		if err != nil || parsedWS == uuid.Nil {
+			return nil, fmt.Errorf("invalid workspace ID: %q", *query.WorkspaceID)
 		}
+		repoFilter.WorkspaceID = &parsedWS
 	} else if activeWS, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWS != uuid.Nil {
 		repoFilter.WorkspaceID = &activeWS
 	}
@@ -144,7 +146,11 @@ func (s *Service) ListRecordings(ctx context.Context, query dtos.RecordingFilter
 		fVal := strings.ToLower(strings.TrimSpace(*query.FolderID))
 		if fVal == "root" || fVal == "unassigned" {
 			repoFilter.UnassignedFolder = true
-		} else if parsedFolder, err := uuid.Parse(*query.FolderID); err == nil && parsedFolder != uuid.Nil {
+		} else {
+			parsedFolder, err := uuid.Parse(*query.FolderID)
+			if err != nil || parsedFolder == uuid.Nil {
+				return nil, fmt.Errorf("invalid folder ID: %q", *query.FolderID)
+			}
 			repoFilter.FolderID = &parsedFolder
 		}
 	}

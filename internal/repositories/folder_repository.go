@@ -60,8 +60,14 @@ func (r *Repositories) IsDescendantOf(ctx context.Context, folderID, candidatePa
 		return true, nil
 	}
 
+	visited := make(map[uuid.UUID]struct{})
 	curr := candidateParentID
 	for {
+		if _, exists := visited[curr]; exists {
+			return false, errors.New("cycle detected in folder hierarchy")
+		}
+		visited[curr] = struct{}{}
+
 		var parentFolder models.Folder
 		err := r.db.WithContext(ctx).Select("id, parent_id").First(&parentFolder, "id = ?", curr).Error
 		if err != nil {
@@ -82,3 +88,4 @@ func (r *Repositories) IsDescendantOf(ctx context.Context, folderID, candidatePa
 		curr = *parentFolder.ParentID
 	}
 }
+

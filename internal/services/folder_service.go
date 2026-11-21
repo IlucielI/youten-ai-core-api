@@ -218,7 +218,9 @@ func (s *Service) MoveRecording(ctx context.Context, recordingID uuid.UUID, req 
 	}
 
 	// Validate authorization: user must own recording or have edit rights in workspace
-	if rec.UserID != nil && *rec.UserID != userID {
+	if rec.UserID != nil && *rec.UserID == userID {
+		// Recording owner is authorized.
+	} else {
 		if rec.WorkspaceID == nil {
 			return constants.ErrForbidden
 		}
@@ -237,7 +239,11 @@ func (s *Service) MoveRecording(ctx context.Context, recordingID uuid.UUID, req 
 			}
 			return err
 		}
-		if rec.WorkspaceID != nil && folder.WorkspaceID != *rec.WorkspaceID {
+		if rec.WorkspaceID == nil {
+			if folder.WorkspaceID != uuid.Nil {
+				return constants.ErrForbidden
+			}
+		} else if folder.WorkspaceID != *rec.WorkspaceID {
 			return constants.ErrForbidden
 		}
 	}
@@ -247,50 +253,42 @@ func (s *Service) MoveRecording(ctx context.Context, recordingID uuid.UUID, req 
 
 // buildFolderTree transforms a flat list of folders into a nested tree.
 func buildFolderTree(folders []models.Folder) []dtos.FolderResponse {
-	nodeMap := make(map[uuid.UUID]*dtos.FolderResponse, len(folders))
-	for i := range folders {
-		f := &folders[i]
+	childrenMap := make(map[uuid.UUID][]models.Folder)
+	var roots []models.Folder
+	for _, f := range folders {
+		if f.ParentID == nil || *f.ParentID == uuid.Nil {
+			roots = append(roots, f)
+		} else {
+			childrenMap[*f.ParentID] = append(childrenMap[*f.ParentID], f)
+		}
+	}
+
+	var buildSubtree func(parent models.Folder) dtos.FolderResponse
+	buildSubtree = func(parent models.Folder) dtos.FolderResponse {
 		var parentIDStr *string
-		if f.ParentID != nil {
-			s := f.ParentID.String()
+		if parent.ParentID != nil {
+			s := parent.ParentID.String()
 			parentIDStr = &s
 		}
-		nodeMap[f.ID] = &dtos.FolderResponse{
-			ID:          f.ID.String(),
-			WorkspaceID: f.WorkspaceID.String(),
+		resp := dtos.FolderResponse{
+			ID:          parent.ID.String(),
+			WorkspaceID: parent.WorkspaceID.String(),
 			ParentID:    parentIDStr,
-			Name:        f.Name,
-			Color:       f.Color,
+			Name:        parent.Name,
+			Color:       parent.Color,
 			Children:    []dtos.FolderResponse{},
-			CreatedAt:   f.CreatedAt,
-			UpdatedAt:   f.UpdatedAt,
+			CreatedAt:   parent.CreatedAt,
+			UpdatedAt:   parent.UpdatedAt,
 		}
+		for _, child := range childrenMap[parent.ID] {
+			resp.Children = append(resp.Children, buildSubtree(child))
+		}
+		return resp
 	}
 
-	// First connect all children to their respective parents
-	for i := range folders {
-		f := &folders[i]
-		if f.ParentID != nil && *f.ParentID != uuid.Nil {
-			if parent, exists := nodeMap[*f.ParentID]; exists {
-				parent.Children = append(parent.Children, *nodeMap[f.ID])
-			}
-		}
+	res := make([]dtos.FolderResponse, 0, len(roots))
+	for _, root := range roots {
+		res = append(res, buildSubtree(root))
 	}
-
-	// Then assemble roots
-	var roots []dtos.FolderResponse
-	for i := range folders {
-		f := &folders[i]
-		if f.ParentID == nil || *f.ParentID == uuid.Nil {
-			roots = append(roots, *nodeMap[f.ID])
-		} else if _, exists := nodeMap[*f.ParentID]; !exists {
-			// Orphaned folder treated as root
-			roots = append(roots, *nodeMap[f.ID])
-		}
-	}
-
-	if roots == nil {
-		return []dtos.FolderResponse{}
-	}
-	return roots
+	return res
 }

@@ -38,3 +38,4 @@ func ValidateUpdateFolderRequest(r *dtos.UpdateFolderRequest) error {
 		validation.Field(&r.Color, validation.NilOrNotEmpty, validation.Length(1, 50)),
 	)
 }
+

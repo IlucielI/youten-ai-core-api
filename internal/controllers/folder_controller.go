@@ -126,3 +126,4 @@ func (c *Controllers) MoveRecording(ctx *gin.Context) {
 	}
 	c.respondOK(ctx, "recording moved successfully", nil)
 }
+

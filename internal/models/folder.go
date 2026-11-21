@@ -21,3 +21,4 @@ type Folder struct {
 func (Folder) TableName() string {
 	return "folders"
 }
+

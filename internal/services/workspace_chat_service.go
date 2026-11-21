@@ -187,7 +187,10 @@ func (s *Service) ListWorkspaceChatSessions(ctx context.Context, workspaceID uui
 		if sess.Folder != nil {
 			fName = sess.Folder.Name
 		}
-		cnt, _ := s.repo.CountWorkspaceChatMessagesBySession(ctx, sess.ID)
+		cnt, err := s.repo.CountWorkspaceChatMessagesBySession(ctx, sess.ID)
+		if err != nil {
+			return nil, constants.ErrInternalServerError.Wrap(err)
+		}
 		res = append(res, dtos.WorkspaceChatSessionResponse{
 			ID:           sess.ID,
 			WorkspaceID:  sess.WorkspaceID,
@@ -231,7 +234,9 @@ func (s *Service) GetWorkspaceChatSessionHistory(ctx context.Context, workspaceI
 	for _, m := range msgs {
 		var citations []dtos.MeetingSourceCitation
 		if len(m.Citations) > 0 && string(m.Citations) != "[]" {
-			_ = json.Unmarshal(m.Citations, &citations)
+			if err := json.Unmarshal(m.Citations, &citations); err != nil {
+				return nil, constants.ErrInternalServerError.Wrap(err)
+			}
 		}
 		res = append(res, dtos.WorkspaceChatMessageResponse{
 			ID:        m.ID,
@@ -316,7 +321,9 @@ func (s *Service) InitiateWorkspaceChatStream(
 		SenderRole: constants.ChatRoleUser,
 		Content:    req.Question,
 	}
-	_ = s.repo.CreateWorkspaceChatMessage(ctx, userMsg)
+	if err := s.repo.CreateWorkspaceChatMessage(ctx, userMsg); err != nil {
+		return nil, constants.ErrInternalServerError.Wrap(err)
+	}
 
 	// 2. Compute Embeddings & Perform Vector RAG Retrieval
 	trimmedQ := strings.TrimSpace(req.Question)

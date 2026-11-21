@@ -30,6 +30,9 @@ func setupMockChatDB(t *testing.T) (*Repositories, sqlmock.Sqlmock, func()) {
 
 	repo := New(gormDB)
 	cleanup := func() {
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("there were unfulfilled expectations: %s", err)
+		}
 		sqlDB.Close()
 	}
 	return repo, mock, cleanup

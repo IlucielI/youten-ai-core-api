@@ -168,6 +168,8 @@ type HighlightDTO struct {
 // RecordingDetailResponse represents the comprehensive recording details payload.
 type RecordingDetailResponse struct {
 	ID               string                 `json:"id"`
+	WorkspaceID      *string                `json:"workspace_id,omitempty"`
+	FolderID         *string                `json:"folder_id,omitempty"`
 	UserID           *string                `json:"user_id,omitempty"`
 	Title            string                 `json:"title"`
 	OriginalFilename string                 `json:"original_filename"`
@@ -198,6 +200,8 @@ type RecordingDetailResponse struct {
 // RecordingListItem represents a concise summary of a recording in the library list.
 type RecordingListItem struct {
 	ID               string    `json:"id"`
+	WorkspaceID      *string   `json:"workspace_id,omitempty"`
+	FolderID         *string   `json:"folder_id,omitempty"`
 	Title            string    `json:"title"`
 	OriginalFilename string    `json:"original_filename"`
 	FileSizeBytes    int64     `json:"file_size_bytes"`
@@ -219,13 +223,15 @@ type RecordingListResponse struct {
 
 // RecordingFilterQuery contains query parameters for filtering and paginating recordings.
 type RecordingFilterQuery struct {
-	Search    string `form:"search" json:"search"`
-	Status    string `form:"status" json:"status"`
-	Template  string `form:"template" json:"template"`
-	Page      int    `form:"page" json:"page"`
-	Limit     int    `form:"limit" json:"limit"`
-	SortBy    string `form:"sort_by" json:"sort_by"`
-	SortOrder string `form:"sort_order" json:"sort_order"`
+	Search      string  `form:"search" json:"search"`
+	Status      string  `form:"status" json:"status"`
+	Template    string  `form:"template" json:"template"`
+	WorkspaceID *string `form:"workspace_id" json:"workspace_id"`
+	FolderID    *string `form:"folder_id" json:"folder_id"`
+	Page        int     `form:"page" json:"page"`
+	Limit       int     `form:"limit" json:"limit"`
+	SortBy      string  `form:"sort_by" json:"sort_by"`
+	SortOrder   string  `form:"sort_order" json:"sort_order"`
 }
 
 // SetDefaults sanitizes and defaults pagination and sorting values.
@@ -424,4 +430,10 @@ type RecordingAccessPolicy struct {
 	// Used by collaborative comment flows on publicly shared recordings.
 	AllowShareOpen bool
 }
+
+// MoveRecordingRequest represents the payload to move a recording into a folder (or root if nil).
+type MoveRecordingRequest struct {
+	FolderID *uuid.UUID `json:"folder_id"`
+}
+
 

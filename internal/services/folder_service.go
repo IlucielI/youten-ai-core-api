@@ -275,7 +275,11 @@ func (s *Service) moveRecordingCrossWorkspace(ctx context.Context, rec *models.R
 	isSourceOwner := false
 	if !isCreator && rec.WorkspaceID != nil {
 		sourceMember, err := s.repo.FindWorkspaceMember(ctx, *rec.WorkspaceID, userID)
-		if err == nil && sourceMember != nil {
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else if sourceMember != nil {
 			isSourceOwner = sourceMember.Role == constants.WorkspaceRoleOwner
 		}
 	}
@@ -285,7 +289,13 @@ func (s *Service) moveRecordingCrossWorkspace(ctx context.Context, rec *models.R
 
 	// Guard 3: Destination authorization - caller must be an active member of target workspace
 	targetMember, err := s.repo.FindWorkspaceMember(ctx, targetWorkspaceID, userID)
-	if err != nil || targetMember == nil {
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return constants.ErrForbidden
+	}
+	if targetMember == nil {
 		return constants.ErrForbidden
 	}
 

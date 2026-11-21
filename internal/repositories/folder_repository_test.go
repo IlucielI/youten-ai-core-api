@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -110,6 +111,42 @@ func TestRepositories_FindFoldersByWorkspaceID(t *testing.T) {
 	}
 	if len(list) != 2 {
 		t.Fatalf("expected 2 folders, got %d", len(list))
+	}
+}
+
+func TestRepositories_UpdateFolder(t *testing.T) {
+	repo, mock, cleanup := setupMockFolderDB(t)
+	defer cleanup()
+
+	folderID := uuid.New()
+	wsID := uuid.New()
+	folder := &models.Folder{
+		BaseModel:   models.BaseModel{ID: folderID},
+		WorkspaceID: wsID,
+		Name:        "Updated Name",
+		Color:       "#EF4444",
+	}
+
+	// Test success
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "folders" SET`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := repo.UpdateFolder(context.Background(), folder)
+	if err != nil {
+		t.Fatalf("unexpected error updating folder: %v", err)
+	}
+
+	// Test record not found
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "folders" SET`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	err = repo.UpdateFolder(context.Background(), folder)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected ErrRecordNotFound, got: %v", err)
 	}
 }
 

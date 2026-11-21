@@ -39,7 +39,14 @@ func (r *Repositories) FindFoldersByWorkspaceID(ctx context.Context, workspaceID
 
 // UpdateFolder updates folder fields in the database.
 func (r *Repositories) UpdateFolder(ctx context.Context, folder *models.Folder) error {
-	return r.db.WithContext(ctx).Save(folder).Error
+	res := r.db.WithContext(ctx).Model(&models.Folder{}).Where("id = ?", folder.ID).Select("*").Updates(folder)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // DeleteFolder soft-deletes or deletes a folder by its ID.

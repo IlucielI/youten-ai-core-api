@@ -28,6 +28,7 @@ func (s *Service) CreateFolder(ctx context.Context, workspaceID uuid.UUID, req d
 		return nil, constants.ErrForbidden
 	}
 
+	var parentID *uuid.UUID
 	if req.ParentID != nil && *req.ParentID != uuid.Nil {
 		parent, err := s.repo.FindFolderByID(ctx, *req.ParentID)
 		if err != nil {
@@ -39,12 +40,13 @@ func (s *Service) CreateFolder(ctx context.Context, workspaceID uuid.UUID, req d
 		if parent.WorkspaceID != workspaceID {
 			return nil, constants.ErrFolderNotFound
 		}
+		parentID = req.ParentID
 	}
 
 	folder := &models.Folder{
 		BaseModel:   models.BaseModel{ID: uuid.New()},
 		WorkspaceID: workspaceID,
-		ParentID:    req.ParentID,
+		ParentID:    parentID,
 		Name:        req.Name,
 		Color:       req.Color,
 	}
@@ -54,7 +56,7 @@ func (s *Service) CreateFolder(ctx context.Context, workspaceID uuid.UUID, req d
 	}
 
 	var parentIDStr *string
-	if folder.ParentID != nil {
+	if folder.ParentID != nil && *folder.ParentID != uuid.Nil {
 		str := folder.ParentID.String()
 		parentIDStr = &str
 	}
@@ -140,8 +142,10 @@ func (s *Service) UpdateFolder(ctx context.Context, workspaceID, folderID uuid.U
 			if parent.WorkspaceID != workspaceID {
 				return nil, constants.ErrFolderNotFound
 			}
+			folder.ParentID = req.ParentID
+		} else {
+			folder.ParentID = nil
 		}
-		folder.ParentID = req.ParentID
 	}
 
 	if req.Name != nil && *req.Name != "" {
@@ -156,7 +160,7 @@ func (s *Service) UpdateFolder(ctx context.Context, workspaceID, folderID uuid.U
 	}
 
 	var parentIDStr *string
-	if folder.ParentID != nil {
+	if folder.ParentID != nil && *folder.ParentID != uuid.Nil {
 		str := folder.ParentID.String()
 		parentIDStr = &str
 	}
@@ -266,7 +270,7 @@ func buildFolderTree(folders []models.Folder) []dtos.FolderResponse {
 	var buildSubtree func(parent models.Folder) dtos.FolderResponse
 	buildSubtree = func(parent models.Folder) dtos.FolderResponse {
 		var parentIDStr *string
-		if parent.ParentID != nil {
+		if parent.ParentID != nil && *parent.ParentID != uuid.Nil {
 			s := parent.ParentID.String()
 			parentIDStr = &s
 		}

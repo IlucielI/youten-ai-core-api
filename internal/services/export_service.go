@@ -956,19 +956,6 @@ func extractActionItems(summary *models.Summary) []string {
 	return results
 }
 
-func extractExecutiveSummary(summary *models.Summary) string {
-	if summary == nil {
-		return ""
-	}
-	formatted := formatSummaryContent(summary)
-	if formatted.Overview != "" {
-		return formatted.Overview
-	}
-	if len(formatted.Sections) > 0 {
-		return strings.Join(formatted.Sections[0].Items, "\n")
-	}
-	return ""
-}
 
 func computeExportAnalytics(segments []models.TranscriptSegment) *dtos.JSONExportAnalytics {
 	if len(segments) == 0 {

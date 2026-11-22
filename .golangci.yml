@@ -1,0 +1,78 @@
+run:
+  timeout: 5m
+  tests: true
+  allow-parallel-runners: true
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  govet:
+    enable-all: false
+  gosec:
+    excludes:
+      - G101 # potential hardcoded credentials false positives on token type constants
+      - G104 # duplicate of errcheck
+      - G115 # integer overflow conversion in safe math / hash
+      - G204 # subprocess launched with dynamic path (ffmpeg/tesseract)
+      - G304 # file path inclusion
+      - G306 # file permissions
+      - G402 # TLS MinVersion
+  revive:
+    rules:
+      - name: blank-imports
+        disabled: true
+      - name: context-as-argument
+      - name: dot-imports
+      - name: error-return
+      - name: error-naming
+      - name: exported
+        disabled: true
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+        disabled: true
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: indent-error-flow
+      - name: superfluous-else
+      - name: unreachable-code
+  gocritic:
+    disabled-checks:
+      - ifElseChain
+      - exitAfterDefer
+      - appendAssign
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - gocritic
+    - revive
+    - unconvert
+
+issues:
+  exclude-dirs:
+    - bin
+    - deployment
+    - migrations
+    - docs
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+        - gocritic
+        - revive
+        - staticcheck
+        - unused

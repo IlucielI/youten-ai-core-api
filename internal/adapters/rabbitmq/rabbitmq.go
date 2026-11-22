@@ -50,6 +50,7 @@ type RabbitMQ struct {
 	mu                 sync.RWMutex
 	isClosed           bool
 	workersMu          sync.Mutex
+	shuttingDown       bool
 	workers            []*Worker
 }
 
@@ -916,6 +917,11 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 	}
 
 	r.workersMu.Lock()
+	if r.shuttingDown {
+		r.workersMu.Unlock()
+		cancel()
+		return nil, errors.New("rabbitmq worker registration closed due to shutdown")
+	}
 	r.workers = append(r.workers, w)
 	r.workersMu.Unlock()
 
@@ -929,6 +935,7 @@ func (r *RabbitMQ) ShutdownWorkers(ctx context.Context) error {
 		return nil
 	}
 	r.workersMu.Lock()
+	r.shuttingDown = true
 	pool := make([]*Worker, len(r.workers))
 	copy(pool, r.workers)
 	r.workersMu.Unlock()
@@ -953,10 +960,7 @@ func (r *RabbitMQ) ShutdownWorkers(ctx context.Context) error {
 		wg.Add(1)
 		go func(worker *Worker) {
 			defer wg.Done()
-			select {
-			case <-worker.done:
-			case <-ctx.Done():
-			}
+			<-worker.done
 		}(w)
 	}
 

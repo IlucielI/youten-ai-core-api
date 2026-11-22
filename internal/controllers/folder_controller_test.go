@@ -100,6 +100,10 @@ func TestControllers_ListWorkspaceFolders(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "name", "color"}).
 				AddRow(fID, wsID, "Design", "#4F46E5"))
 
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT folder_id, count(*) as count FROM "recordings" WHERE (workspace_id = $1 AND folder_id IS NOT NULL) AND "recordings"."deleted_at" IS NULL GROUP BY "folder_id"`)).
+			WithArgs(wsID).
+			WillReturnRows(sqlmock.NewRows([]string{"folder_id", "count"}).AddRow(fID, 2))
+
 		ctrls.ListWorkspaceFolders(c)
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())

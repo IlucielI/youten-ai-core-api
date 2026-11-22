@@ -37,6 +37,30 @@ func (r *Repositories) FindFoldersByWorkspaceID(ctx context.Context, workspaceID
 	return folders, nil
 }
 
+// CountRecordingsByFolder retrieves the number of recordings in each folder of a workspace in a single GROUP BY query (preventing N+1).
+func (r *Repositories) CountRecordingsByFolder(ctx context.Context, workspaceID uuid.UUID) (map[uuid.UUID]int, error) {
+	type countResult struct {
+		FolderID uuid.UUID `gorm:"column:folder_id"`
+		Count    int       `gorm:"column:count"`
+	}
+	var results []countResult
+	err := r.db.WithContext(ctx).
+		Model(&models.Recording{}).
+		Select("folder_id, count(*) as count").
+		Where("workspace_id = ? AND folder_id IS NOT NULL", workspaceID).
+		Group("folder_id").
+		Scan(&results).Error
+	if err != nil {
+		return nil, err
+	}
+
+	counts := make(map[uuid.UUID]int, len(results))
+	for _, res := range results {
+		counts[res.FolderID] = res.Count
+	}
+	return counts, nil
+}
+
 // UpdateFolder updates folder fields in the database.
 func (r *Repositories) UpdateFolder(ctx context.Context, folder *models.Folder) error {
 	res := r.db.WithContext(ctx).Model(&models.Folder{}).Where("id = ?", folder.ID).Select("*").Updates(folder)

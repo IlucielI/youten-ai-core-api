@@ -35,7 +35,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, req dtos.CreateWorkspaceR
 	}
 
 	if err := s.repo.CreateWorkspace(ctx, ws); err != nil {
-		return nil, fmt.Errorf("failed to create workspace: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to create workspace: %w", err))
 	}
 
 	return &dtos.WorkspaceResponse{
@@ -61,7 +61,7 @@ func (s *Service) ListUserWorkspaces(ctx context.Context) ([]dtos.WorkspaceRespo
 
 	workspaces, err := s.repo.FindWorkspacesByUserID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find workspaces for user: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to find workspaces for user: %w", err))
 	}
 
 	res := make([]dtos.WorkspaceResponse, 0, len(workspaces))
@@ -157,7 +157,7 @@ func (s *Service) UpdateWorkspace(ctx context.Context, workspaceID uuid.UUID, re
 	}
 
 	if err := s.repo.UpdateWorkspace(ctx, ws); err != nil {
-		return nil, fmt.Errorf("failed to update workspace: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to update workspace: %w", err))
 	}
 
 	count, _ := s.repo.CountWorkspaceMembers(ctx, workspaceID)
@@ -210,7 +210,7 @@ func (s *Service) ListWorkspaceMembers(ctx context.Context, workspaceID uuid.UUI
 
 	members, err := s.repo.ListWorkspaceMembers(ctx, workspaceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list workspace members: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to list workspace members: %w", err))
 	}
 
 	res := make([]dtos.WorkspaceMemberResponse, 0, len(members))
@@ -343,7 +343,7 @@ func (s *Service) EnsureUserPersonalWorkspace(ctx context.Context, user *models.
 	}
 
 	if err := s.repo.CreateWorkspace(ctx, ws); err != nil {
-		return nil, fmt.Errorf("failed to create workspace: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to create workspace: %w", err))
 	}
 	return ws, nil
 }

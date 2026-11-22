@@ -49,6 +49,9 @@ type RabbitMQ struct {
 	defaultPrefetch    int
 	mu                 sync.RWMutex
 	isClosed           bool
+	workersMu          sync.Mutex
+	shuttingDown       bool
+	workers            []*Worker
 }
 
 // PublishOption configures AMQP publishing behavior.
@@ -901,7 +904,7 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 		close(done)
 	}()
 
-	return &Worker{
+	w := &Worker{
 		queue:          cfg.Queue,
 		maxConcurrency: maxConcurrency,
 		getActive: func() int {
@@ -911,7 +914,68 @@ func (r *RabbitMQ) StartWorker(ctx context.Context, cfg ConsumeConfig, handler M
 		},
 		cancel: cancel,
 		done:   done,
-	}, nil
+	}
+
+	r.workersMu.Lock()
+	if r.shuttingDown {
+		r.workersMu.Unlock()
+		cancel()
+		return nil, errors.New("rabbitmq worker registration closed due to shutdown")
+	}
+	r.workers = append(r.workers, w)
+	r.workersMu.Unlock()
+
+	return w, nil
+}
+
+// ShutdownWorkers gracefully signals all registered worker pools to stop accepting new messages
+// and waits for active in-flight worker goroutines to complete their execution or until ctx expires.
+func (r *RabbitMQ) ShutdownWorkers(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	r.workersMu.Lock()
+	r.shuttingDown = true
+	pool := make([]*Worker, len(r.workers))
+	copy(pool, r.workers)
+	r.workersMu.Unlock()
+
+	if len(pool) == 0 {
+		return nil
+	}
+
+	// 1. Signal all workers to stop consuming deliveries
+	for _, w := range pool {
+		if w != nil && w.cancel != nil {
+			w.cancel()
+		}
+	}
+
+	// 2. Wait for each worker pool to drain its in-flight jobs
+	var wg sync.WaitGroup
+	for _, w := range pool {
+		if w == nil || w.done == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(worker *Worker) {
+			defer wg.Done()
+			<-worker.done
+		}(w)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Consume starts consuming messages from a queue with configurable concurrency and automatic ACK/NACK.

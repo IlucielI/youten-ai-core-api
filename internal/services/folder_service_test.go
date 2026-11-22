@@ -103,6 +103,12 @@ func TestService_ListWorkspaceFolders(t *testing.T) {
 				AddRow(fRootID, wsID, nil, "Design", "#4F46E5").
 				AddRow(fChildID, wsID, &fRootID, "Wireframes", "#10B981"))
 
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT folder_id, count(*) as count FROM "recordings" WHERE (workspace_id = $1 AND folder_id IS NOT NULL) AND "recordings"."deleted_at" IS NULL GROUP BY "folder_id"`)).
+			WithArgs(wsID).
+			WillReturnRows(sqlmock.NewRows([]string{"folder_id", "count"}).
+				AddRow(fRootID, 3).
+				AddRow(fChildID, 1))
+
 		tree, err := svc.ListWorkspaceFolders(ctx, wsID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -110,11 +116,17 @@ func TestService_ListWorkspaceFolders(t *testing.T) {
 		if len(tree) != 1 {
 			t.Fatalf("expected 1 root folder, got %d", len(tree))
 		}
+		if tree[0].RecordingsCount != 3 {
+			t.Errorf("expected root folder recordings count 3, got %d", tree[0].RecordingsCount)
+		}
 		if len(tree[0].Children) != 1 {
 			t.Fatalf("expected 1 child folder, got %d", len(tree[0].Children))
 		}
 		if tree[0].Children[0].Name != "Wireframes" {
 			t.Errorf("expected child name 'Wireframes', got %s", tree[0].Children[0].Name)
+		}
+		if tree[0].Children[0].RecordingsCount != 1 {
+			t.Errorf("expected child folder recordings count 1, got %d", tree[0].Children[0].RecordingsCount)
 		}
 	})
 }

@@ -90,7 +90,12 @@ func (s *Service) ListWorkspaceFolders(ctx context.Context, workspaceID uuid.UUI
 		return nil, err
 	}
 
-	return buildFolderTree(folders), nil
+	counts, err := s.repo.CountRecordingsByFolder(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildFolderTree(folders, counts), nil
 }
 
 // UpdateFolder modifies a folder's name, color, or parent (hierarchy move).
@@ -317,7 +322,7 @@ func (s *Service) moveRecordingCrossWorkspace(ctx context.Context, rec *models.R
 }
 
 // buildFolderTree transforms a flat list of folders into a nested tree.
-func buildFolderTree(folders []models.Folder) []dtos.FolderResponse {
+func buildFolderTree(folders []models.Folder, counts map[uuid.UUID]int) []dtos.FolderResponse {
 	childrenMap := make(map[uuid.UUID][]models.Folder)
 	var roots []models.Folder
 	for _, f := range folders {
@@ -336,14 +341,15 @@ func buildFolderTree(folders []models.Folder) []dtos.FolderResponse {
 			parentIDStr = &s
 		}
 		resp := dtos.FolderResponse{
-			ID:          parent.ID.String(),
-			WorkspaceID: parent.WorkspaceID.String(),
-			ParentID:    parentIDStr,
-			Name:        parent.Name,
-			Color:       parent.Color,
-			Children:    []dtos.FolderResponse{},
-			CreatedAt:   parent.CreatedAt,
-			UpdatedAt:   parent.UpdatedAt,
+			ID:              parent.ID.String(),
+			WorkspaceID:     parent.WorkspaceID.String(),
+			ParentID:        parentIDStr,
+			Name:            parent.Name,
+			Color:           parent.Color,
+			RecordingsCount: counts[parent.ID],
+			Children:        []dtos.FolderResponse{},
+			CreatedAt:       parent.CreatedAt,
+			UpdatedAt:       parent.UpdatedAt,
 		}
 		for _, child := range childrenMap[parent.ID] {
 			resp.Children = append(resp.Children, buildSubtree(child))

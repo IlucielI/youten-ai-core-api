@@ -114,6 +114,34 @@ func TestRepositories_FindFoldersByWorkspaceID(t *testing.T) {
 	}
 }
 
+func TestRepositories_CountRecordingsByFolder(t *testing.T) {
+	repo, mock, cleanup := setupMockFolderDB(t)
+	defer cleanup()
+
+	wsID := uuid.New()
+	f1ID := uuid.New()
+	f2ID := uuid.New()
+
+	rows := sqlmock.NewRows([]string{"folder_id", "count"}).
+		AddRow(f1ID, 5).
+		AddRow(f2ID, 2)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT folder_id, count(*) as count FROM "recordings" WHERE (workspace_id = $1 AND folder_id IS NOT NULL) AND "recordings"."deleted_at" IS NULL GROUP BY "folder_id"`)).
+		WithArgs(wsID).
+		WillReturnRows(rows)
+
+	counts, err := repo.CountRecordingsByFolder(context.Background(), wsID)
+	if err != nil {
+		t.Fatalf("unexpected error counting recordings: %v", err)
+	}
+	if len(counts) != 2 {
+		t.Fatalf("expected 2 folder counts, got %d", len(counts))
+	}
+	if counts[f1ID] != 5 || counts[f2ID] != 2 {
+		t.Errorf("unexpected counts: %v", counts)
+	}
+}
+
 func TestRepositories_UpdateFolder(t *testing.T) {
 	repo, mock, cleanup := setupMockFolderDB(t)
 	defer cleanup()

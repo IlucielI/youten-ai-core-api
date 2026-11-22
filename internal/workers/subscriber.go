@@ -78,3 +78,9 @@ type ConfigurableEventSubscriber interface {
 	// MustSubscribeWithWorkerOptions registers a subscription with options and panics on failure.
 	MustSubscribeWithWorkerOptions(topic string, handler WorkerHandler, opts ...SubscribeOption)
 }
+
+// DrainableEventSubscriber is an optional interface implemented by message brokers
+// that support draining background worker pools gracefully on shutdown.
+type DrainableEventSubscriber interface {
+	ShutdownWorkers(ctx context.Context) error
+}

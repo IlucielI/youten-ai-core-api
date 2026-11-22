@@ -220,8 +220,9 @@ func main() {
 	defer stop()
 
 	// Register worker subscription to Message Queue and background cleanup scheduler
+	var workerServer *workers.WorkerServer
 	if broker != nil {
-		workerServer := workers.New(cfg, svc, broker)
+		workerServer = workers.New(cfg, svc, broker)
 		workerServer.RegisterWorker()
 		workerServer.StartCleanupTicker(ctx, 30*time.Minute)
 	}
@@ -246,7 +247,22 @@ func main() {
 	defer cancel()
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server forced to shutdown: %v", err)
+		log.Printf("server http shutdown error: %v", err)
+	}
+
+	if workerServer != nil {
+		drainTimeout := cfg.WorkerShutdownTimeout
+		if drainTimeout <= 0 {
+			drainTimeout = 30 * time.Second
+		}
+		log.Printf("draining in-flight background worker jobs (timeout %v)...", drainTimeout)
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), drainTimeout)
+		defer drainCancel()
+		if err := workerServer.Shutdown(drainCtx); err != nil {
+			log.Printf("worker drain encountered error or timeout: %v", err)
+		} else {
+			log.Println("all background workers drained cleanly")
+		}
 	}
 
 	log.Println("server exited")

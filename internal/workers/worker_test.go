@@ -176,3 +176,42 @@ func TestWorkerServer_ExtractSemaphore_RespectsCap(t *testing.T) {
 		t.Error("expected false on bad json")
 	}
 }
+
+type mockDrainableSubscriber struct {
+	mockSubscriber
+	shutdownCalled bool
+}
+
+func (m *mockDrainableSubscriber) ShutdownWorkers(ctx context.Context) error {
+	m.shutdownCalled = true
+	return nil
+}
+
+func TestWorkerServer_Shutdown(t *testing.T) {
+	var nilServer *workers.WorkerServer
+	if err := nilServer.Shutdown(context.Background()); err != nil {
+		t.Errorf("expected nil error on nil server shutdown, got %v", err)
+	}
+
+	serverNoSub := workers.New(config.Config{}, nil, nil)
+	if err := serverNoSub.Shutdown(context.Background()); err != nil {
+		t.Errorf("expected nil error on server with nil sub, got %v", err)
+	}
+
+	mockBasic := newMockSubscriber()
+	serverBasic := workers.New(config.Config{}, nil, mockBasic)
+	if err := serverBasic.Shutdown(context.Background()); err != nil {
+		t.Errorf("expected nil error on non-drainable sub, got %v", err)
+	}
+
+	mockDrainable := &mockDrainableSubscriber{
+		mockSubscriber: *newMockSubscriber(),
+	}
+	serverDrainable := workers.New(config.Config{}, nil, mockDrainable)
+	if err := serverDrainable.Shutdown(context.Background()); err != nil {
+		t.Errorf("expected nil error on drainable sub, got %v", err)
+	}
+	if !mockDrainable.shutdownCalled {
+		t.Error("expected ShutdownWorkers to be called on drainable sub")
+	}
+}

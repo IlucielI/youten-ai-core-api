@@ -96,6 +96,10 @@ func TestRabbitMQ_NilReceiver(t *testing.T) {
 		t.Error("expected error calling StartWorker on nil RabbitMQ, got nil")
 	}
 
+	if err := r.ShutdownWorkers(ctx); err != nil {
+		t.Errorf("expected nil error calling ShutdownWorkers on nil RabbitMQ, got %v", err)
+	}
+
 	if err := r.Close(); err != nil {
 		t.Errorf("expected nil error calling Close on nil RabbitMQ, got %v", err)
 	}

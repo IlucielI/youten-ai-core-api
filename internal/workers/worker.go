@@ -30,6 +30,17 @@ func New(cfg config.Config, svc *services.Service, sub EventSubscriber) *WorkerS
 	}
 }
 
+// Shutdown gracefully waits for in-flight jobs in underlying subscribers to drain within ctx deadline.
+func (w *WorkerServer) Shutdown(ctx context.Context) error {
+	if w == nil || w.sub == nil {
+		return nil
+	}
+	if drainable, ok := w.sub.(DrainableEventSubscriber); ok {
+		return drainable.ShutdownWorkers(ctx)
+	}
+	return nil
+}
+
 // DefaultStageTimeout defines the maximum deadline allowed for any single background pipeline stage.
 const DefaultStageTimeout = 15 * time.Minute
 

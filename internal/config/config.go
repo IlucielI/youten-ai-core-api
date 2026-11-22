@@ -58,10 +58,11 @@ type Config struct {
 	RabbitMQDialTimeout time.Duration
 
 	// Background Worker Elasticity & Concurrency Configuration
-	WorkerConcurrency   int
-	WorkerPrefetchCount int
-	MaxSummaryWorkers   int
-	MaxEmbeddingWorkers int
+	WorkerConcurrency     int
+	WorkerPrefetchCount   int
+	WorkerShutdownTimeout time.Duration
+	MaxSummaryWorkers     int
+	MaxEmbeddingWorkers   int
 
 	// JWT Configuration
 	JWTSecret            string
@@ -271,10 +272,11 @@ func Load() Config {
 		ZoomAccountID:              getEnv("ZOOM_ACCOUNT_ID", ""),
 
 		// Background Worker Elasticity & Concurrency settings
-		WorkerConcurrency:   getEnvInt("WORKER_CONCURRENCY", 4),
-		WorkerPrefetchCount: getEnvInt("WORKER_PREFETCH_COUNT", 8),
-		MaxSummaryWorkers:   getEnvInt("MAX_SUMMARY_WORKERS", 4),
-		MaxEmbeddingWorkers: getEnvInt("MAX_EMBEDDING_WORKERS", 4),
+		WorkerConcurrency:     getEnvInt("WORKER_CONCURRENCY", 4),
+		WorkerPrefetchCount:   getEnvInt("WORKER_PREFETCH_COUNT", 8),
+		WorkerShutdownTimeout: getEnvDuration("WORKER_SHUTDOWN_TIMEOUT", 30*time.Second),
+		MaxSummaryWorkers:     getEnvInt("MAX_SUMMARY_WORKERS", 4),
+		MaxEmbeddingWorkers:   getEnvInt("MAX_EMBEDDING_WORKERS", 4),
 
 		// YouTube Extractor settings
 		YouTubeProxyURL: getEnv("YOUTUBE_PROXY_URL", ""),

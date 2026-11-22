@@ -360,10 +360,10 @@ func (s *Service) InitiateWorkspaceChatStream(
 
 		if targetFolderID != nil && *targetFolderID != uuid.Nil {
 			// Recursive folder retrieval
-			m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByFolderRecursive(ctx, workspaceID, *targetFolderID, embeddings[0], 6, 0.48)
+			m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByFolderRecursive(ctx, workspaceID, *targetFolderID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
 		} else {
 			// Entire workspace retrieval
-			m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, workspaceID, embeddings[0], 6, 0.48)
+			m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, workspaceID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
 		}
 		if searchErr != nil {
 			return nil, constants.ErrInternalServerError.Wrap(searchErr)

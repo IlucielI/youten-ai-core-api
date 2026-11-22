@@ -1,6 +1,7 @@
-.PHONY: help run build test docker-up docker-down migrate-create migrate-up migrate-down migrate-status migrate-force
+.PHONY: help run build test lint docker-up docker-down migrate-create migrate-up migrate-down migrate-status migrate-force
 
 GOCMD ?= $(shell which go 2>/dev/null || which $(HOME)/go-local/go/bin/go 2>/dev/null || echo go)
+GOLANGCI_LINT ?= $(shell which golangci-lint 2>/dev/null || which $(HOME)/go/bin/golangci-lint 2>/dev/null || echo golangci-lint)
 
 # Default target
 help:
@@ -8,6 +9,7 @@ help:
 	@echo "  make run                   Run the API server"
 	@echo "  make build                 Build the API binary into bin/api"
 	@echo "  make test                  Run all unit tests"
+	@echo "  make lint                  Run golangci-lint"
 	@echo "  make docker-up             Start PostgreSQL, Redis, RabbitMQ, MinIO, and Mailpit"
 	@echo "  make docker-down           Stop all background Docker services"
 	@echo "  make migrate-create name=X Create a new pair of migration files"
@@ -25,6 +27,9 @@ build:
 
 test:
 	$(GOCMD) test -v ./...
+
+lint:
+	$(GOLANGCI_LINT) run ./...
 
 docker-up:
 	docker compose -f deployment/docker-compose.yaml up -d postgres redis rabbitmq minio mailpit

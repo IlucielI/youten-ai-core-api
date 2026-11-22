@@ -134,7 +134,7 @@ func (s *Service) AdminUpdateTemplate(ctx context.Context, meta dtos.AdminAction
 	schemaChanged := !reflect.DeepEqual(map[string]interface{}(tmpl.OutputSchema), req.OutputSchema)
 
 	if promptChanged || schemaChanged {
-		tmpl.Version = tmpl.Version + 1
+		tmpl.Version++
 	}
 
 	tmpl.Name = req.Name

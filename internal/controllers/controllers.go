@@ -62,7 +62,11 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 				reqPath = ctx.Request.URL.Path
 			}
 		}
-		log.Printf("[API ERROR %d] %s %s: %v", appErr.HTTPStatus, reqMethod, reqPath, err)
+		if appErr.Caller != "" {
+			log.Printf("[API ERROR %d] %s %s: %v (at %s)", appErr.HTTPStatus, reqMethod, reqPath, err, appErr.Caller)
+		} else {
+			log.Printf("[API ERROR %d] %s %s: %v", appErr.HTTPStatus, reqMethod, reqPath, err)
+		}
 	}
 
 	ctx.JSON(appErr.HTTPStatus, dtos.BaseResponse{

@@ -3,6 +3,7 @@ package apperror
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -113,6 +114,32 @@ func TestAppError_WithMessage(t *testing.T) {
 	updated := template.WithMessage("new custom message")
 	if updated.Message != "new custom message" || updated.HTTPStatus != http.StatusBadRequest {
 		t.Fatalf("unexpected updated error: %+v", updated)
+	}
+}
+
+func TestAppError_Caller(t *testing.T) {
+	err := New(http.StatusInternalServerError, "INTERNAL_ERROR", "db failed")
+	if !strings.Contains(err.CallerInfo(), "apperror_test.go:") {
+		t.Fatalf("expected caller info to contain apperror_test.go, got: %s", err.CallerInfo())
+	}
+
+	raw := errors.New("underlying io error")
+	wrapped := err.Wrap(raw)
+	if !strings.Contains(wrapped.CallerInfo(), "apperror_test.go:") {
+		t.Fatalf("expected wrapped caller info to contain apperror_test.go, got: %s", wrapped.CallerInfo())
+	}
+
+	override := wrapped.WithCaller("custom/file.go:99")
+	if override.CallerInfo() != "custom/file.go:99" {
+		t.Fatalf("expected override caller, got: %s", override.CallerInfo())
+	}
+
+	var nilErr *AppError
+	if nilErr.CallerInfo() != "" {
+		t.Fatalf("expected empty string for nil caller info, got: %s", nilErr.CallerInfo())
+	}
+	if nilErr.WithCaller("xyz") != nil {
+		t.Fatal("expected nil on WithCaller for nil receiver")
 	}
 }
 

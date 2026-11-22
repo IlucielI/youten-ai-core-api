@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
@@ -294,3 +295,82 @@ func TestService_AskWorkspaceMemory_SuccessWithCitations(t *testing.T) {
 		t.Errorf("unexpected source 1: %+v", res.Sources[1])
 	}
 }
+
+func TestService_InitiateWorkspaceChatStream_Success(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	wsID := uuid.New()
+	folderID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+	// 1. FindWorkspaceMember
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_members" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_members"."deleted_at" IS NULL ORDER BY "workspace_members"."id" LIMIT $3`)).
+		WithArgs(wsID, userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "role"}).
+			AddRow(uuid.New(), wsID, userID, "owner"))
+
+	// 2. CreateWorkspaceChatSession
+	sessID := uuid.New()
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "workspace_chat_sessions"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow(sessID, time.Now(), time.Now()))
+	mock.ExpectCommit()
+
+	// 3. CreateWorkspaceChatMessage (user message)
+	msgID := uuid.New()
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "workspace_chat_messages"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at", "citations", "retrieved_chunk_ids"}).
+			AddRow(msgID, time.Now(), time.Now(), []byte("[]"), []byte("[]")))
+	mock.ExpectCommit()
+
+	// 4. Embedding
+	mockEmb := &searchMockEmbedding{
+		embeddings: [][]float32{make([]float32, 1024)},
+	}
+	svc.SetEmbedding(mockEmb)
+
+	// 5. SearchWorkspaceTranscriptChunksByFolderRecursive
+	recID := uuid.New()
+	chunkID := uuid.New()
+	mock.ExpectQuery(regexp.QuoteMeta(`WITH RECURSIVE folder_tree AS (`)).
+		WithArgs(folderID, wsID, wsID, sqlmock.AnyArg(), wsID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "folder_id", "folder_name", "chunk_index", "content", "start_time", "end_time", "distance"}).
+			AddRow(chunkID, recID, "Sprint Planning", folderID, "Engineering", 0, "Discussion on backlog priorities.", 0.0, 60.0, 0.55))
+
+	// 6. Find past messages
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_chat_messages" WHERE session_id = $1 AND "workspace_chat_messages"."deleted_at" IS NULL ORDER BY created_at ASC`)).
+		WithArgs(sessID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "session_id", "sender_role", "content"}))
+
+	// 7. Mock LLM streaming
+	mockLLM := llm.NewMock()
+	mockLLM.StreamChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+		ch := make(chan dtos.StreamChunk, 2)
+		ch <- dtos.StreamChunk{Content: "Sprint backlog priorities agreed."}
+		close(ch)
+		return ch, nil
+	}
+	svc.SetLLM(mockLLM)
+
+	req := dtos.StreamWorkspaceChatRequest{
+		Question: "What was discussed?",
+		FolderID: &folderID,
+	}
+
+	result, err := svc.InitiateWorkspaceChatStream(ctx, wsID, req)
+	if err != nil {
+		t.Fatalf("unexpected error initiating stream: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil stream result")
+	}
+	if len(result.Sources) != 1 || result.Sources[0].RecordingID != recID {
+		t.Errorf("unexpected sources: %+v", result.Sources)
+	}
+	if len(result.RetrievedChunkIDs) != 1 || result.RetrievedChunkIDs[0] != chunkID {
+		t.Errorf("unexpected retrieved chunks: %+v", result.RetrievedChunkIDs)
+	}
+}
+

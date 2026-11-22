@@ -43,3 +43,13 @@ func (r WorkspaceRole) CanManageWorkspace() bool {
 	return r == WorkspaceRoleOwner
 }
 
+const (
+	// DefaultWorkspaceChatMaxDistance defines the pgvector cosine distance threshold for workspace and folder RAG chat.
+	// Calibrated to 0.72 to support multilingual & cross-lingual queries (e.g. English questions over Indonesian meetings) with BGE-M3.
+	DefaultWorkspaceChatMaxDistance = 0.72
+
+	// DefaultWorkspaceChatTopK defines the maximum number of chunks retrieved for workspace and folder chat context.
+	DefaultWorkspaceChatTopK = 6
+)
+
+

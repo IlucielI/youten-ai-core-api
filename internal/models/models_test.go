@@ -34,6 +34,8 @@ func TestTableNames(t *testing.T) {
 		{model: Feedback{}, expected: "feedbacks"},
 		{model: Workspace{}, expected: "workspaces"},
 		{model: WorkspaceMember{}, expected: "workspace_members"},
+		{model: UserGoogleCalendarConnection{}, expected: "user_google_calendar_connections"},
+		{model: ScheduledCalendarEvent{}, expected: "scheduled_calendar_events"},
 	}
 
 	for _, tc := range testCases {

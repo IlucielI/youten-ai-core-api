@@ -637,6 +637,205 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/integrations/google-calendar/auth-url:
+    get:
+      tags: [Integrations]
+      summary: Get Google Calendar OAuth Authorization URL
+      description: Generates an OAuth 2.0 authorization URL with encrypted CSRF state parameter.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Authorization URL payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleCalendarAuthURLResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/integrations/google-calendar/callback:
+    post:
+      tags: [Integrations]
+      summary: Handle Google Calendar OAuth Callback
+      description: Exchanges authorization code for tokens and saves integration connection.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleCalendarCallbackRequest'
+      responses:
+        '200':
+          description: Connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleCalendarConnectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/integrations/google-calendar/status:
+    get:
+      tags: [Integrations]
+      summary: Get Google Calendar Integration Status
+      description: Retrieves connection and auto-recording status for authenticated user.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Connection status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleCalendarConnectionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/integrations/google-calendar/settings:
+    patch:
+      tags: [Integrations]
+      summary: Update Google Calendar Settings
+      description: Modifies auto-recording preferences and bot lead time.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCalendarSettingsRequest'
+      responses:
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleCalendarConnectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/integrations/google-calendar/sync:
+    post:
+      tags: [Integrations]
+      summary: Trigger On-Demand Calendar Sync
+      description: Manually triggers an incremental synchronization of calendar events.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Synced successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleCalendarConnectionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/integrations/google-calendar:
+    delete:
+      tags: [Integrations]
+      summary: Disconnect Google Calendar
+      description: Revokes and removes Google Calendar integration connection.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Disconnected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/calendar/events:
+    get:
+      tags: [Integrations]
+      summary: List Scheduled Calendar Events
+      description: Returns paginated list of synchronized calendar events and auto-record status.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: platform
+          in: query
+          schema:
+            type: string
+            enum: [google_meet, zoom, ms_teams, none]
+        - name: dispatch_status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of scheduled events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarEventsListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/calendar/events/{id}/auto-record:
+    patch:
+      tags: [Integrations]
+      summary: Toggle Event Auto-Record
+      description: Enables or disables automated bot recording for a specific scheduled meeting event.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleEventAutoRecordRequest'
+      responses:
+        '200':
+          description: Updated event preference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/recordings/search:
     get:
       tags: [Intelligence & Search]
@@ -4568,6 +4767,149 @@ components:
         error_message:
           type: string
           example: Bot was denied entry by Zoom meeting host
+
+    GoogleCalendarAuthURLResponse:
+      type: object
+      properties:
+        auth_url:
+          type: string
+          example: https://accounts.google.com/o/oauth2/v2/auth?...
+        state:
+          type: string
+          example: secure-csrf-token
+
+    GoogleCalendarCallbackRequest:
+      type: object
+      required:
+        - code
+        - state
+      properties:
+        code:
+          type: string
+          example: 4/0AY0e-g7...
+        state:
+          type: string
+          example: secure-csrf-token
+
+    GoogleCalendarConnectionResponse:
+      type: object
+      properties:
+        connected:
+          type: boolean
+          example: true
+        google_email:
+          type: string
+          example: user@example.com
+        is_auto_record_enabled:
+          type: boolean
+          example: true
+        lead_time_minutes:
+          type: integer
+          example: 2
+        last_synced_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          example: active
+
+    UpdateCalendarSettingsRequest:
+      type: object
+      properties:
+        is_auto_record_enabled:
+          type: boolean
+          example: true
+        lead_time_minutes:
+          type: integer
+          minimum: 0
+          maximum: 15
+          example: 2
+
+    ToggleEventAutoRecordRequest:
+      type: object
+      required:
+        - auto_record_enabled
+      properties:
+        auto_record_enabled:
+          type: boolean
+          example: false
+
+    CalendarEventItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        google_event_id:
+          type: string
+          example: event_123456
+        title:
+          type: string
+          example: Sprint Planning
+        description:
+          type: string
+          example: Discuss sprint backlog
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        scheduled_dispatch_at:
+          type: string
+          format: date-time
+        meeting_url:
+          type: string
+          example: https://meet.google.com/abc-defg-hij
+        meeting_platform:
+          type: string
+          enum: [google_meet, zoom, ms_teams, none]
+        organizer_email:
+          type: string
+          example: organizer@example.com
+        user_response_status:
+          type: string
+          example: accepted
+        auto_record_enabled:
+          type: boolean
+          example: true
+        dispatch_status:
+          type: string
+          example: PENDING
+        bot_session_id:
+          type: string
+          format: uuid
+        recording_id:
+          type: string
+          format: uuid
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CalendarEventsListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalendarEventItem'
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+              example: 1
+            limit:
+              type: integer
+              example: 20
+            total_items:
+              type: integer
+              example: 1
+            total_pages:
+              type: integer
+              example: 1
 
 
 

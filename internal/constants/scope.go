@@ -19,6 +19,8 @@ const (
 	ScopeSpeakersManage   Scope = "speakers:manage"
 	ScopeExportPDF        Scope = "export:pdf"
 	ScopeProfileManage    Scope = "profile:manage"
+	ScopeCalendarRead     Scope = "calendar:read"
+	ScopeCalendarManage   Scope = "calendar:manage"
 
 	// Wildcard Scope
 	ScopeWildcard Scope = "*"

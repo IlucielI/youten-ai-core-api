@@ -57,7 +57,7 @@ func TestControllers_ListWorkspaceChatSessions(t *testing.T) {
 				AddRow(wsID, userID, "member"))
 
 		// Find sessions
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_chat_sessions" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_chat_sessions"."deleted_at" IS NULL ORDER BY updated_at DESC`)).
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_chat_sessions" WHERE (workspace_id = $1 AND user_id = $2) AND folder_id IS NULL AND "workspace_chat_sessions"."deleted_at" IS NULL ORDER BY updated_at DESC`)).
 			WithArgs(wsID, userID).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "title", "updated_at"}).
 				AddRow(sessID, wsID, userID, "Planning Chat", time.Now()))

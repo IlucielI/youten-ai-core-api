@@ -58,12 +58,12 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 		)
 		if activeWsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWsID != uuid.Nil {
 			if _, err := s.repo.FindWorkspaceMember(ctx, activeWsID, authUser.UserID); err == nil {
-				m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, activeWsID, embeddings[0], 5, 0.45)
+				m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, activeWsID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
 			} else {
-				m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], 5, 0.45)
+				m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
 			}
 		} else {
-			m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], 5, 0.45)
+			m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
 		}
 		if searchErr != nil {
 			return nil, constants.ErrInternalServerError.Wrap(searchErr)

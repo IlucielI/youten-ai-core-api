@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -202,6 +203,7 @@ func (r *Repositories) SearchWorkspaceTranscriptChunks(ctx context.Context, user
 }
 
 // SearchWorkspaceTranscriptChunksByWorkspace performs cross-meeting semantic vector search scoped to a workspace.
+// Uses round-robin partitioned ranking per recording so diverse meetings are represented fairly in the context window.
 func (r *Repositories) SearchWorkspaceTranscriptChunksByWorkspace(ctx context.Context, workspaceID uuid.UUID, queryEmbedding []float32, topK int, maxDistance float64) ([]WorkspaceChunkMatch, error) {
 	if topK <= 0 {
 		topK = 10
@@ -209,35 +211,68 @@ func (r *Repositories) SearchWorkspaceTranscriptChunksByWorkspace(ctx context.Co
 	vec := models.Vector(queryEmbedding)
 	var results []WorkspaceChunkMatch
 
-	query := r.db.WithContext(ctx).
-		Table("transcript_chunks tc").
-		Select("tc.id, tc.recording_id, r.title as recording_title, r.folder_id, f.name as folder_name, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> ?) as distance", vec).
-		Joins("JOIN recordings r ON tc.recording_id = r.id").
-		Joins("LEFT JOIN folders f ON r.folder_id = f.id").
-		Where("r.workspace_id = ? AND r.deleted_at IS NULL", workspaceID)
+	rawQuery := `
+		WITH ranked_chunks AS (
+			SELECT 
+				tc.id, 
+				tc.recording_id, 
+				r.title as recording_title, 
+				r.folder_id, 
+				f.name as folder_name, 
+				tc.chunk_index, 
+				tc.content, 
+				tc.start_time, 
+				tc.end_time, 
+				(tc.embedding <=> ?) as distance,
+				ROW_NUMBER() OVER (
+					PARTITION BY tc.recording_id 
+					ORDER BY (tc.embedding <=> ?) ASC
+				) as rank_per_recording
+			FROM transcript_chunks tc
+			JOIN recordings r ON tc.recording_id = r.id
+			LEFT JOIN folders f ON r.folder_id = f.id
+			WHERE r.workspace_id = ? AND r.deleted_at IS NULL
+	`
+	args := []interface{}{vec, vec, workspaceID}
 
 	if maxDistance > 0 {
-		query = query.Where("(tc.embedding <=> ?) <= ?", vec, maxDistance)
+		rawQuery += " AND (tc.embedding <=> ?) <= ?"
+		args = append(args, vec, maxDistance)
 	}
 
-	err := query.
-		Order(clause.OrderBy{
-			Expression: clause.Expr{
-				SQL:  "tc.embedding <=> ?",
-				Vars: []interface{}{vec},
-			},
-		}).
-		Limit(topK).
-		Scan(&results).Error
+	rawQuery += `
+		)
+		SELECT 
+			id, 
+			recording_id, 
+			recording_title, 
+			folder_id, 
+			folder_name, 
+			chunk_index, 
+			content, 
+			start_time, 
+			end_time, 
+			distance
+		FROM ranked_chunks
+		ORDER BY rank_per_recording ASC, distance ASC
+		LIMIT ?
+	`
+	args = append(args, topK)
 
+	err := r.db.WithContext(ctx).Raw(rawQuery, args...).Scan(&results).Error
 	if err != nil {
 		return nil, err
 	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Distance < results[j].Distance
+	})
+
 	return results, nil
 }
 
 // SearchWorkspaceTranscriptChunksByFolderRecursive performs cross-meeting semantic vector search
-// scoped to a specific folder and all of its sub-folders recursively.
+// scoped to a specific folder and all of its sub-folders recursively, using round-robin partitioned ranking.
 func (r *Repositories) SearchWorkspaceTranscriptChunksByFolderRecursive(
 	ctx context.Context,
 	workspaceID uuid.UUID,
@@ -259,39 +294,65 @@ func (r *Repositories) SearchWorkspaceTranscriptChunksByFolderRecursive(
 			SELECT f.id FROM folders f
 			INNER JOIN folder_tree ft ON f.parent_id = ft.id
 			WHERE f.deleted_at IS NULL AND f.workspace_id = ?
-		)
-		SELECT 
-			tc.id,
-			tc.recording_id,
-			r.title AS recording_title,
-			r.folder_id,
-			f.name AS folder_name,
-			tc.chunk_index,
-			tc.content,
-			tc.start_time,
-			tc.end_time,
-			(tc.embedding <=> ?) AS distance
-		FROM transcript_chunks tc
-		JOIN recordings r ON tc.recording_id = r.id
-		LEFT JOIN folders f ON r.folder_id = f.id
-		WHERE r.workspace_id = ?
-		  AND r.folder_id IN (SELECT id FROM folder_tree)
-		  AND r.deleted_at IS NULL
+		),
+		ranked_chunks AS (
+			SELECT 
+				tc.id,
+				tc.recording_id,
+				r.title AS recording_title,
+				r.folder_id,
+				f.name AS folder_name,
+				tc.chunk_index,
+				tc.content,
+				tc.start_time,
+				tc.end_time,
+				(tc.embedding <=> ?) AS distance,
+				ROW_NUMBER() OVER (
+					PARTITION BY tc.recording_id 
+					ORDER BY (tc.embedding <=> ?) ASC
+				) as rank_per_recording
+			FROM transcript_chunks tc
+			JOIN recordings r ON tc.recording_id = r.id
+			LEFT JOIN folders f ON r.folder_id = f.id
+			WHERE r.workspace_id = ?
+			  AND r.folder_id IN (SELECT id FROM folder_tree)
+			  AND r.deleted_at IS NULL
 	`
-	args := []interface{}{folderID, workspaceID, workspaceID, vec, workspaceID}
+	args := []interface{}{folderID, workspaceID, workspaceID, vec, vec, workspaceID}
 
 	if maxDistance > 0 {
 		rawQuery += " AND (tc.embedding <=> ?) <= ?"
 		args = append(args, vec, maxDistance)
 	}
 
-	rawQuery += " ORDER BY tc.embedding <=> ? ASC LIMIT ?"
-	args = append(args, vec, topK)
+	rawQuery += `
+		)
+		SELECT 
+			id, 
+			recording_id, 
+			recording_title, 
+			folder_id, 
+			folder_name, 
+			chunk_index, 
+			content, 
+			start_time, 
+			end_time, 
+			distance
+		FROM ranked_chunks
+		ORDER BY rank_per_recording ASC, distance ASC
+		LIMIT ?
+	`
+	args = append(args, topK)
 
 	err := r.db.WithContext(ctx).Raw(rawQuery, args...).Scan(&results).Error
 	if err != nil {
 		return nil, err
 	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Distance < results[j].Distance
+	})
+
 	return results, nil
 }
 

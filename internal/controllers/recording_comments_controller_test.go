@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"code-base-golang/internal/adapters/llm"
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/ctxmeta"
 )
@@ -931,7 +932,7 @@ func TestControllers_AskWorkspaceMemory_ServiceError(t *testing.T) {
 	// Simulate database error during cross-meeting chunk search
 	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
 	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
 		WillReturnError(errors.New("database connection failed"))
 
 	w := httptest.NewRecorder()
@@ -967,7 +968,7 @@ func TestControllers_AskWorkspaceMemory_Success(t *testing.T) {
 
 	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
 	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}).
 			AddRow(chunkID, recID, "Q3 Planning", 0, "Delivery planned for October.", 15.0, 50.0, 0.15))
 

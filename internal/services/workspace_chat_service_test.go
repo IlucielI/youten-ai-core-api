@@ -143,7 +143,7 @@ func TestService_AskWorkspaceMemory_SearchError(t *testing.T) {
 
 	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
 	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
 		WillReturnError(errors.New("db connection lost"))
 
 	res, err := svc.AskWorkspaceMemory(ctx, dtos.WorkspaceAskRequest{Question: "revenue targets"})
@@ -173,7 +173,7 @@ func TestService_AskWorkspaceMemory_LLMError(t *testing.T) {
 
 	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
 	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}))
 
 	res, err := svc.AskWorkspaceMemory(ctx, dtos.WorkspaceAskRequest{Question: "product roadmap"})
@@ -209,7 +209,7 @@ func TestService_AskWorkspaceMemory_ZeroMatchFallback(t *testing.T) {
 
 	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
 	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}))
 
 	res, err := svc.AskWorkspaceMemory(ctx, dtos.WorkspaceAskRequest{Question: "completely unrelated question"})
@@ -262,7 +262,7 @@ func TestService_AskWorkspaceMemory_SuccessWithCitations(t *testing.T) {
 
 	expectedSQL := `SELECT tc.id, tc.recording_id, r.title as recording_title, tc.chunk_index, tc.content, tc.start_time, tc.end_time, (tc.embedding <=> $1) as distance FROM transcript_chunks tc JOIN recordings r ON tc.recording_id = r.id WHERE (r.user_id = $2 AND r.deleted_at IS NULL) AND (tc.embedding <=> $3) <= $4 ORDER BY tc.embedding <=> $5 LIMIT $6`
 	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), 0.45, sqlmock.AnyArg(), 5).
+		WithArgs(sqlmock.AnyArg(), userID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "chunk_index", "content", "start_time", "end_time", "distance"}).
 			AddRow(chunkID1, recID1, "Q3 Financials", 0, "Revenue exceeded expectations by 20 percent.", 30.0, 90.0, 0.12).
 			AddRow(chunkID2, recID2, "Product All-Hands", 3, "New AI features are launching in Q4.", 240.0, 300.0, 0.25))
@@ -335,7 +335,7 @@ func TestService_InitiateWorkspaceChatStream_Success(t *testing.T) {
 	recID := uuid.New()
 	chunkID := uuid.New()
 	mock.ExpectQuery(regexp.QuoteMeta(`WITH RECURSIVE folder_tree AS (`)).
-		WithArgs(folderID, wsID, wsID, sqlmock.AnyArg(), wsID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, sqlmock.AnyArg(), constants.DefaultWorkspaceChatTopK).
+		WithArgs(folderID, wsID, wsID, sqlmock.AnyArg(), sqlmock.AnyArg(), wsID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, constants.DefaultWorkspaceChatTopK).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "folder_id", "folder_name", "chunk_index", "content", "start_time", "end_time", "distance"}).
 			AddRow(chunkID, recID, "Sprint Planning", folderID, "Engineering", 0, "Discussion on backlog priorities.", 0.0, 60.0, 0.55))
 

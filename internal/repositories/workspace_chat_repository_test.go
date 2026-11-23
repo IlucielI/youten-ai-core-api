@@ -94,7 +94,7 @@ func TestRepositories_FindWorkspaceChatSessions(t *testing.T) {
 	wsID := uuid.New()
 	userID := uuid.New()
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_chat_sessions" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_chat_sessions"."deleted_at" IS NULL ORDER BY updated_at DESC`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_chat_sessions" WHERE (workspace_id = $1 AND user_id = $2) AND folder_id IS NULL AND "workspace_chat_sessions"."deleted_at" IS NULL ORDER BY updated_at DESC`)).
 		WithArgs(wsID, userID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "title", "updated_at"}).
 			AddRow(sessID, wsID, userID, "Folder Chat", time.Now()))
@@ -156,7 +156,7 @@ func TestRepositories_SearchWorkspaceTranscriptChunksByFolderRecursive(t *testin
 	embedding := []float32{0.1, 0.2, 0.3}
 
 	mock.ExpectQuery(`WITH RECURSIVE folder_tree AS`).
-		WithArgs(folderID, wsID, wsID, models.Vector(embedding), wsID, models.Vector(embedding), 0.45, models.Vector(embedding), 5).
+		WithArgs(folderID, wsID, wsID, models.Vector(embedding), models.Vector(embedding), wsID, models.Vector(embedding), 0.45, 5).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "folder_id", "folder_name", "chunk_index", "content", "start_time", "end_time", "distance"}).
 			AddRow(chunkID, recID, "Sprint Review", folderID, "Dev Folder", 0, "Discussion on Q4 roadmap", 0.0, 10.0, 0.25))
 

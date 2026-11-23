@@ -49,7 +49,7 @@ const (
 	DefaultWorkspaceChatMaxDistance = 0.72
 
 	// DefaultWorkspaceChatTopK defines the maximum number of chunks retrieved for workspace and folder chat context.
-	DefaultWorkspaceChatTopK = 6
+	DefaultWorkspaceChatTopK = 15
 )
 
 

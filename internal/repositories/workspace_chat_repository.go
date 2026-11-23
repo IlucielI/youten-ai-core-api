@@ -27,6 +27,7 @@ func (r *Repositories) FindWorkspaceChatSessionByID(ctx context.Context, session
 }
 
 // FindWorkspaceChatSessions retrieves sessions for a user within a workspace, optionally filtered by folder.
+// When folderID is nil, it retrieves workspace-level sessions (folder_id IS NULL) to isolate workspace chat from folder chat.
 func (r *Repositories) FindWorkspaceChatSessions(
 	ctx context.Context,
 	workspaceID uuid.UUID,
@@ -40,6 +41,8 @@ func (r *Repositories) FindWorkspaceChatSessions(
 
 	if folderID != nil && *folderID != uuid.Nil {
 		query = query.Where("folder_id = ?", *folderID)
+	} else {
+		query = query.Where("folder_id IS NULL")
 	}
 
 	err := query.Order("updated_at DESC").Find(&sessions).Error

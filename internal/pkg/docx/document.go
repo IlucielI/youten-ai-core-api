@@ -43,7 +43,7 @@ func (d *Document) AddTitle(title string) {
           <w:sz w:val="48"/>
           <w:szCs w:val="48"/>
         </w:rPr>
-        <w:t>` + escapeXML(title) + `</w:t>
+        <w:t xml:space="preserve">` + escapeXML(title) + `</w:t>
       </w:r>
     </w:p>`)
 }
@@ -64,7 +64,7 @@ func (d *Document) AddHeading1(heading string) {
           <w:sz w:val="32"/>
           <w:szCs w:val="32"/>
         </w:rPr>
-        <w:t>` + escapeXML(heading) + `</w:t>
+        <w:t xml:space="preserve">` + escapeXML(heading) + `</w:t>
       </w:r>
     </w:p>`)
 }
@@ -85,7 +85,7 @@ func (d *Document) AddHeading2(heading string) {
           <w:sz w:val="26"/>
           <w:szCs w:val="26"/>
         </w:rPr>
-        <w:t>` + escapeXML(heading) + `</w:t>
+        <w:t xml:space="preserve">` + escapeXML(heading) + `</w:t>
       </w:r>
     </w:p>`)
 }
@@ -106,7 +106,7 @@ func (d *Document) AddHeading3(heading string) {
           <w:sz w:val="22"/>
           <w:szCs w:val="22"/>
         </w:rPr>
-        <w:t>` + escapeXML(heading) + `</w:t>
+        <w:t xml:space="preserve">` + escapeXML(heading) + `</w:t>
       </w:r>
     </w:p>`)
 }
@@ -199,7 +199,7 @@ func (d *Document) AddCallout(title, text string) {
                 <w:color w:val="4338CA"/>
                 <w:sz w:val="21"/>
               </w:rPr>
-              <w:t>` + escapeXML(title) + `</w:t>
+              <w:t xml:space="preserve">` + escapeXML(title) + `</w:t>
             </w:r>
           </w:p>
           <w:p>
@@ -270,7 +270,7 @@ func (d *Document) AddTable(headers []string, rows [][]string) {
                 <w:color w:val="1E293B"/>
                 <w:sz w:val="20"/>
               </w:rPr>
-              <w:t>` + escapeXML(h) + `</w:t>
+              <w:t xml:space="preserve">` + escapeXML(h) + `</w:t>
             </w:r>
           </w:p>
         </w:tc>`)
@@ -334,7 +334,7 @@ func (d *Document) AddTranscriptTurn(speaker, timestamp, text string) {
           <w:color w:val="4338CA"/>
           <w:sz w:val="20"/>
         </w:rPr>
-        <w:t>` + escapeXML(speaker) + `</w:t>
+        <w:t xml:space="preserve">` + escapeXML(speaker) + `</w:t>
       </w:r>`)
 
 	if timestamp != "" {
@@ -553,3 +553,4 @@ func documentWrapperXML(body string) string {
   </w:body>
 </w:document>`
 }
+

@@ -66,8 +66,14 @@ func TestDocx_CreateDocument(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to open word/document.xml: %v", err)
 			}
-			content, _ := io.ReadAll(rc)
-			rc.Close()
+			content, err := io.ReadAll(rc)
+			if err != nil {
+				_ = rc.Close()
+				t.Fatalf("failed to read word/document.xml: %v", err)
+			}
+			if err := rc.Close(); err != nil {
+				t.Fatalf("failed to close word/document.xml: %v", err)
+			}
 			docXMLContent = string(content)
 		}
 	}

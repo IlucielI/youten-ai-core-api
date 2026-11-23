@@ -12,12 +12,35 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/pkg/timeutil"
 	"code-base-golang/internal/repositories"
 	"code-base-golang/internal/templates"
 )
 
+func formatWorkspaceCatalogItems(catalog []repositories.WorkspaceCatalogRecord) []templates.WorkspaceMeetingCatalogItem {
+	items := make([]templates.WorkspaceMeetingCatalogItem, 0, len(catalog))
+	for _, c := range catalog {
+		dateStr := c.CreatedAt.Format("02 Jan 2006")
+		durStr := timeutil.FormatTimestamp(c.DurationSeconds)
+		cleanOverview := strings.TrimSpace(c.Overview)
+		runes := []rune(cleanOverview)
+		if len(runes) > 300 {
+			cleanOverview = string(runes[:300]) + "..."
+		}
+		items = append(items, templates.WorkspaceMeetingCatalogItem{
+			RecordingID:        c.RecordingID.String(),
+			Title:              c.Title,
+			FolderName:         c.FolderName,
+			DurationFormatted:  durStr,
+			CreatedAtFormatted: dateStr,
+			Overview:           cleanOverview,
+		})
+	}
+	return items
+}
+
 // BuildWorkspaceRAGPrompt constructs system and user prompts for cross-meeting Q&A over multiple meeting recordings.
-func BuildWorkspaceRAGPrompt(query string, matches []repositories.WorkspaceChunkMatch) (systemPrompt string, userPrompt string) {
+func BuildWorkspaceRAGPrompt(query string, matches []repositories.WorkspaceChunkMatch, catalog ...templates.WorkspaceMeetingCatalogItem) (systemPrompt string, userPrompt string) {
 	views := make([]templates.WorkspaceChunkView, len(matches))
 	for i, m := range matches {
 		views[i] = templates.WorkspaceChunkView{
@@ -29,7 +52,7 @@ func BuildWorkspaceRAGPrompt(query string, matches []repositories.WorkspaceChunk
 		}
 	}
 
-	sys, user, err := templates.RenderWorkspaceRAGPrompts(query, views)
+	sys, user, err := templates.RenderWorkspaceRAGPrompts(query, views, catalog...)
 	if err != nil {
 		return "You are a helpful, accurate AI assistant for workspace meeting memory. Strict Grounding Rules apply.", "Question: " + query
 	}
@@ -85,7 +108,14 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 		})
 	}
 
-	systemPrompt, userPrompt := BuildWorkspaceRAGPrompt(trimmedQ, matches)
+	var catalogItems []templates.WorkspaceMeetingCatalogItem
+	if activeWsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWsID != uuid.Nil {
+		if rawCatalog, err := s.repo.GetWorkspaceMeetingCatalog(ctx, activeWsID, nil, constants.DefaultWorkspaceMeetingCatalogLimit); err == nil {
+			catalogItems = formatWorkspaceCatalogItems(rawCatalog)
+		}
+	}
+
+	systemPrompt, userPrompt := BuildWorkspaceRAGPrompt(trimmedQ, matches, catalogItems...)
 
 	messages := make([]dtos.ChatMessageInput, 0, len(req.History)+1)
 	if len(req.History) > 0 {
@@ -347,16 +377,17 @@ func (s *Service) InitiateWorkspaceChatStream(
 		return nil, constants.ErrInternalServerError.Wrap(err)
 	}
 
+	targetFolderID := req.FolderID
+	if targetFolderID == nil && session.FolderID != nil {
+		targetFolderID = session.FolderID
+	}
+
 	var matches []repositories.WorkspaceChunkMatch
 	if len(embeddings) > 0 && len(embeddings[0]) > 0 {
 		var (
 			m         []repositories.WorkspaceChunkMatch
 			searchErr error
 		)
-		targetFolderID := req.FolderID
-		if targetFolderID == nil && session.FolderID != nil {
-			targetFolderID = session.FolderID
-		}
 
 		if targetFolderID != nil && *targetFolderID != uuid.Nil {
 			// Recursive folder retrieval
@@ -387,7 +418,12 @@ func (s *Service) InitiateWorkspaceChatStream(
 		retrievedChunkIDs = append(retrievedChunkIDs, m.ID)
 	}
 
-	systemPrompt, userPrompt := BuildWorkspaceRAGPrompt(trimmedQ, matches)
+	var catalogItems []templates.WorkspaceMeetingCatalogItem
+	if rawCatalog, err := s.repo.GetWorkspaceMeetingCatalog(ctx, workspaceID, targetFolderID, constants.DefaultWorkspaceMeetingCatalogLimit); err == nil {
+		catalogItems = formatWorkspaceCatalogItems(rawCatalog)
+	}
+
+	systemPrompt, userPrompt := BuildWorkspaceRAGPrompt(trimmedQ, matches, catalogItems...)
 
 	// Fetch past session history for multi-turn dialogue context
 	pastMessages, _ := s.repo.FindWorkspaceChatMessagesBySession(ctx, session.ID)

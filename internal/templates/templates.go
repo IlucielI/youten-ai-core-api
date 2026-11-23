@@ -59,10 +59,21 @@ type WorkspaceChunkView struct {
 	EndFormatted   string
 }
 
+// WorkspaceMeetingCatalogItem holds summarized metadata of an individual meeting in the workspace catalog.
+type WorkspaceMeetingCatalogItem struct {
+	RecordingID        string
+	Title              string
+	FolderName         string
+	DurationFormatted  string
+	CreatedAtFormatted string
+	Overview           string
+}
+
 // WorkspaceRAGUserData holds input parameters for workspace_rag_user.tmpl.
 type WorkspaceRAGUserData struct {
 	Query   string
 	Matches []WorkspaceChunkView
+	Catalog []WorkspaceMeetingCatalogItem
 }
 
 // SummaryUserData holds input parameters for summary_user.tmpl.
@@ -211,8 +222,8 @@ func DefaultSpeakerRosterSystemPrompt() (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
-// RenderWorkspaceRAGUserPrompt formats query and cross-meeting retrieved chunks into user prompt.
-func RenderWorkspaceRAGUserPrompt(query string, matches []WorkspaceChunkView) (string, error) {
+// RenderWorkspaceRAGUserPrompt formats query, retrieved chunks, and optional meeting catalog into user prompt.
+func RenderWorkspaceRAGUserPrompt(query string, matches []WorkspaceChunkView, catalog ...WorkspaceMeetingCatalogItem) (string, error) {
 	var views []WorkspaceChunkView
 	for _, m := range matches {
 		title := strings.TrimSpace(m.RecordingTitle)
@@ -242,6 +253,7 @@ func RenderWorkspaceRAGUserPrompt(query string, matches []WorkspaceChunkView) (s
 	data := WorkspaceRAGUserData{
 		Query:   strings.TrimSpace(query),
 		Matches: views,
+		Catalog: catalog,
 	}
 
 	var buf bytes.Buffer
@@ -252,12 +264,12 @@ func RenderWorkspaceRAGUserPrompt(query string, matches []WorkspaceChunkView) (s
 }
 
 // RenderWorkspaceRAGPrompts returns both system and user prompts ready for workspace LLM chat.
-func RenderWorkspaceRAGPrompts(query string, matches []WorkspaceChunkView) (systemPrompt, userPrompt string, err error) {
+func RenderWorkspaceRAGPrompts(query string, matches []WorkspaceChunkView, catalog ...WorkspaceMeetingCatalogItem) (systemPrompt, userPrompt string, err error) {
 	systemPrompt, err = DefaultWorkspaceRAGSystemPrompt()
 	if err != nil {
 		return "", "", err
 	}
-	userPrompt, err = RenderWorkspaceRAGUserPrompt(query, matches)
+	userPrompt, err = RenderWorkspaceRAGUserPrompt(query, matches, catalog...)
 	if err != nil {
 		return "", "", err
 	}

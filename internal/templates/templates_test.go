@@ -223,6 +223,30 @@ func TestTemplates_WorkspaceRAGPrompts(t *testing.T) {
 	if !strings.Contains(emptyUser, "(No meeting context found in workspace memory)") {
 		t.Errorf("expected no context notice, got: %s", emptyUser)
 	}
+
+	// With catalog items
+	catalog := []templates.WorkspaceMeetingCatalogItem{
+		{
+			Title:              "Tech Architecture",
+			FolderName:         "Core Team",
+			DurationFormatted:  "15:00",
+			CreatedAtFormatted: "23 Nov 2026",
+			Overview:           "Discussion on pgvector and database indexing.",
+		},
+	}
+	catalogUser, err := templates.RenderWorkspaceRAGUserPrompt("all meetings", nil, catalog...)
+	if err != nil {
+		t.Fatalf("unexpected error rendering catalog prompt: %v", err)
+	}
+	if !strings.Contains(catalogUser, "WORKSPACE MEETING CATALOG") {
+		t.Errorf("expected WORKSPACE MEETING CATALOG header, got: %s", catalogUser)
+	}
+	if !strings.Contains(catalogUser, `Meeting: "Tech Architecture" [Folder: Core Team]`) {
+		t.Errorf("expected meeting item with folder, got: %s", catalogUser)
+	}
+	if !strings.Contains(catalogUser, "Overview: Discussion on pgvector and database indexing.") {
+		t.Errorf("expected overview, got: %s", catalogUser)
+	}
 }
 
 func TestTemplates_DefaultDiarizeSystemPrompt(t *testing.T) {

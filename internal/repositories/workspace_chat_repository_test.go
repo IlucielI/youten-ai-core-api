@@ -193,3 +193,57 @@ func TestRepositories_CountWorkspaceChatMessagesBySessions(t *testing.T) {
 		t.Errorf("unexpected counts: %+v", res)
 	}
 }
+
+func TestRepositories_GetWorkspaceMeetingCatalog_WorkspaceLevel(t *testing.T) {
+	repo, mock, cleanup := setupMockChatDB(t)
+	defer cleanup()
+
+	wsID := uuid.New()
+	recID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`SELECT r.id AS recording_id, r.title, r.folder_id, f.name AS folder_name, r.created_at, r.duration_seconds`).
+		WithArgs(wsID, 50).
+		WillReturnRows(sqlmock.NewRows([]string{"recording_id", "title", "folder_id", "folder_name", "created_at", "duration_seconds", "overview"}).
+			AddRow(recID, "All-Hands Meeting", nil, "", now, 1200.0, "Company quarterly progress review."))
+
+	results, err := repo.GetWorkspaceMeetingCatalog(context.Background(), wsID, nil, 50)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(results))
+	}
+	if results[0].Title != "All-Hands Meeting" {
+		t.Errorf("expected title 'All-Hands Meeting', got %s", results[0].Title)
+	}
+	if results[0].Overview != "Company quarterly progress review." {
+		t.Errorf("expected overview, got %s", results[0].Overview)
+	}
+}
+
+func TestRepositories_GetWorkspaceMeetingCatalog_FolderLevel(t *testing.T) {
+	repo, mock, cleanup := setupMockChatDB(t)
+	defer cleanup()
+
+	wsID := uuid.New()
+	folderID := uuid.New()
+	recID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(`WITH RECURSIVE folder_tree AS`).
+		WithArgs(folderID, wsID, wsID, wsID, 10).
+		WillReturnRows(sqlmock.NewRows([]string{"recording_id", "title", "folder_id", "folder_name", "created_at", "duration_seconds", "overview"}).
+			AddRow(recID, "Sprint Review", folderID, "Dev Folder", now, 600.0, "Review of sprint backlog."))
+
+	results, err := repo.GetWorkspaceMeetingCatalog(context.Background(), wsID, &folderID, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(results))
+	}
+	if results[0].FolderName != "Dev Folder" {
+		t.Errorf("expected folder name 'Dev Folder', got %s", results[0].FolderName)
+	}
+}

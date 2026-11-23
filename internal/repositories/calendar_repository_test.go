@@ -179,3 +179,35 @@ func TestRepositories_MarkEventDispatched(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestRepositories_UpsertScheduledCalendarEvents(t *testing.T) {
+	repo, mock, cleanup := setupMockCalendarDB(t)
+	defer cleanup()
+
+	userID := uuid.New()
+	events := []models.ScheduledCalendarEvent{
+		{
+			UserID:              userID,
+			GoogleEventID:       "evt-123",
+			Title:               "Sprint Planning",
+			StartTime:           time.Now().Add(time.Hour),
+			EndTime:             time.Now().Add(2 * time.Hour),
+			ScheduledDispatchAt: time.Now().Add(58 * time.Minute),
+			MeetingURL:          "https://meet.google.com/abc-defg-hij",
+			MeetingPlatform:     "google_meet",
+			UserResponseStatus:  "accepted",
+			AutoRecordEnabled:   true,
+			DispatchStatus:      "PENDING",
+		},
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "scheduled_calendar_events"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	err := repo.UpsertScheduledCalendarEvents(context.Background(), events)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

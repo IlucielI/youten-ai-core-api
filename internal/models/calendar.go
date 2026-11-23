@@ -31,7 +31,7 @@ func (UserGoogleCalendarConnection) TableName() string {
 // ScheduledCalendarEvent stores synchronized calendar events, detected meeting links, and bot dispatch lifecycle state.
 type ScheduledCalendarEvent struct {
 	BaseModel
-	UserID              uuid.UUID   `gorm:"type:uuid;not null;index:idx_sched_cal_events_user_time,priority:1" json:"user_id"`
+	UserID              uuid.UUID   `gorm:"type:uuid;not null;uniqueIndex:uidx_user_scheduled_google_event,priority:1;index:idx_sched_cal_events_user_time,priority:1" json:"user_id"`
 	User                *User       `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user,omitempty"`
 	GoogleEventID       string      `gorm:"type:varchar(255);not null;uniqueIndex:uidx_user_scheduled_google_event,priority:2" json:"google_event_id"`
 	Title               string      `gorm:"type:varchar(500);not null" json:"title"`

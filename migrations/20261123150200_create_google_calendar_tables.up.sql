@@ -14,10 +14,10 @@ CREATE TABLE IF NOT EXISTS user_google_calendar_connections (
     status VARCHAR(50) NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ,
-    CONSTRAINT uidx_user_google_calendar_user_id UNIQUE (user_id)
+    deleted_at TIMESTAMPTZ
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_user_google_calendar_user_id ON user_google_calendar_connections(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_user_google_calendar_status ON user_google_calendar_connections(status) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS scheduled_calendar_events (
@@ -40,10 +40,10 @@ CREATE TABLE IF NOT EXISTS scheduled_calendar_events (
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ,
-    CONSTRAINT uidx_user_scheduled_google_event UNIQUE (user_id, google_event_id)
+    deleted_at TIMESTAMPTZ
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_user_scheduled_google_event ON scheduled_calendar_events(user_id, google_event_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sched_cal_events_dispatch ON scheduled_calendar_events(scheduled_dispatch_at, dispatch_status) 
 WHERE deleted_at IS NULL AND auto_record_enabled = TRUE;
 

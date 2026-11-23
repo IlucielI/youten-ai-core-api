@@ -98,6 +98,11 @@ func (r *Repositories) UpsertScheduledCalendarEvents(ctx context.Context, events
 			{Name: "user_id"},
 			{Name: "google_event_id"},
 		},
+		Where: clause.Where{
+			Exprs: []clause.Expression{
+				clause.Expr{SQL: "deleted_at IS NULL"},
+			},
+		},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"title",
 			"description",

@@ -535,6 +535,54 @@ routes:
     path: /v1/webhooks/bot/zoom
     handler: HandleZoomWebhook
 
+  # Generate Google Calendar OAuth authorization URL.
+  - method: GET
+    path: /v1/integrations/google-calendar/auth-url
+    handler: GetGoogleCalendarAuthURL
+    auth: true
+
+  # Handle Google Calendar OAuth redirect callback.
+  - method: POST
+    path: /v1/integrations/google-calendar/callback
+    handler: HandleGoogleCalendarCallback
+    auth: true
+
+  # Retrieve Google Calendar integration connection status.
+  - method: GET
+    path: /v1/integrations/google-calendar/status
+    handler: GetGoogleCalendarStatus
+    auth: true
+
+  # Update Google Calendar auto-recording and lead time settings.
+  - method: PATCH
+    path: /v1/integrations/google-calendar/settings
+    handler: UpdateCalendarSettings
+    auth: true
+
+  # Trigger on-demand sync of Google Calendar events.
+  - method: POST
+    path: /v1/integrations/google-calendar/sync
+    handler: SyncGoogleCalendar
+    auth: true
+
+  # Disconnect and revoke Google Calendar integration.
+  - method: DELETE
+    path: /v1/integrations/google-calendar
+    handler: DisconnectGoogleCalendar
+    auth: true
+
+  # List scheduled calendar events and meeting detection status.
+  - method: GET
+    path: /v1/calendar/events
+    handler: ListCalendarEvents
+    auth: true
+
+  # Toggle auto-recording preference for an individual scheduled meeting event.
+  - method: PATCH
+    path: /v1/calendar/events/:id/auto-record
+    handler: ToggleEventAutoRecord
+    auth: true
+
   # Authenticate staff administrator credentials and issue admin access token (CMS).
   - method: POST
     path: /v1/admin/login

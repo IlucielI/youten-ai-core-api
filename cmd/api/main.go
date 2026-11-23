@@ -13,6 +13,7 @@ import (
 	"code-base-golang/internal/adapters/database"
 	"code-base-golang/internal/adapters/discord"
 	"code-base-golang/internal/adapters/embedding"
+	"code-base-golang/internal/adapters/googlecalendar"
 	"code-base-golang/internal/adapters/googledrive"
 	"code-base-golang/internal/adapters/googlemeet"
 	"code-base-golang/internal/adapters/llm"
@@ -27,6 +28,7 @@ import (
 	"code-base-golang/internal/adapters/youtube"
 	"code-base-golang/internal/adapters/zoom"
 	"code-base-golang/internal/config"
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/controllers"
 	"code-base-golang/internal/pkg/migration"
 	"code-base-golang/internal/repositories"
@@ -197,6 +199,12 @@ func main() {
 		Publisher:     publisher,
 	})
 
+	googleCalendarAdapter := googlecalendar.NewAdapter(googlecalendar.Config{
+		ClientID:     cfg.GoogleCalendarClientID,
+		ClientSecret: cfg.GoogleCalendarClientSecret,
+		RedirectURI:  cfg.GoogleCalendarRedirectURI,
+	})
+
 	svc := services.New(cfg, repo, storage, publisher).
 		WithMailer(smtpAdapter).
 		WithSTT(sttAdapter).
@@ -209,7 +217,8 @@ func main() {
 		WithBotProvider(discordBotAdapter).
 		WithBotProvider(meetBotAdapter).
 		WithBotProvider(teamsBotAdapter).
-		WithBotProvider(zoomBotAdapter)
+		WithBotProvider(zoomBotAdapter).
+		WithGoogleCalendarClient(googleCalendarAdapter)
 	if len(mediaExtractors) > 0 {
 		svc.WithMediaLinkExtractor(services.NewCompositeMediaLinkExtractor(mediaExtractors))
 	}
@@ -225,6 +234,8 @@ func main() {
 		workerServer = workers.New(cfg, svc, broker)
 		workerServer.RegisterWorker()
 		workerServer.StartCleanupTicker(ctx, 30*time.Minute)
+		workerServer.StartCalendarDispatchTicker(ctx, 1*time.Minute)
+		workerServer.StartCalendarSyncTicker(ctx, constants.DefaultCalendarSyncInterval)
 	}
 
 	httpServer := &http.Server{

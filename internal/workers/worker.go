@@ -183,6 +183,48 @@ func (w *WorkerServer) StartCleanupTicker(ctx context.Context, interval time.Dur
 	}()
 }
 
+// StartCalendarDispatchTicker runs a periodic loop checking and dispatching scheduled meeting bots.
+func (w *WorkerServer) StartCalendarDispatchTicker(ctx context.Context, interval time.Duration) {
+	if w == nil || w.svc == nil || interval <= 0 || ctx == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := w.svc.ProcessDueCalendarDispatches(ctx); err != nil {
+					log.Printf("[CALENDAR WORKER ERROR] failed to process due calendar dispatches: %v", err)
+				}
+			}
+		}
+	}()
+}
+
+// StartCalendarSyncTicker runs a periodic loop syncing calendar events for all active users.
+func (w *WorkerServer) StartCalendarSyncTicker(ctx context.Context, interval time.Duration) {
+	if w == nil || w.svc == nil || interval <= 0 || ctx == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := w.svc.SyncAllActiveCalendars(ctx); err != nil {
+					log.Printf("[CALENDAR SYNC ERROR] failed to sync active calendars: %v", err)
+				}
+			}
+		}
+	}()
+}
+
 // HandleRecordingImport handles asynchronous remote media link imports (e.g. YouTube).
 func (w *WorkerServer) HandleRecordingImport(ctx context.Context, msg []byte) bool {
 	if w.svc == nil {

@@ -33,6 +33,7 @@ type Service struct {
 	mediaFetcher       MediaFetcher
 	sseHub             sse.Hub
 	botProviders       map[string]MeetingBotProvider
+	googleCalendar     GoogleCalendarClient
 	resendMu          sync.Mutex
 	resendCooldowns   map[string]time.Time
 	resendDailyCounts map[string]int
@@ -282,6 +283,22 @@ func (s *Service) BotProvider(name string) (MeetingBotProvider, bool) {
 	}
 	p, exists := s.botProviders[name]
 	return p, exists
+}
+
+// SetGoogleCalendarClient injects the Google Calendar client.
+func (s *Service) SetGoogleCalendarClient(client GoogleCalendarClient) {
+	s.googleCalendar = client
+}
+
+// WithGoogleCalendarClient fluently sets the Google Calendar client.
+func (s *Service) WithGoogleCalendarClient(client GoogleCalendarClient) *Service {
+	s.googleCalendar = client
+	return s
+}
+
+// GoogleCalendar returns the underlying Google Calendar client.
+func (s *Service) GoogleCalendar() GoogleCalendarClient {
+	return s.googleCalendar
 }
 
 // wrapError wraps unknown or system errors into structured AppError.

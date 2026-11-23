@@ -143,6 +143,12 @@ type Config struct {
 
 	// YouTube Extractor Configuration
 	YouTubeProxyURL string
+
+	// Google Calendar & Meeting Scheduler Configuration
+	GoogleCalendarClientID     string
+	GoogleCalendarClientSecret string
+	GoogleCalendarRedirectURI  string
+	CalendarTokenEncryptionKey string
 }
 
 func Load() Config {
@@ -280,6 +286,12 @@ func Load() Config {
 
 		// YouTube Extractor settings
 		YouTubeProxyURL: getEnv("YOUTUBE_PROXY_URL", ""),
+
+		// Google Calendar & Meeting Scheduler settings
+		GoogleCalendarClientID:     getEnv("GOOGLE_CALENDAR_CLIENT_ID", ""),
+		GoogleCalendarClientSecret: getEnv("GOOGLE_CALENDAR_CLIENT_SECRET", ""),
+		GoogleCalendarRedirectURI:  getEnv("GOOGLE_CALENDAR_REDIRECT_URI", "http://localhost:3000/settings/integrations/google-calendar/callback"),
+		CalendarTokenEncryptionKey: getEnvWithFallback("CALENDAR_TOKEN_ENCRYPTION_KEY", "JWT_SECRET", "youten-ai-default-calendar-token-encryption-key-32b"),
 	}
 }
 

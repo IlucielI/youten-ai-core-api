@@ -96,8 +96,9 @@ func setupRecordingTestControllers(t *testing.T) (*Controllers, sqlmock.Sqlmock,
 	storage := &dummyStorage{}
 	publisher := &dummyPublisher{}
 	cfg := config.Config{
-		AppName:      "youten-test",
-		S3BucketName: "test-bucket",
+		AppName:                    "youten-test",
+		S3BucketName:               "test-bucket",
+		CalendarTokenEncryptionKey: "youten-ai-default-calendar-token-encryption-key-32b",
 	}
 	svc := services.New(cfg, repo, storage, publisher)
 	ctrls := New(cfg, svc)

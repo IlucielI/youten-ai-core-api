@@ -2195,13 +2195,17 @@ paths:
           in: query
           schema:
             type: string
-            enum: [pdf, markdown, json]
+            enum: [pdf, markdown, json, docx, txt]
             default: pdf
       responses:
         '200':
           description: Exported document
           content:
             application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
               schema:
                 type: string
                 format: binary

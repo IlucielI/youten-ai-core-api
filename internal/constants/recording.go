@@ -125,6 +125,7 @@ const (
 	ExportFormatTxt      ExportFormat = "txt"
 	ExportFormatJSON     ExportFormat = "json"
 	ExportFormatPDF      ExportFormat = "pdf"
+	ExportFormatDocx     ExportFormat = "docx"
 )
 
 // Meeting bot capability availability statuses.

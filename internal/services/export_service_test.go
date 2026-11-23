@@ -318,6 +318,56 @@ func TestService_ExportRecordingMOM_Success_PDF(t *testing.T) {
 	}
 }
 
+func TestService_ExportRecordingMOM_Docx(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: ownerID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ownership_token", "user_id", "title", "duration_seconds", "status", "created_at"}).
+			AddRow(recID, "token", &ownerID, "Docx Architecture Review", 3600.0, "COMPLETED", time.Now()))
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "version", "is_active", "markdown_content", "structured_data"}).
+			AddRow(uuid.New(), recID, 1, true, "Docx Architecture overview", `{"executive_summary":"Google docs export validation"}`))
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_name", "speaker_label", "start_time", "end_time", "text"}).
+			AddRow(uuid.New(), recID, "Lead Architect", "Speaker 0", 0.0, 8.0, "Let's review the google docs export."))
+
+	mock.ExpectQuery(`SELECT \* FROM "chapters" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC.*`).
+		WithArgs(recID, 100).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	mock.ExpectQuery(`SELECT \* FROM "highlights" WHERE recording_id = \$1 ORDER BY start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id"}))
+
+	res, err := svc.ExportRecordingMOM(ctx, recID, "", "docx", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	if !strings.HasSuffix(res.Filename, "_mom.docx") {
+		t.Errorf("expected filename ending in _mom.docx, got %s", res.Filename)
+	}
+	if res.ContentType != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+		t.Errorf("expected docx content type, got %s", res.ContentType)
+	}
+
+	// Verify valid zip magic bytes PK\x03\x04
+	if len(res.Data) < 4 || !bytes.HasPrefix(res.Data, []byte("PK\x03\x04")) {
+		t.Errorf("expected zip magic header PK\\x03\\x04 for docx")
+	}
+}
+
 func TestService_ExportRecordingMOM_UnicodeFilename(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 

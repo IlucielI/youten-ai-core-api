@@ -19,6 +19,7 @@ import (
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
+	"code-base-golang/internal/pkg/docx"
 	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/pkg/timeutil"
 )
@@ -67,6 +68,8 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 		expFormat = constants.ExportFormatJSON
 	case "pdf":
 		expFormat = constants.ExportFormatPDF
+	case "docx", "doc":
+		expFormat = constants.ExportFormatDocx
 	default:
 		return nil, constants.ErrBadRequest
 	}
@@ -151,6 +154,17 @@ func (s *Service) ExportRecordingMOM(ctx context.Context, id uuid.UUID, ownershi
 			Filename:    baseName + "_mom.pdf",
 			ContentType: "application/pdf",
 			Data:        pdfBytes,
+		}, nil
+
+	case constants.ExportFormatDocx:
+		docxBytes, dErr := buildDocxExport(rec, summary, chapters, highlights, segments)
+		if dErr != nil {
+			return nil, fmt.Errorf("failed to generate docx export: %w", dErr)
+		}
+		return &dtos.ExportResult{
+			Filename:    baseName + "_mom.docx",
+			ContentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			Data:        docxBytes,
 		}, nil
 	}
 
@@ -1513,4 +1527,116 @@ func generateStandardPDF(title string, textContent string) []byte {
 
 	return buf.Bytes()
 }
+
+// buildDocxExport compiles a comprehensive, executive-ready Office Open XML (.docx) document
+// containing meeting metadata, executive summary, action items, chapters, and diarized transcript.
+func buildDocxExport(rec *models.Recording, summary *models.Summary, chapters []models.Chapter, highlights []models.Highlight, segments []models.TranscriptSegment) ([]byte, error) {
+	doc := docx.New()
+
+	// 1. Title
+	doc.AddTitle(rec.Title)
+
+	// 2. Metadata Table
+	metaHeaders := []string{"Informasi Rapat", "Detail"}
+	metaRows := [][]string{
+		{"Tanggal Rapat", rec.CreatedAt.Format("02 January 2006 15:04 MST")},
+		{"Durasi Rapat", timeutil.FormatTimestamp(rec.DurationSeconds)},
+		{"Status", rec.Status},
+	}
+	if summary != nil {
+		if summary.CustomAngle != nil && strings.TrimSpace(*summary.CustomAngle) != "" {
+			metaRows = append(metaRows, []string{"Sudut Pandang Khusus", strings.TrimSpace(*summary.CustomAngle)})
+		}
+		if summary.Version > 0 {
+			templateLabel := summary.TemplateCategory
+			if templateLabel == "" {
+				templateLabel = "General"
+			}
+			metaRows = append(metaRows, []string{"Versi Ringkasan", fmt.Sprintf("Versi %d (%s)", summary.Version, templateLabel)})
+		}
+	}
+	doc.AddTable(metaHeaders, metaRows)
+
+	// 3. Ringkasan Eksekutif
+	if summary != nil {
+		doc.AddHeading1("1. Ringkasan Pertemuan (Summary)")
+		formatted := formatSummaryContent(summary)
+
+		if strings.TrimSpace(formatted.Overview) != "" {
+			doc.AddCallout("Ikhtisar Pertemuan", formatted.Overview)
+		}
+
+		for _, sec := range formatted.Sections {
+			if strings.TrimSpace(sec.Heading) != "" {
+				doc.AddHeading2(sec.Heading)
+			}
+			for _, item := range sec.Items {
+				doc.AddBulletItem(item)
+			}
+		}
+
+		// 4. Rencana Tindak Lanjut (Action Items)
+		actionItems := formatted.ActionItems
+		if len(actionItems) == 0 {
+			actionItems = extractActionItems(summary)
+		}
+		if len(actionItems) > 0 {
+			doc.AddHeading2("Tindak Lanjut & Action Items")
+			actionHeaders := []string{"No", "Tugas / Rencana Tindak Lanjut", "Status"}
+			actionRows := make([][]string, len(actionItems))
+			for i, ai := range actionItems {
+				actionRows[i] = []string{fmt.Sprintf("%d", i+1), ai, "[ ] Pending"}
+			}
+			doc.AddTable(actionHeaders, actionRows)
+		}
+	}
+
+	// 5. Pembagian Topik / Chapters
+	if len(chapters) > 0 {
+		doc.AddHeading1("2. Pembagian Topik & Bab (Chapter Breakdown)")
+		chapterHeaders := []string{"Waktu", "Topik", "Ringkasan Pembahasan"}
+		chapterRows := make([][]string, len(chapters))
+		for i, ch := range chapters {
+			timeRange := fmt.Sprintf("%s - %s", timeutil.FormatTimestamp(ch.StartTime), timeutil.FormatTimestamp(ch.EndTime))
+			chapterRows[i] = []string{timeRange, ch.Title, ch.Summary}
+		}
+		doc.AddTable(chapterHeaders, chapterRows)
+	}
+
+	// 6. Sorotan Utama (Highlights)
+	if len(highlights) > 0 {
+		doc.AddHeading1("3. Sorotan Utama (Key Highlights)")
+		for _, hl := range highlights {
+			title := "Sorotan"
+			if hl.Title != nil && *hl.Title != "" {
+				title = *hl.Title
+			}
+			note := ""
+			if hl.Note != nil && *hl.Note != "" {
+				note = fmt.Sprintf(": %s", *hl.Note)
+			}
+			text := fmt.Sprintf("[%s] %s%s", timeutil.FormatTimestamp(hl.StartTime), title, note)
+			doc.AddBulletItem(text)
+		}
+	}
+
+	// 7. Transkrip Percakapan Lengkap
+	if len(segments) > 0 {
+		doc.AddHeading1("4. Transkrip Percakapan Lengkap (Diarized Transcript)")
+		for _, seg := range segments {
+			speaker := seg.SpeakerName
+			if speaker == "" {
+				speaker = seg.SpeakerLabel
+			}
+			if speaker == "" {
+				speaker = "Speaker"
+			}
+			timeStr := fmt.Sprintf("%s - %s", timeutil.FormatTimestamp(seg.StartTime), timeutil.FormatTimestamp(seg.EndTime))
+			doc.AddTranscriptTurn(speaker, timeStr, seg.Text)
+		}
+	}
+
+	return doc.Bytes()
+}
+
 

@@ -73,18 +73,22 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 		return nil, constants.ErrInternalServerError.Wrap(err)
 	}
 
+	var isWorkspaceMember bool
+	activeWsID, hasActiveWs := ctxmeta.GetWorkspaceID(ctx)
+	if hasActiveWs && activeWsID != uuid.Nil {
+		if _, err := s.repo.FindWorkspaceMember(ctx, activeWsID, authUser.UserID); err == nil {
+			isWorkspaceMember = true
+		}
+	}
+
 	var matches []repositories.WorkspaceChunkMatch
 	if len(embeddings) > 0 && len(embeddings[0]) > 0 {
 		var (
 			m         []repositories.WorkspaceChunkMatch
 			searchErr error
 		)
-		if activeWsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWsID != uuid.Nil {
-			if _, err := s.repo.FindWorkspaceMember(ctx, activeWsID, authUser.UserID); err == nil {
-				m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, activeWsID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
-			} else {
-				m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
-			}
+		if isWorkspaceMember {
+			m, searchErr = s.repo.SearchWorkspaceTranscriptChunksByWorkspace(ctx, activeWsID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
 		} else {
 			m, searchErr = s.repo.SearchWorkspaceTranscriptChunks(ctx, authUser.UserID, embeddings[0], constants.DefaultWorkspaceChatTopK, constants.DefaultWorkspaceChatMaxDistance)
 		}
@@ -109,7 +113,7 @@ func (s *Service) AskWorkspaceMemory(ctx context.Context, req dtos.WorkspaceAskR
 	}
 
 	var catalogItems []templates.WorkspaceMeetingCatalogItem
-	if activeWsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && activeWsID != uuid.Nil {
+	if isWorkspaceMember {
 		if rawCatalog, err := s.repo.GetWorkspaceMeetingCatalog(ctx, activeWsID, nil, constants.DefaultWorkspaceMeetingCatalogLimit); err == nil {
 			catalogItems = formatWorkspaceCatalogItems(rawCatalog)
 		}

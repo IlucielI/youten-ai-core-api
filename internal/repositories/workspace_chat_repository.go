@@ -2,9 +2,11 @@ package repositories
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
+	"code-base-golang/internal/constants"
 	"code-base-golang/internal/models"
 )
 
@@ -123,4 +125,96 @@ func (r *Repositories) CountWorkspaceChatMessagesBySessions(ctx context.Context,
 		result[row.SessionID] = row.Count
 	}
 	return result, nil
+}
+
+// WorkspaceCatalogRecord holds high-level metadata and executive summary for a meeting recording.
+type WorkspaceCatalogRecord struct {
+	RecordingID     uuid.UUID  `gorm:"column:recording_id"`
+	Title           string     `gorm:"column:title"`
+	FolderID        *uuid.UUID `gorm:"column:folder_id"`
+	FolderName      string     `gorm:"column:folder_name"`
+	CreatedAt       time.Time  `gorm:"column:created_at"`
+	DurationSeconds float64    `gorm:"column:duration_seconds"`
+	Overview        string     `gorm:"column:overview"`
+}
+
+// GetWorkspaceMeetingCatalog retrieves the catalog of completed recordings with their summaries
+// in a workspace, optionally filtered to a specific folder (and its subfolders recursively).
+func (r *Repositories) GetWorkspaceMeetingCatalog(
+	ctx context.Context,
+	workspaceID uuid.UUID,
+	folderID *uuid.UUID,
+	limit int,
+) ([]WorkspaceCatalogRecord, error) {
+	if limit <= 0 {
+		limit = constants.DefaultWorkspaceMeetingCatalogLimit
+	}
+
+	var results []WorkspaceCatalogRecord
+
+	if folderID != nil && *folderID != uuid.Nil {
+		rawQuery := `
+			WITH RECURSIVE folder_tree AS (
+				SELECT id FROM folders WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL
+				UNION ALL
+				SELECT f.id FROM folders f
+				INNER JOIN folder_tree ft ON f.parent_id = ft.id
+				WHERE f.deleted_at IS NULL AND f.workspace_id = ?
+			)
+			SELECT 
+				r.id AS recording_id,
+				r.title,
+				r.folder_id,
+				f.name AS folder_name,
+				r.created_at,
+				r.duration_seconds,
+				COALESCE(
+					NULLIF(s.structured_data->>'executive_overview', ''),
+					NULLIF(s.structured_data->>'context', ''),
+					NULLIF(s.structured_data->>'summary_text', ''),
+					NULLIF(s.structured_data->>'justification', ''),
+					SUBSTRING(s.markdown_content, 1, 350),
+					''
+				) AS overview
+			FROM recordings r
+			LEFT JOIN folders f ON r.folder_id = f.id
+			LEFT JOIN summaries s ON r.id = s.recording_id AND s.is_active = true
+			WHERE r.workspace_id = ?
+			  AND r.folder_id IN (SELECT id FROM folder_tree)
+			  AND r.status = 'COMPLETED'
+			  AND r.deleted_at IS NULL
+			ORDER BY r.created_at DESC
+			LIMIT ?
+		`
+		err := r.db.WithContext(ctx).Raw(rawQuery, *folderID, workspaceID, workspaceID, workspaceID, limit).Scan(&results).Error
+		return results, err
+	}
+
+	rawQuery := `
+		SELECT 
+			r.id AS recording_id,
+			r.title,
+			r.folder_id,
+			f.name AS folder_name,
+			r.created_at,
+			r.duration_seconds,
+			COALESCE(
+				NULLIF(s.structured_data->>'executive_overview', ''),
+				NULLIF(s.structured_data->>'context', ''),
+				NULLIF(s.structured_data->>'summary_text', ''),
+				NULLIF(s.structured_data->>'justification', ''),
+				SUBSTRING(s.markdown_content, 1, 350),
+				''
+			) AS overview
+		FROM recordings r
+		LEFT JOIN folders f ON r.folder_id = f.id
+		LEFT JOIN summaries s ON r.id = s.recording_id AND s.is_active = true
+		WHERE r.workspace_id = ?
+		  AND r.status = 'COMPLETED'
+		  AND r.deleted_at IS NULL
+		ORDER BY r.created_at DESC
+		LIMIT ?
+	`
+	err := r.db.WithContext(ctx).Raw(rawQuery, workspaceID, limit).Scan(&results).Error
+	return results, err
 }

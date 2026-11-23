@@ -50,6 +50,9 @@ const (
 
 	// DefaultWorkspaceChatTopK defines the maximum number of chunks retrieved for workspace and folder chat context.
 	DefaultWorkspaceChatTopK = 15
+
+	// DefaultWorkspaceMeetingCatalogLimit defines the maximum number of recent meetings included in the workspace meeting catalog.
+	DefaultWorkspaceMeetingCatalogLimit = 50
 )
 
 

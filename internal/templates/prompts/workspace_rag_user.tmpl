@@ -1,3 +1,13 @@
+{{- if .Catalog}}
+WORKSPACE MEETING CATALOG (All available meetings in this workspace):
+{{range .Catalog}}
+- Meeting: "{{.Title}}"{{if .FolderName}} [Folder: {{.FolderName}}]{{end}} (Date: {{.CreatedAtFormatted}}, Duration: {{.DurationFormatted}})
+  {{- if .Overview}}
+  Overview: {{.Overview}}
+  {{- end}}
+{{end}}
+
+{{end -}}
 Workspace Meeting Context:
 {{- if .Matches}}
 {{range .Matches}}
@@ -6,8 +16,10 @@ Workspace Meeting Context:
 {{.Content}}
 </meeting_transcript>
 {{end}}
-{{- else}}
+{{- else if not .Catalog}}
 (No meeting context found in workspace memory)
+{{- else}}
+(No specific detailed transcript chunks matched for this query)
 {{end}}
 Question: {{.Query}}
 Answer:

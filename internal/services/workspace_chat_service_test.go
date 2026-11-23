@@ -339,6 +339,12 @@ func TestService_InitiateWorkspaceChatStream_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "folder_id", "folder_name", "chunk_index", "content", "start_time", "end_time", "distance"}).
 			AddRow(chunkID, recID, "Sprint Planning", folderID, "Engineering", 0, "Discussion on backlog priorities.", 0.0, 60.0, 0.55))
 
+	// 5b. GetWorkspaceMeetingCatalog (folder level)
+	mock.ExpectQuery(`WITH RECURSIVE folder_tree AS`).
+		WithArgs(folderID, wsID, wsID, wsID, constants.DefaultWorkspaceMeetingCatalogLimit).
+		WillReturnRows(sqlmock.NewRows([]string{"recording_id", "title", "folder_id", "folder_name", "created_at", "duration_seconds", "overview"}).
+			AddRow(recID, "Sprint Planning", &folderID, "Engineering", time.Now(), 3600.0, "Sprint planning and backlog prioritization."))
+
 	// 6. Find past messages
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_chat_messages" WHERE session_id = $1 AND "workspace_chat_messages"."deleted_at" IS NULL ORDER BY created_at ASC`)).
 		WithArgs(sessID).
@@ -347,6 +353,13 @@ func TestService_InitiateWorkspaceChatStream_Success(t *testing.T) {
 	// 7. Mock LLM streaming
 	mockLLM := llm.NewMock()
 	mockLLM.StreamChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+		lastMsg := messages[len(messages)-1].Content
+		if !strings.Contains(lastMsg, "WORKSPACE MEETING CATALOG") {
+			t.Errorf("expected WORKSPACE MEETING CATALOG in prompt, got: %s", lastMsg)
+		}
+		if !strings.Contains(lastMsg, "Sprint planning and backlog prioritization.") {
+			t.Errorf("expected catalog overview in prompt, got: %s", lastMsg)
+		}
 		ch := make(chan dtos.StreamChunk, 2)
 		ch <- dtos.StreamChunk{Content: "Sprint backlog priorities agreed."}
 		close(ch)
@@ -371,6 +384,61 @@ func TestService_InitiateWorkspaceChatStream_Success(t *testing.T) {
 	}
 	if len(result.RetrievedChunkIDs) != 1 || result.RetrievedChunkIDs[0] != chunkID {
 		t.Errorf("unexpected retrieved chunks: %+v", result.RetrievedChunkIDs)
+	}
+}
+
+func TestService_AskWorkspaceMemory_WithWorkspaceCatalog(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	wsID := uuid.New()
+	recID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+	ctx = ctxmeta.WithWorkspaceID(ctx, wsID)
+
+	mockEmb := &searchMockEmbedding{
+		embeddings: [][]float32{make([]float32, 1024)},
+	}
+	svc.SetEmbedding(mockEmb)
+
+	// 1. FindWorkspaceMember
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_members" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_members"."deleted_at" IS NULL ORDER BY "workspace_members"."id" LIMIT $3`)).
+		WithArgs(wsID, userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "role"}).
+			AddRow(uuid.New(), wsID, userID, "owner"))
+
+	// 2. SearchWorkspaceTranscriptChunksByWorkspace
+	mock.ExpectQuery(regexp.QuoteMeta(`WITH ranked_chunks AS (`)).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), wsID, sqlmock.AnyArg(), constants.DefaultWorkspaceChatMaxDistance, constants.DefaultWorkspaceChatTopK).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "recording_title", "folder_id", "folder_name", "chunk_index", "content", "start_time", "end_time", "distance"}))
+
+	// 3. GetWorkspaceMeetingCatalog (workspace level)
+	mock.ExpectQuery(`SELECT r.id AS recording_id, r.title, r.folder_id, f.name AS folder_name, r.created_at, r.duration_seconds`).
+		WithArgs(wsID, constants.DefaultWorkspaceMeetingCatalogLimit).
+		WillReturnRows(sqlmock.NewRows([]string{"recording_id", "title", "folder_id", "folder_name", "created_at", "duration_seconds", "overview"}).
+			AddRow(recID, "Quarterly Business Review", nil, "", time.Now(), 3600.0, "Comprehensive Q3 business metrics and OKRs."))
+
+	// 4. Mock LLM
+	mockLLM := llm.NewMock()
+	mockLLM.GenerateChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (*dtos.ChatResponse, error) {
+		lastMsg := messages[len(messages)-1].Content
+		if !strings.Contains(lastMsg, "WORKSPACE MEETING CATALOG") {
+			t.Errorf("expected WORKSPACE MEETING CATALOG in prompt, got: %s", lastMsg)
+		}
+		if !strings.Contains(lastMsg, "Quarterly Business Review") {
+			t.Errorf("expected meeting title in catalog, got: %s", lastMsg)
+		}
+		return &dtos.ChatResponse{
+			Content: "Quarterly Business Review discussed Q3 OKRs.",
+		}, nil
+	}
+	svc.SetLLM(mockLLM)
+
+	res, err := svc.AskWorkspaceMemory(ctx, dtos.WorkspaceAskRequest{Question: "what meetings happened?"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Answer != "Quarterly Business Review discussed Q3 OKRs." {
+		t.Errorf("unexpected answer: %s", res.Answer)
 	}
 }
 

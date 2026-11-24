@@ -175,6 +175,7 @@ type RecordingDetailResponse struct {
 	OriginalFilename string                 `json:"original_filename"`
 	FileSizeBytes    int64                  `json:"file_size_bytes"`
 	DurationSeconds  float64                `json:"duration_seconds"`
+	TotalTokensUsed  int                    `json:"total_tokens_used"`
 	AudioURL         *string                `json:"audio_url,omitempty"`
 	PlaybackURL      *string                `json:"playback_url,omitempty"`
 	SourceType       string                 `json:"source_type"`
@@ -206,6 +207,7 @@ type RecordingListItem struct {
 	OriginalFilename string    `json:"original_filename"`
 	FileSizeBytes    int64     `json:"file_size_bytes"`
 	DurationSeconds  float64   `json:"duration_seconds"`
+	TotalTokensUsed  int       `json:"total_tokens_used"`
 	SourceType       string    `json:"source_type"`
 	Status           string    `json:"status"`
 	SelectedTemplate string    `json:"selected_template"`
@@ -290,6 +292,7 @@ type SharedRecordingResponse struct {
 	ID               string                 `json:"id"`
 	Title            string                 `json:"title"`
 	DurationSeconds  float64                `json:"duration_seconds"`
+	TotalTokensUsed  int                    `json:"total_tokens_used"`
 	AudioURL         *string                `json:"audio_url,omitempty"`
 	PlaybackURL      *string                `json:"playback_url,omitempty"`
 	SelectedTemplate string                 `json:"selected_template"`
@@ -397,6 +400,7 @@ type RecordingChatStreamResult struct {
 	SessionID         uuid.UUID          `json:"session_id"`
 	StreamChannel     <-chan StreamChunk `json:"-"`
 	RetrievedChunkIDs []string           `json:"retrieved_chunk_ids,omitempty"`
+	PromptTokens      int                `json:"prompt_tokens,omitempty"`
 }
 
 // SpeakerRosterItem holds an identified speaker in the recording session.

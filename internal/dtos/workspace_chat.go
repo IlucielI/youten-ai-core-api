@@ -69,4 +69,5 @@ type WorkspaceChatStreamResult struct {
 	StreamChannel     <-chan StreamChunk
 	Sources           []MeetingSourceCitation
 	RetrievedChunkIDs []uuid.UUID
+	PromptTokens      int
 }

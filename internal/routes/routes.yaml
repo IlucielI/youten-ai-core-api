@@ -761,6 +761,13 @@ routes:
     admin_auth: true
     permission: "audit:read"
 
+  # Admin list AI token and model consumption logs (CMS).
+  - method: GET
+    path: /v1/admin/audit/ai-usage
+    handler: AdminGetAIUsageLogs
+    admin_auth: true
+    permission: "audit:read"
+
   # Admin get system overview stats (CMS).
   - method: GET
     path: /v1/admin/stats/overview

@@ -148,3 +148,32 @@ func (c *Controllers) AdminListJobs(ctx *gin.Context) {
 
 	c.respondOK(ctx, "Jobs retrieved successfully", resp)
 }
+
+// AdminGetAIUsageLogs handles GET /v1/admin/audit/ai-usage to inspect AI model token and duration usage.
+func (c *Controllers) AdminGetAIUsageLogs(ctx *gin.Context) {
+	_, ok := c.getAdminActionMeta(ctx)
+	if !ok {
+		return
+	}
+
+	var filter dtos.AdminAIUsageFilter
+	if err := ctx.ShouldBindQuery(&filter); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage("invalid query parameters"))
+		return
+	}
+
+	filter.SetDefaults()
+	if err := filter.Validate(); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.WithMessage(err.Error()))
+		return
+	}
+
+	resp, err := c.svc.GetAdminAIUsageLogs(ctx.Request.Context(), filter)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	c.respondOK(ctx, "AI usage logs retrieved successfully", resp)
+}
+

@@ -166,10 +166,13 @@ func (s *Service) InitiateRecordingChatStream(
 		return nil, fmt.Errorf("failed to stream chat completion: %w", err)
 	}
 
+	promptTokens := EstimateChatPromptTokens(systemPrompt, messages)
+
 	return &dtos.RecordingChatStreamResult{
 		SessionID:         sessionID,
 		StreamChannel:     streamCh,
 		RetrievedChunkIDs: retrievedChunkIDs,
+		PromptTokens:      promptTokens,
 	}, nil
 }
 
@@ -289,6 +292,28 @@ func (s *Service) SaveAssistantChatMessage(
 	if err := s.repo.SaveChatMessage(ctx, asstMsg); err != nil {
 		return nil, nil, fmt.Errorf("failed to persist assistant chat message: %w", err)
 	}
+
+	compTokens := EstimateTokens(content)
+	promptTokens := 500
+	var wsID *uuid.UUID
+	if rec, rErr := s.repo.FindRecordingByID(ctx, recordingID); rErr == nil && rec != nil {
+		wsID = rec.WorkspaceID
+		if userID == nil {
+			userID = rec.UserID
+		}
+	}
+	s.RecordAIUsageAsync(dtos.AIUsageRecordInput{
+		UserID:           userID,
+		WorkspaceID:      wsID,
+		RecordingID:      &recordingID,
+		ServiceType:      constants.AIServiceTypeRecordingChat.String(),
+		Provider:         s.cfg.LLMProvider,
+		ModelName:        s.cfg.LLMModel,
+		PromptTokens:     promptTokens,
+		CompletionTokens: compTokens,
+		TotalTokens:      promptTokens + compTokens,
+	})
+
 	return asstMsg, citations, nil
 }
 

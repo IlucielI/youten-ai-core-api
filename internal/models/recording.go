@@ -50,6 +50,7 @@ type Recording struct {
 	OriginalFilename string     `gorm:"type:varchar(255);not null" json:"original_filename"`
 	FileSizeBytes    int64      `gorm:"not null;default:0" json:"file_size_bytes"`
 	DurationSeconds  float64    `gorm:"not null;default:0" json:"duration_seconds"`
+	TotalTokensUsed  int        `gorm:"not null;default:0" json:"total_tokens_used"`
 	AudioURL         *string    `gorm:"type:text" json:"audio_url,omitempty"`
 	SourceType       string     `gorm:"type:varchar(50);not null;default:'UPLOAD'" json:"source_type"`
 	BotProvider      *string    `gorm:"type:varchar(50)" json:"bot_provider,omitempty"`

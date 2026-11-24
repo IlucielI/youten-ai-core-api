@@ -358,6 +358,28 @@ func (s *Service) ProcessTranscription(ctx context.Context, p queue.RecordingPip
 		return errors.New(errMsg)
 	}
 
+	// Record AI execution usage for STT transcription
+	s.RecordAIUsageAsync(dtos.AIUsageRecordInput{
+		UserID:       recording.UserID,
+		WorkspaceID:  recording.WorkspaceID,
+		RecordingID:  &recording.ID,
+		ServiceType:  constants.AIServiceTypeSTT.String(),
+		ModelName:    s.cfg.STTModel,
+		AudioSeconds: recording.DurationSeconds,
+	})
+
+	// Record separate Diarization usage if acoustic diarizer produced segments
+	if len(sttResult.DiarizedSegments) > 0 {
+		s.RecordAIUsageAsync(dtos.AIUsageRecordInput{
+			UserID:       recording.UserID,
+			WorkspaceID:  recording.WorkspaceID,
+			RecordingID:  &recording.ID,
+			ServiceType:  constants.AIServiceTypeDiarization.String(),
+			ModelName:    s.cfg.STTDiarizeModel,
+			AudioSeconds: recording.DurationSeconds,
+		})
+	}
+
 	// Idempotent cleanup before saving segments
 	if err := s.repo.DeleteTranscriptSegmentsByRecordingID(ctx, recording.ID); err != nil {
 		errMsg := fmt.Sprintf("failed to clean up transcript segments: %v", err)
@@ -692,6 +714,21 @@ func (s *Service) ProcessIndexing(ctx context.Context, p queue.RecordingPipeline
 		s.failAndLog(ctx, recording.ID, models.ErrCodeIndexingFail, fmt.Sprintf("embedding generation failed: %v", err))
 		return fmt.Errorf("embedding generation failed: %w", err)
 	}
+
+	// Record AI embedding token consumption
+	embTokens := 0
+	for _, ct := range chunkTexts {
+		embTokens += EstimateTokens(ct)
+	}
+	s.RecordAIUsageAsync(dtos.AIUsageRecordInput{
+		UserID:       recording.UserID,
+		WorkspaceID:  recording.WorkspaceID,
+		RecordingID:  &recording.ID,
+		ServiceType:  constants.AIServiceTypeEmbedding.String(),
+		ModelName:    s.cfg.EmbeddingModel,
+		PromptTokens: embTokens,
+		TotalTokens:  embTokens,
+	})
 
 	// Idempotent cleanup before inserting
 	if err := s.repo.DeleteTranscriptChunksByRecordingID(ctx, recording.ID); err != nil {

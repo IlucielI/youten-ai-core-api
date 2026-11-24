@@ -251,6 +251,19 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		return nil, errors.New("llm returned nil structured response")
 	}
 
+	// Record AI token usage for summary regeneration
+	s.RecordAIUsageAsync(dtos.AIUsageRecordInput{
+		UserID:           rec.UserID,
+		WorkspaceID:      rec.WorkspaceID,
+		RecordingID:      &rec.ID,
+		ServiceType:      constants.AIServiceTypeLLMSummary.String(),
+		Provider:         s.cfg.LLMProvider,
+		ModelName:        s.cfg.LLMModel,
+		PromptTokens:     structuredRes.Usage.PromptTokens,
+		CompletionTokens: structuredRes.Usage.CompletionTokens,
+		TotalTokens:      structuredRes.Usage.TotalTokens,
+	})
+
 	cleanedJSON := jsonutil.CleanMarkdownJSON(structuredRes.RawJSON)
 	var structMap map[string]interface{}
 	if err := json.Unmarshal([]byte(cleanedJSON), &structMap); err != nil {
@@ -373,8 +386,21 @@ func (s *Service) generateStructuredSummary(
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		userPrompt := renderSummaryPromptOrFallback(effectiveTranscript, targetLang, customAngle, visualCueViews)
+		startTime := time.Now()
 		structuredRes, lastErr = s.llm.GenerateStructured(ctx, systemPrompt, userPrompt, schema)
 		if lastErr == nil && structuredRes != nil {
+			if recordingID != uuid.Nil {
+				s.RecordAIUsageAsync(dtos.AIUsageRecordInput{
+					RecordingID:      &recordingID,
+					ServiceType:      constants.AIServiceTypeLLMSummary.String(),
+					Provider:         s.cfg.LLMProvider,
+					ModelName:        s.cfg.LLMModel,
+					PromptTokens:     structuredRes.Usage.PromptTokens,
+					CompletionTokens: structuredRes.Usage.CompletionTokens,
+					TotalTokens:      structuredRes.Usage.TotalTokens,
+					LatencyMs:        int(time.Since(startTime).Milliseconds()),
+				})
+			}
 			return structuredRes, nil
 		}
 		if lastErr == nil {

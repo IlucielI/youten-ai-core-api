@@ -2195,7 +2195,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [pdf, markdown, json]
+            enum: [pdf, markdown, json, docx, txt]
             default: pdf
       responses:
         '200':
@@ -2205,6 +2205,16 @@ paths:
               schema:
                 type: string
                 format: binary
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+            text/markdown:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
             application/json:
               schema:
                 type: object

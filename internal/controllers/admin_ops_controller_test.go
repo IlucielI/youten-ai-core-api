@@ -463,3 +463,106 @@ func TestControllers_AdminListJobs(t *testing.T) {
 		}
 	})
 }
+
+func TestControllers_AdminGetAIUsageLogs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	adminUser := ctxmeta.AdminAuthUser{
+		AdminID:  uuid.New(),
+		Username: "audit_admin",
+	}
+
+	t.Run("success returns 200 with AI usage logs", func(t *testing.T) {
+		ctrls, mock, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		userID := uuid.New()
+		logID := uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(`SELECT count\(\*\) FROM "ai_usage_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		mock.ExpectQuery(`SELECT COALESCE\(SUM\(prompt_tokens\), 0\) AS total_prompt_tokens.*FROM "ai_usage_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"total_prompt_tokens", "total_completion_tokens", "total_tokens", "total_audio_seconds"}).
+				AddRow(100, 50, 150, 0.0))
+
+		mock.ExpectQuery(`SELECT \* FROM "ai_usage_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "service_type", "provider", "model_name", "total_tokens", "created_at"}).
+				AddRow(logID, userID, "llm_summary", "openai", "gpt-4o-mini", 150, now))
+
+		mock.ExpectQuery(`SELECT \* FROM "users" WHERE "users"\."id" = \$1`).
+			WithArgs(userID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "email"}).AddRow(userID, "user@example.com"))
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			c.Request = c.Request.WithContext(ctxmeta.WithAdminAuthUser(c.Request.Context(), adminUser))
+			c.Next()
+		})
+		r.GET("/v1/admin/audit/ai-usage", ctrls.AdminGetAIUsageLogs)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit/ai-usage?page=1&limit=10", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var envelope struct {
+			Status string                    `json:"status"`
+			Code   string                    `json:"code"`
+			Data   dtos.AdminAIUsageResponse `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(envelope.Data.Items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(envelope.Data.Items))
+		}
+		if envelope.Data.Items[0].ModelName != "gpt-4o-mini" {
+			t.Fatalf("expected model_name gpt-4o-mini, got %s", envelope.Data.Items[0].ModelName)
+		}
+		if envelope.Data.Summary.TotalTokens != 150 {
+			t.Fatalf("expected summary total_tokens 150, got %d", envelope.Data.Summary.TotalTokens)
+		}
+	})
+
+	t.Run("unauthorized without admin context returns 401", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.GET("/v1/admin/audit/ai-usage", ctrls.AdminGetAIUsageLogs)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit/ai-usage", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("invalid query params returns 400", func(t *testing.T) {
+		ctrls, _, cleanup := setupAdminTestControllers(t)
+		defer cleanup()
+
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			c.Request = c.Request.WithContext(ctxmeta.WithAdminAuthUser(c.Request.Context(), adminUser))
+			c.Next()
+		})
+		r.GET("/v1/admin/audit/ai-usage", ctrls.AdminGetAIUsageLogs)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit/ai-usage?user_id=invalid-uuid", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", w.Code)
+		}
+	})
+}

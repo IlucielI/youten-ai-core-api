@@ -465,11 +465,14 @@ func (s *Service) InitiateWorkspaceChatStream(
 		return nil, fmt.Errorf("failed to stream workspace chat: %w", err)
 	}
 
+	promptTokens := EstimateChatPromptTokens(systemPrompt, messages)
+
 	return &dtos.WorkspaceChatStreamResult{
 		SessionID:         session.ID,
 		StreamChannel:     streamCh,
 		Sources:           sources,
 		RetrievedChunkIDs: retrievedChunkIDs,
+		PromptTokens:      promptTokens,
 	}, nil
 }
 
@@ -501,6 +504,28 @@ func (s *Service) SaveAssistantWorkspaceChatMessage(
 	if err := s.repo.CreateWorkspaceChatMessage(ctx, msg); err != nil {
 		return nil, err
 	}
+
+	// Record AI token usage for workspace chat copilot
+	var userID *uuid.UUID
+	if authUserID, ok := ctxmeta.GetAuthUserID(ctx); ok && authUserID != uuid.Nil {
+		userID = &authUserID
+	} else if sess != nil {
+		userID = &sess.UserID
+	}
+
+	compTokens := EstimateTokens(content)
+	promptTokens := 500
+
+	s.RecordAIUsageAsync(dtos.AIUsageRecordInput{
+		UserID:           userID,
+		WorkspaceID:      &workspaceID,
+		ServiceType:      constants.AIServiceTypeWorkspaceChat.String(),
+		Provider:         s.cfg.LLMProvider,
+		ModelName:        s.cfg.LLMModel,
+		PromptTokens:     promptTokens,
+		CompletionTokens: compTokens,
+		TotalTokens:      promptTokens + compTokens,
+	})
 
 	// Update session updated_at timestamp
 	_ = s.repo.UpdateWorkspaceChatSessionTitle(ctx, sessionID, "")

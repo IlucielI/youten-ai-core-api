@@ -31,14 +31,16 @@ type RAGChunkView struct {
 
 // RAGMetadataView wraps high-level meeting metadata for grounded prompt rendering.
 type RAGMetadataView struct {
-	Title             string
-	DurationFormatted string
-	TemplateCategory  string
-	DetectedLanguage  string
-	Speakers          []string
-	SummaryOverview   string
-	KeyTopics         []string
-	ActionItems       []string
+	Title                 string
+	DurationFormatted     string
+	TemplateCategory      string
+	DetectedLanguage      string
+	Speakers              []string
+	SummaryOverview       string
+	KeyTopics             []string
+	ActionItems           []string
+	RetrievalStrategy     string
+	LexicalAnalysisReport string
 }
 
 // RAGUserData holds input parameters for rag_user.tmpl.
@@ -107,6 +109,15 @@ func DefaultRAGSystemPrompt() (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
+// DefaultChatRouterSystemPrompt returns the system prompt for adaptive single-recording retrieval routing.
+func DefaultChatRouterSystemPrompt() (string, error) {
+	var buf bytes.Buffer
+	if err := parsedTemplates.ExecuteTemplate(&buf, "chat_router_system.tmpl", nil); err != nil {
+		return "", fmt.Errorf("execute chat_router_system.tmpl: %w", err)
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
 // RenderRAGUserPrompt formats the query, optional meeting metadata, and retrieved context chunks into the grounded RAG user prompt.
 func RenderRAGUserPrompt(query string, chunks []dtos.TranscriptChunkData, meta ...*dtos.RecordingContextMetadata) (string, error) {
 	var chunkViews []RAGChunkView
@@ -123,14 +134,16 @@ func RenderRAGUserPrompt(query string, chunks []dtos.TranscriptChunkData, meta .
 	if len(meta) > 0 && meta[0] != nil {
 		m := meta[0]
 		metaView = &RAGMetadataView{
-			Title:             strings.TrimSpace(m.Title),
-			DurationFormatted: strings.TrimSpace(m.DurationFormatted),
-			TemplateCategory:  strings.TrimSpace(m.SelectedTemplate),
-			DetectedLanguage:  strings.TrimSpace(m.DetectedLanguage),
-			Speakers:          m.Speakers,
-			SummaryOverview:   strings.TrimSpace(m.SummaryOverview),
-			KeyTopics:         m.KeyTopics,
-			ActionItems:       m.ActionItems,
+			Title:                 strings.TrimSpace(m.Title),
+			DurationFormatted:     strings.TrimSpace(m.DurationFormatted),
+			TemplateCategory:      strings.TrimSpace(m.SelectedTemplate),
+			DetectedLanguage:      strings.TrimSpace(m.DetectedLanguage),
+			Speakers:              m.Speakers,
+			SummaryOverview:       strings.TrimSpace(m.SummaryOverview),
+			KeyTopics:             m.KeyTopics,
+			ActionItems:           m.ActionItems,
+			RetrievalStrategy:     strings.TrimSpace(m.RetrievalStrategy),
+			LexicalAnalysisReport: strings.TrimSpace(m.LexicalAnalysisReport),
 		}
 	}
 

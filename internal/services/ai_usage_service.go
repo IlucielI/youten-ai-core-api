@@ -67,6 +67,8 @@ func (s *Service) RecordAIUsageSync(ctx context.Context, input dtos.AIUsageRecor
 		metadata = models.JSONMap(input.Metadata)
 	}
 
+	s.enrichAIUsageInputFromRecording(ctx, &input)
+
 	usageLog := &models.AIUsageLog{
 		UserID:           input.UserID,
 		WorkspaceID:      input.WorkspaceID,
@@ -92,6 +94,22 @@ func (s *Service) RecordAIUsageSync(ctx context.Context, input dtos.AIUsageRecor
 	}
 
 	return nil
+}
+
+// enrichAIUsageInputFromRecording populates missing UserID and WorkspaceID from the parent recording when neither is set.
+func (s *Service) enrichAIUsageInputFromRecording(ctx context.Context, input *dtos.AIUsageRecordInput) {
+	if input == nil || input.RecordingID == nil || *input.RecordingID == uuid.Nil {
+		return
+	}
+	if input.UserID != nil || input.WorkspaceID != nil {
+		return
+	}
+	rec, err := s.repo.FindRecordingByID(ctx, *input.RecordingID)
+	if err != nil || rec == nil {
+		return
+	}
+	input.UserID = rec.UserID
+	input.WorkspaceID = rec.WorkspaceID
 }
 
 // GetAdminAIUsageLogs returns paginated AI model usage logs with aggregate totals for CMS admin staff.

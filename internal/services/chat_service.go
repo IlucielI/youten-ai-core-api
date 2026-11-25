@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -17,6 +19,7 @@ import (
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/pkg/timeutil"
+	"code-base-golang/internal/templates"
 )
 
 // InitiateRecordingChatStream validates access (owner, guest, or share token), retrieves relevant context chunks,
@@ -98,54 +101,14 @@ func (s *Service) InitiateRecordingChatStream(
 		meta.ActionItems = req.ActionItems
 	}
 
-	// Vector semantic search for top-k relevant chunks
-	var chunkData []dtos.TranscriptChunkData
-	var retrievedChunkIDs []string
+	messages := resolvePriorConversationHistory(req.ConversationHistory, priorMessages)
 
-	if s.embedding != nil {
-		embeddings, embErr := s.embedding.CreateEmbeddings(ctx, []string{trimmedMsg})
-		if embErr == nil && len(embeddings) > 0 && len(embeddings[0]) > 0 {
-			chunks, searchErr := s.repo.SearchSimilarTranscriptChunks(ctx, rec.ID, embeddings[0], 5)
-			if searchErr == nil && len(chunks) > 0 {
-				for _, c := range chunks {
-					chunkData = append(chunkData, dtos.TranscriptChunkData{
-						ChunkIndex: c.ChunkIndex,
-						Content:    c.Content,
-						StartTime:  c.StartTime,
-						EndTime:    c.EndTime,
-					})
-					retrievedChunkIDs = append(retrievedChunkIDs, c.ID.String())
-				}
-			}
-		}
-	}
+	// Adaptive retrieval routing: LLM planner selects vector_top_k, full_transcript, or lexical_search
+	plan := s.planRecordingChatRetrieval(ctx, trimmedMsg, messages)
+	chunkData, retrievedChunkIDs := s.retrieveAdaptiveTranscriptContext(ctx, rec.ID, trimmedMsg, plan, meta)
 
 	// Prompt generation with RAG templates enriched with metadata
 	systemPrompt, userPrompt := BuildRAGPrompt(trimmedMsg, chunkData, meta)
-
-	var messages []dtos.ChatMessageInput
-	if len(req.ConversationHistory) > 0 {
-		messages = append(messages, req.ConversationHistory...)
-	} else if len(priorMessages) > 0 {
-		// Populate from persisted prior session turns (up to the last 8 messages)
-		startIdx := 0
-		if len(priorMessages) > 8 {
-			startIdx = len(priorMessages) - 8
-		}
-		for _, pm := range priorMessages[startIdx:] {
-			if strings.TrimSpace(pm.Content) == "" {
-				continue
-			}
-			role := pm.SenderRole
-			if role != constants.ChatRoleUser && role != constants.ChatRoleAssistant {
-				role = constants.ChatRoleUser
-			}
-			messages = append(messages, dtos.ChatMessageInput{
-				Role:    role,
-				Content: pm.Content,
-			})
-		}
-	}
 
 	messages = append(messages, dtos.ChatMessageInput{
 		Role:    constants.ChatRoleUser,
@@ -380,5 +343,508 @@ func (s *Service) isSessionAccessibleByCaller(ctx context.Context, rec *models.R
 	}
 
 	return true
+}
+
+var chatRouterJSONSchema = map[string]interface{}{
+	"type": "object",
+	"properties": map[string]interface{}{
+		"strategy": map[string]interface{}{
+			"type": "string",
+			"enum": []string{
+				constants.ChatRetrievalStrategyVectorTopK,
+				constants.ChatRetrievalStrategyFullTranscript,
+				constants.ChatRetrievalStrategyLexicalSearch,
+			},
+		},
+		"target_terms": map[string]interface{}{
+			"type": "array",
+			"items": map[string]interface{}{
+				"type": "string",
+			},
+		},
+	},
+	"required": []string{"strategy"},
+}
+
+func resolvePriorConversationHistory(reqHistory []dtos.ChatMessageInput, priorMessages []models.ChatMessage) []dtos.ChatMessageInput {
+	if len(reqHistory) > 0 {
+		out := make([]dtos.ChatMessageInput, len(reqHistory))
+		copy(out, reqHistory)
+		return out
+	}
+	if len(priorMessages) == 0 {
+		return nil
+	}
+
+	startIdx := 0
+	if len(priorMessages) > 8 {
+		startIdx = len(priorMessages) - 8
+	}
+	var messages []dtos.ChatMessageInput
+	for _, pm := range priorMessages[startIdx:] {
+		if strings.TrimSpace(pm.Content) == "" {
+			continue
+		}
+		role := pm.SenderRole
+		if role != constants.ChatRoleUser && role != constants.ChatRoleAssistant {
+			role = constants.ChatRoleUser
+		}
+		messages = append(messages, dtos.ChatMessageInput{
+			Role:    role,
+			Content: pm.Content,
+		})
+	}
+	return messages
+}
+
+func (s *Service) planRecordingChatRetrieval(ctx context.Context, query string, history []dtos.ChatMessageInput) dtos.ChatRetrievalPlan {
+	defaultPlan := dtos.ChatRetrievalPlan{Strategy: constants.ChatRetrievalStrategyVectorTopK}
+	if s.llm == nil || strings.TrimSpace(query) == "" {
+		return defaultPlan
+	}
+
+	sysPrompt, err := templates.DefaultChatRouterSystemPrompt()
+	if err != nil || sysPrompt == "" {
+		return defaultPlan
+	}
+
+	routerPrompt := buildChatRouterUserPrompt(query, history)
+	routerCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	res, err := s.llm.GenerateStructured(routerCtx, sysPrompt, routerPrompt, chatRouterJSONSchema)
+	if err != nil || res == nil || strings.TrimSpace(res.RawJSON) == "" {
+		return defaultPlan
+	}
+
+	cleaned := jsonutil.CleanMarkdownJSON(res.RawJSON)
+	var plan dtos.ChatRetrievalPlan
+	if err := json.Unmarshal([]byte(cleaned), &plan); err != nil {
+		return defaultPlan
+	}
+
+	return normalizeChatRetrievalPlan(plan)
+}
+
+func buildChatRouterUserPrompt(query string, history []dtos.ChatMessageInput) string {
+	var sb strings.Builder
+	if len(history) > 0 {
+		start := 0
+		if len(history) > 4 {
+			start = len(history) - 4
+		}
+		sb.WriteString("Recent Conversation History:\n")
+		for _, h := range history[start:] {
+			sb.WriteString(fmt.Sprintf("- %s: %s\n", h.Role, strings.TrimSpace(h.Content)))
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("Current User Question: ")
+	sb.WriteString(strings.TrimSpace(query))
+	return sb.String()
+}
+
+func normalizeChatRetrievalPlan(plan dtos.ChatRetrievalPlan) dtos.ChatRetrievalPlan {
+	strategy := strings.ToLower(strings.TrimSpace(plan.Strategy))
+	terms := deduplicateCleanTerms(plan.TargetTerms)
+
+	switch strategy {
+	case constants.ChatRetrievalStrategyLexicalSearch:
+		if len(terms) == 0 {
+			return dtos.ChatRetrievalPlan{Strategy: constants.ChatRetrievalStrategyVectorTopK}
+		}
+		return dtos.ChatRetrievalPlan{
+			Strategy:    constants.ChatRetrievalStrategyLexicalSearch,
+			TargetTerms: terms,
+		}
+	case constants.ChatRetrievalStrategyFullTranscript:
+		return dtos.ChatRetrievalPlan{Strategy: constants.ChatRetrievalStrategyFullTranscript}
+	default:
+		return dtos.ChatRetrievalPlan{Strategy: constants.ChatRetrievalStrategyVectorTopK}
+	}
+}
+
+func deduplicateCleanTerms(raw []string) []string {
+	seen := make(map[string]bool)
+	var clean []string
+	for _, t := range raw {
+		trimmed := strings.Trim(strings.TrimSpace(t), "\"'`")
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if seen[lower] {
+			continue
+		}
+		seen[lower] = true
+		clean = append(clean, trimmed)
+	}
+	return clean
+}
+
+func (s *Service) retrieveAdaptiveTranscriptContext(
+	ctx context.Context,
+	recID uuid.UUID,
+	query string,
+	plan dtos.ChatRetrievalPlan,
+	meta *dtos.RecordingContextMetadata,
+) ([]dtos.TranscriptChunkData, []string) {
+	if meta != nil {
+		meta.RetrievalStrategy = plan.Strategy
+	}
+
+	switch plan.Strategy {
+	case constants.ChatRetrievalStrategyLexicalSearch:
+		return s.retrieveLexicalTranscriptContext(ctx, recID, query, plan.TargetTerms, meta)
+	case constants.ChatRetrievalStrategyFullTranscript:
+		return s.retrieveFullTranscriptContext(ctx, recID, query)
+	default:
+		return s.retrieveVectorTopKChunks(ctx, recID, query, constants.DefaultRecordingChatTopK)
+	}
+}
+
+func (s *Service) retrieveVectorTopKChunks(
+	ctx context.Context,
+	recID uuid.UUID,
+	query string,
+	topK int,
+) ([]dtos.TranscriptChunkData, []string) {
+	if s.embedding == nil || s.repo == nil {
+		return nil, nil
+	}
+	embeddings, err := s.embedding.CreateEmbeddings(ctx, []string{query})
+	if err != nil || len(embeddings) == 0 || len(embeddings[0]) == 0 {
+		return nil, nil
+	}
+	chunks, err := s.repo.SearchSimilarTranscriptChunks(ctx, recID, embeddings[0], topK)
+	if err != nil || len(chunks) == 0 {
+		return nil, nil
+	}
+
+	chunkData := make([]dtos.TranscriptChunkData, 0, len(chunks))
+	retrievedIDs := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		chunkData = append(chunkData, dtos.TranscriptChunkData{
+			ChunkIndex: c.ChunkIndex,
+			Content:    c.Content,
+			StartTime:  c.StartTime,
+			EndTime:    c.EndTime,
+		})
+		retrievedIDs = append(retrievedIDs, c.ID.String())
+	}
+	return chunkData, retrievedIDs
+}
+
+func (s *Service) retrieveLexicalTranscriptContext(
+	ctx context.Context,
+	recID uuid.UUID,
+	query string,
+	terms []string,
+	meta *dtos.RecordingContextMetadata,
+) ([]dtos.TranscriptChunkData, []string) {
+	if s.repo == nil {
+		return nil, nil
+	}
+	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recID)
+	if err != nil || len(segments) == 0 {
+		return s.retrieveVectorTopKChunks(ctx, recID, query, constants.DefaultRecordingChatTopK)
+	}
+
+	report, matchedChunks := ComputeLexicalAnalysis(segments, terms)
+	if meta != nil {
+		meta.LexicalAnalysisReport = report
+	}
+	if len(matchedChunks) > 0 {
+		return matchedChunks, nil
+	}
+	return s.retrieveVectorTopKChunks(ctx, recID, query, constants.DefaultRecordingChatTopK)
+}
+
+func (s *Service) retrieveFullTranscriptContext(
+	ctx context.Context,
+	recID uuid.UUID,
+	query string,
+) ([]dtos.TranscriptChunkData, []string) {
+	if s.repo == nil {
+		return nil, nil
+	}
+	segments, err := s.repo.ListTranscriptSegmentsByRecordingID(ctx, recID)
+	if err != nil || len(segments) == 0 {
+		return s.retrieveVectorTopKChunks(ctx, recID, query, constants.DefaultRecordingChatTopK)
+	}
+
+	allChunks := ChunkModelSegments(segments, dtos.ChunkerConfig{
+		MaxTokens:     constants.FullTranscriptChunkTokens,
+		OverlapTokens: 0,
+	})
+	if len(allChunks) == 0 {
+		return s.retrieveVectorTopKChunks(ctx, recID, query, constants.DefaultRecordingChatTopK)
+	}
+
+	totalTokens := 0
+	for _, c := range allChunks {
+		totalTokens += EstimateTokens(c.Content)
+	}
+	if totalTokens <= constants.FullTranscriptMaxBudgetTokens {
+		return allChunks, nil
+	}
+
+	sampled := sampleChronologicalChunks(allChunks, constants.FullTranscriptSampledChronologicalCap)
+	vectorChunks, vectorIDs := s.retrieveVectorTopKChunks(ctx, recID, query, constants.DefaultRecordingChatTopK)
+	return mergeChronologicalAndVectorChunks(sampled, vectorChunks), vectorIDs
+}
+
+func sampleChronologicalChunks(chunks []dtos.TranscriptChunkData, maxCount int) []dtos.TranscriptChunkData {
+	if len(chunks) <= maxCount || maxCount <= 0 {
+		return chunks
+	}
+	if maxCount == 1 {
+		return []dtos.TranscriptChunkData{chunks[0]}
+	}
+	sampled := make([]dtos.TranscriptChunkData, 0, maxCount)
+	lastIdx := len(chunks) - 1
+	for i := 0; i < maxCount; i++ {
+		idx := (i * lastIdx) / (maxCount - 1)
+		sampled = append(sampled, chunks[idx])
+	}
+	return sampled
+}
+
+func mergeChronologicalAndVectorChunks(primary []dtos.TranscriptChunkData, secondary []dtos.TranscriptChunkData) []dtos.TranscriptChunkData {
+	merged := make([]dtos.TranscriptChunkData, 0, len(primary)+len(secondary))
+	merged = append(merged, primary...)
+	for _, vc := range secondary {
+		if !isTimeRangeCovered(merged, vc.StartTime, vc.EndTime) {
+			merged = append(merged, vc)
+		}
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].StartTime < merged[j].StartTime
+	})
+	return merged
+}
+
+func isTimeRangeCovered(existing []dtos.TranscriptChunkData, start, end float64) bool {
+	if len(existing) == 0 {
+		return false
+	}
+	sorted := make([]dtos.TranscriptChunkData, len(existing))
+	copy(sorted, existing)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].StartTime < sorted[j].StartTime
+	})
+
+	coveredUntil := start
+	for _, c := range sorted {
+		if c.EndTime < coveredUntil {
+			continue
+		}
+		if c.StartTime > coveredUntil {
+			continue
+		}
+		if c.EndTime > coveredUntil {
+			coveredUntil = c.EndTime
+		}
+		if coveredUntil >= end {
+			return true
+		}
+	}
+	return coveredUntil >= end
+}
+
+type speakerTermCount struct {
+	Speaker      string
+	ExactCount   int
+	VariantCount int
+}
+
+// ComputeLexicalAnalysis performs a deterministic, language-agnostic full-transcript scan for target words/phrases.
+// It separates Exact Word/Phrase Matches from Derived/Affixed Substring Matches and produces per-speaker breakdowns
+// and timestamped matching segments.
+func ComputeLexicalAnalysis(segments []models.TranscriptSegment, rawTerms []string) (string, []dtos.TranscriptChunkData) {
+	terms := deduplicateCleanTerms(rawTerms)
+	if len(segments) == 0 || len(terms) == 0 {
+		return "", nil
+	}
+
+	var reportBuilder strings.Builder
+	matchedSegIndices := make(map[int]bool)
+	var orderedMatchedIndices []int
+
+	for tIdx, term := range terms {
+		if tIdx > 0 {
+			reportBuilder.WriteString("\n")
+		}
+		termReport, segIndices := analyzeSingleTermInSegments(segments, term)
+		reportBuilder.WriteString(termReport)
+		for _, idx := range segIndices {
+			if !matchedSegIndices[idx] {
+				matchedSegIndices[idx] = true
+				orderedMatchedIndices = append(orderedMatchedIndices, idx)
+			}
+		}
+	}
+
+	sort.Ints(orderedMatchedIndices)
+	if len(orderedMatchedIndices) > constants.LexicalSearchMaxMatchingSegmentsPerTerm {
+		orderedMatchedIndices = orderedMatchedIndices[:constants.LexicalSearchMaxMatchingSegmentsPerTerm]
+	}
+
+	chunks := make([]dtos.TranscriptChunkData, 0, len(orderedMatchedIndices))
+	for chunkIdx, segIdx := range orderedMatchedIndices {
+		seg := segments[segIdx]
+		speaker := resolveSegmentSpeaker(seg)
+		chunks = append(chunks, dtos.TranscriptChunkData{
+			ChunkIndex: chunkIdx,
+			Content:    fmt.Sprintf("[%s]: %s", speaker, strings.TrimSpace(seg.Text)),
+			StartTime:  seg.StartTime,
+			EndTime:    seg.EndTime,
+		})
+	}
+
+	return strings.TrimSpace(reportBuilder.String()), chunks
+}
+
+func analyzeSingleTermInSegments(segments []models.TranscriptSegment, term string) (string, []int) {
+	lowerTerm := strings.ToLower(strings.TrimSpace(term))
+	termTokens := tokenizeUnicodeWords(lowerTerm)
+	if len(termTokens) == 0 {
+		return "", nil
+	}
+
+	totalExact := 0
+	totalVariant := 0
+	matchingSegmentsCount := 0
+	var matchedIndices []int
+
+	speakerStats := make(map[string]*speakerTermCount)
+	var speakerOrder []string
+	variantWordCounts := make(map[string]int)
+
+	for idx, seg := range segments {
+		exactInSeg, variantInSeg, variants := countTermInText(seg.Text, lowerTerm, termTokens)
+		if exactInSeg == 0 && variantInSeg == 0 {
+			continue
+		}
+		matchingSegmentsCount++
+		matchedIndices = append(matchedIndices, idx)
+		totalExact += exactInSeg
+		totalVariant += variantInSeg
+
+		speaker := resolveSegmentSpeaker(seg)
+		stat, exists := speakerStats[speaker]
+		if !exists {
+			stat = &speakerTermCount{Speaker: speaker}
+			speakerStats[speaker] = stat
+			speakerOrder = append(speakerOrder, speaker)
+		}
+		stat.ExactCount += exactInSeg
+		stat.VariantCount += variantInSeg
+
+		for vw, c := range variants {
+			variantWordCounts[vw] += c
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("- Target Term: %q\n", term))
+	sb.WriteString(fmt.Sprintf("  * Exact Word/Phrase Occurrences: %d times\n", totalExact))
+	sb.WriteString(fmt.Sprintf("  * Derived / Affixed / Substring Variant Occurrences: %d times\n", totalVariant))
+	sb.WriteString(fmt.Sprintf("  * Total Combined Occurrences: %d times (across %d dialogue segments out of %d total segments)\n",
+		totalExact+totalVariant, matchingSegmentsCount, len(segments)))
+
+	if len(variantWordCounts) > 0 {
+		sb.WriteString("  * Variant Words Detected: ")
+		sb.WriteString(formatVariantWordCounts(variantWordCounts))
+		sb.WriteString("\n")
+	}
+
+	if len(speakerOrder) > 0 {
+		sb.WriteString("  * Per-Speaker Breakdown:\n")
+		for _, spk := range speakerOrder {
+			st := speakerStats[spk]
+			sb.WriteString(fmt.Sprintf("    - %s: %d exact, %d variant (total: %d)\n",
+				st.Speaker, st.ExactCount, st.VariantCount, st.ExactCount+st.VariantCount))
+		}
+	}
+
+	return sb.String(), matchedIndices
+}
+
+func countTermInText(text string, lowerTerm string, termTokens []string) (exactCount int, variantCount int, variants map[string]int) {
+	words := tokenizeUnicodeWords(strings.ToLower(text))
+	if len(words) == 0 {
+		return 0, 0, nil
+	}
+
+	if len(termTokens) == 1 {
+		targetWord := termTokens[0]
+		variants = make(map[string]int)
+		for _, w := range words {
+			if w == targetWord {
+				exactCount++
+				continue
+			}
+			if strings.Contains(w, targetWord) {
+				variantCount++
+				variants[w]++
+			}
+		}
+		return exactCount, variantCount, variants
+	}
+
+	// Multi-word phrase matching
+	phraseLen := len(termTokens)
+	for i := 0; i <= len(words)-phraseLen; i++ {
+		if matchesTokenSequence(words[i:i+phraseLen], termTokens) {
+			exactCount++
+		}
+	}
+	totalSub := strings.Count(strings.ToLower(text), lowerTerm)
+	if totalSub > exactCount {
+		variantCount = totalSub - exactCount
+	}
+	return exactCount, variantCount, nil
+}
+
+func matchesTokenSequence(window []string, target []string) bool {
+	if len(window) != len(target) {
+		return false
+	}
+	for i := range target {
+		if window[i] != target[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func tokenizeUnicodeWords(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsMark(r)
+	})
+}
+
+func resolveSegmentSpeaker(seg models.TranscriptSegment) string {
+	if strings.TrimSpace(seg.SpeakerName) != "" {
+		return strings.TrimSpace(seg.SpeakerName)
+	}
+	if strings.TrimSpace(seg.SpeakerLabel) != "" {
+		return strings.TrimSpace(seg.SpeakerLabel)
+	}
+	return constants.DefaultSpeakerLabel
+}
+
+func formatVariantWordCounts(counts map[string]int) string {
+	keys := make([]string, 0, len(counts))
+	for k := range counts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s (%dx)", k, counts[k]))
+	}
+	return strings.Join(parts, ", ")
 }
 

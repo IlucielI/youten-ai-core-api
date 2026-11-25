@@ -855,3 +855,131 @@ func TestService_SaveAssistantChatMessage_WithRangeCitations(t *testing.T) {
 		t.Errorf("unexpected citations slice: %v", citations)
 	}
 }
+
+func TestService_InitiateRecordingChatStream_AdaptiveLexicalSearch(t *testing.T) {
+	svc, mock, mockLLM, _ := setupChatTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: ownerID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "title"}).
+			AddRow(recID, &ownerID, "POC Tring"))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	// Router selects lexical_search for "mungkin"
+	mockLLM.GenerateStructuredFunc = func(ctx context.Context, systemPrompt string, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+		return &dtos.StructuredResponse{
+			RawJSON: `{"strategy":"lexical_search","target_terms":["mungkin"]}`,
+		}, nil
+	}
+
+	// Expect full transcript segments query
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_label", "speaker_name", "start_time", "end_time", "text", "sequence_order"}).
+			AddRow(uuid.New(), recID, "Speaker 1", "Speaker 1", 12.0, 20.0, "Mungkin kita perlu VPN, atau mungkin pakai staging.", 1).
+			AddRow(uuid.New(), recID, "Speaker 2", "Speaker 2", 21.0, 30.0, "Kemungkinan besar bisa diakses besok.", 2))
+
+	var capturedUserPrompt string
+	mockLLM.StreamChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+		for _, m := range messages {
+			if m.Role == "user" {
+				capturedUserPrompt = m.Content
+			}
+		}
+		ch := make(chan dtos.StreamChunk, 1)
+		ch <- dtos.StreamChunk{Content: "Kata mungkin muncul 2 kali secara persis dan 1 kali berimbuhan."}
+		close(ch)
+		return ch, nil
+	}
+
+	res, err := svc.InitiateRecordingChatStream(ctx, recID, "", dtos.RecordingChatRequest{
+		Message: "Ada berapa kata mungkin di rekaman ini?",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for range res.StreamChannel {
+	}
+
+	if !strings.Contains(capturedUserPrompt, "Exact Word/Phrase Occurrences: 2 times") {
+		t.Errorf("expected exact occurrence count 2 in prompt, got:\n%s", capturedUserPrompt)
+	}
+	if !strings.Contains(capturedUserPrompt, "Derived / Affixed / Substring Variant Occurrences: 1 times") {
+		t.Errorf("expected variant occurrence count 1 in prompt, got:\n%s", capturedUserPrompt)
+	}
+	if !strings.Contains(capturedUserPrompt, "kemungkinan (1x)") {
+		t.Errorf("expected variant word kemungkinan (1x) in prompt, got:\n%s", capturedUserPrompt)
+	}
+}
+
+func TestService_InitiateRecordingChatStream_AdaptiveFullTranscript(t *testing.T) {
+	svc, mock, mockLLM, _ := setupChatTestService(t)
+	recID := uuid.New()
+	ownerID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: ownerID})
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "title"}).
+			AddRow(recID, &ownerID, "Full Architecture Review"))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "chat_messages"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+	mock.ExpectCommit()
+
+	mock.ExpectQuery(`SELECT \* FROM "summaries" WHERE recording_id = \$1 AND is_active = TRUE.*`).
+		WithArgs(recID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	// Router selects full_transcript
+	mockLLM.GenerateStructuredFunc = func(ctx context.Context, systemPrompt string, userPrompt string, schema map[string]interface{}) (*dtos.StructuredResponse, error) {
+		return &dtos.StructuredResponse{
+			RawJSON: `{"strategy":"full_transcript"}`,
+		}, nil
+	}
+
+	mock.ExpectQuery(`SELECT \* FROM "transcript_segments" WHERE recording_id = \$1 ORDER BY sequence_order ASC, start_time ASC`).
+		WithArgs(recID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "recording_id", "speaker_label", "speaker_name", "start_time", "end_time", "text", "sequence_order"}).
+			AddRow(uuid.New(), recID, "Speaker 1", "Alice", 0.0, 15.0, "Opening remarks on database sharding.", 1).
+			AddRow(uuid.New(), recID, "Speaker 2", "Bob", 1800.0, 1820.0, "Closing agreement on zero-downtime migration.", 2))
+
+	var capturedUserPrompt string
+	mockLLM.StreamChatResponseFunc = func(ctx context.Context, systemPrompt string, messages []dtos.ChatMessageInput, opts dtos.ChatOptions) (<-chan dtos.StreamChunk, error) {
+		for _, m := range messages {
+			if m.Role == "user" {
+				capturedUserPrompt = m.Content
+			}
+		}
+		ch := make(chan dtos.StreamChunk, 1)
+		ch <- dtos.StreamChunk{Content: "Full chronological review."}
+		close(ch)
+		return ch, nil
+	}
+
+	res, err := svc.InitiateRecordingChatStream(ctx, recID, "", dtos.RecordingChatRequest{
+		Message: "Jabarkan seluruh alur pembicaraan dari awal sampai akhir secara kronologis",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for range res.StreamChannel {
+	}
+
+	if !strings.Contains(capturedUserPrompt, "Opening remarks on database sharding.") ||
+		!strings.Contains(capturedUserPrompt, "Closing agreement on zero-downtime migration.") {
+		t.Errorf("expected full chronological segments in prompt, got:\n%s", capturedUserPrompt)
+	}
+}

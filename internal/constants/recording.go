@@ -69,6 +69,19 @@ const (
 	ChatRoleAssistant = "assistant"
 )
 
+// Single-recording adaptive RAG chat retrieval strategies and budgets.
+const (
+	ChatRetrievalStrategyVectorTopK     = "vector_top_k"
+	ChatRetrievalStrategyFullTranscript = "full_transcript"
+	ChatRetrievalStrategyLexicalSearch  = "lexical_search"
+
+	DefaultRecordingChatTopK                = 5
+	FullTranscriptChunkTokens               = 500
+	FullTranscriptMaxBudgetTokens           = 20000
+	FullTranscriptSampledChronologicalCap   = 24
+	LexicalSearchMaxMatchingSegmentsPerTerm = 120
+)
+
 // Meeting voice bot waitlist default attributes and status.
 const (
 	DefaultBotPlatform    = "google_meet"

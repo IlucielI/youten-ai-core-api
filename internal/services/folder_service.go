@@ -255,9 +255,14 @@ func (s *Service) MoveRecording(ctx context.Context, recordingID uuid.UUID, req 
 			return err
 		}
 		if rec.WorkspaceID == nil {
-			if folder.WorkspaceID != uuid.Nil {
+			if rec.UserID == nil || *rec.UserID != userID {
 				return constants.ErrForbidden
 			}
+			member, memberErr := s.repo.FindWorkspaceMember(ctx, folder.WorkspaceID, userID)
+			if memberErr != nil || !member.Role.CanEditContent() {
+				return constants.ErrForbidden
+			}
+			return s.repo.MoveRecordingToWorkspace(ctx, recordingID, folder.WorkspaceID, req.FolderID)
 		} else if folder.WorkspaceID != *rec.WorkspaceID {
 			return constants.ErrForbidden
 		}

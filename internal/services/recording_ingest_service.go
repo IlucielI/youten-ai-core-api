@@ -656,7 +656,7 @@ func resolveOwnershipToken(ctx context.Context) (string, error) {
 	return hex.EncodeToString(tokenBytes), nil
 }
 
-// applyRecordingOwnership sets user or guest ownership and expiration on a recording.
+// applyRecordingOwnership sets user or guest ownership, workspace assignment, and expiration on a recording.
 func applyRecordingOwnership(ctx context.Context, rec *models.Recording, now time.Time) {
 	isAuth := ctxmeta.IsAuthenticated(ctx)
 	userID, hasUserID := ctxmeta.GetAuthUserID(ctx)
@@ -665,6 +665,9 @@ func applyRecordingOwnership(ctx context.Context, rec *models.Recording, now tim
 	if isAuth && hasUserID {
 		rec.UserID = &userID
 		rec.IsGuest = false
+		if wsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && wsID != uuid.Nil {
+			rec.WorkspaceID = &wsID
+		}
 	} else {
 		rec.IsGuest = true
 		if clientIP != "" {

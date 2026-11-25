@@ -244,6 +244,40 @@ func TestService_UploadRecording_AuthSuccess(t *testing.T) {
 	}
 }
 
+func TestService_UploadRecording_AuthWithWorkspaceID(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	wsID := uuid.New()
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+	ctx = ctxmeta.WithWorkspaceID(ctx, wsID)
+
+	override := 10
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs(userID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "daily_quota_override"}).AddRow(userID, constants.UserStatusActive, &override))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE \(user_id = \$1 AND created_at >= \$2\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	recID := uuid.New()
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "recordings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(recID, now, now))
+	mock.ExpectCommit()
+
+	resp, err := svc.UploadRecording(ctx, dtos.UploadRecordingRequest{
+		Filename: "workspace_recording.m4a",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.IsGuest {
+		t.Error("expected is_guest to be false")
+	}
+}
+
 func TestService_UploadRecording_ExceedsMaxFileSize(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 	ctx := ctxmeta.WithClientMeta(context.Background(), "127.0.0.1", "Agent")

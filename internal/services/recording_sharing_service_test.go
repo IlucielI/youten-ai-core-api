@@ -339,6 +339,32 @@ func TestService_ClaimRecording_Success(t *testing.T) {
 	}
 }
 
+func TestService_ClaimRecording_SuccessWithWorkspaceID(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	wsID := uuid.New()
+	recID := uuid.New()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+	ctx = ctxmeta.WithWorkspaceID(ctx, wsID)
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE id = \$1 AND "recordings"\."deleted_at" IS NULL.*LIMIT \$2`).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_guest", "user_id", "ownership_token"}).
+			AddRow(recID, true, nil, "valid-token"))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "is_guest"=\$1,"user_id"=\$2,"workspace_id"=\$3,"updated_at"=\$4 WHERE \(id = \$5 AND ownership_token = \$6 AND is_guest = TRUE\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(false, userID, wsID, sqlmock.AnyArg(), recID, "valid-token").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.ClaimRecording(ctx, recID, dtos.ClaimRecordingRequest{OwnershipToken: "valid-token"})
+	if err != nil {
+		t.Fatalf("unexpected claim error: %v", err)
+	}
+}
+
 func TestService_ClaimBulkRecordings_Unauthorized(t *testing.T) {
 	svc, _, _, _ := setupRecordingTestService(t)
 	ctx := context.Background()

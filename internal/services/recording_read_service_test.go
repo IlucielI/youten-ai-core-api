@@ -309,6 +309,43 @@ func TestService_ListRecordings_Success(t *testing.T) {
 	}
 }
 
+func TestService_ListRecordings_WithWorkspaceFilter(t *testing.T) {
+	svc, mock, _, _ := setupRecordingTestService(t)
+	userID := uuid.New()
+	wsID := uuid.New()
+	recID := uuid.New()
+	now := time.Now()
+
+	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+	wsIDStr := wsID.String()
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND \(workspace_id = \$2 OR workspace_id IS NULL\) AND "recordings"\."deleted_at" IS NULL`).
+		WithArgs(userID, wsID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE user_id = \$1 AND \(workspace_id = \$2 OR workspace_id IS NULL\) AND "recordings"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$3`).
+		WithArgs(userID, wsID, 10).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "user_id", "workspace_id", "title", "original_filename", "file_size_bytes", "duration_seconds",
+			"source_type", "status", "selected_template", "output_language", "is_guest", "created_at", "updated_at",
+		}).AddRow(
+			recID, userID, nil, "POC Tring", "poc.mp3", 1024, 3019.0,
+			"UPLOAD", "COMPLETED", "MOM", "id", false, now, now,
+		))
+
+	resp, err := svc.ListRecordings(ctx, dtos.RecordingFilterQuery{
+		WorkspaceID: &wsIDStr,
+		Page:        1,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].Title != "POC Tring" {
+		t.Fatalf("expected POC Tring item, got %+v", resp.Items)
+	}
+}
+
 func TestService_ListRecordings_EmptyResults(t *testing.T) {
 	svc, mock, _, _ := setupRecordingTestService(t)
 	userID := uuid.New()

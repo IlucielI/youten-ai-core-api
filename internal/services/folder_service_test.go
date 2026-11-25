@@ -217,6 +217,43 @@ func TestService_MoveRecording(t *testing.T) {
 		}
 	})
 
+	t.Run("success moving unassigned-workspace recording into folder", func(t *testing.T) {
+		svc, mock, _, _ := setupRecordingTestService(t)
+		userID := uuid.New()
+		wsID := uuid.New()
+		recID := uuid.New()
+		folderID := uuid.New()
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+
+		// FindRecordingByID with nil workspace_id
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+			WithArgs(recID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "workspace_id"}).AddRow(recID, &userID, nil))
+
+		// FindFolderByID
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "folders" WHERE id = $1 AND "folders"."deleted_at" IS NULL ORDER BY "folders"."id" LIMIT $2`)).
+			WithArgs(folderID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id"}).AddRow(folderID, wsID))
+
+		// FindWorkspaceMember
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "workspace_members" WHERE (workspace_id = $1 AND user_id = $2) AND "workspace_members"."deleted_at" IS NULL ORDER BY "workspace_members"."id" LIMIT $3`)).
+			WithArgs(wsID, userID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "user_id", "role"}).
+				AddRow(uuid.New(), wsID, userID, constants.WorkspaceRoleOwner))
+
+		// MoveRecordingToWorkspace update
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "recordings" SET "folder_id"=$1,"is_share_enabled"=$2,"workspace_id"=$3,"updated_at"=$4 WHERE id = $5 AND "recordings"."deleted_at" IS NULL`)).
+			WithArgs(folderID, false, wsID, sqlmock.AnyArg(), recID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		err := svc.MoveRecording(ctx, recID, dtos.MoveRecordingRequest{FolderID: &folderID})
+		if err != nil {
+			t.Fatalf("unexpected error moving unassigned-workspace recording: %v", err)
+		}
+	})
+
 	t.Run("success cross-workspace move as creator", func(t *testing.T) {
 		svc, mock, _, _ := setupRecordingTestService(t)
 		userID := uuid.New()

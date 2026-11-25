@@ -10,6 +10,7 @@ import (
 
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/strutil"
 )
 
@@ -86,12 +87,16 @@ func (r *Repositories) UpdateRecordingStatus(ctx context.Context, id uuid.UUID, 
 
 // ClaimRecordingToUser binds a guest recording session to a registered user account after verifying ownership token.
 func (r *Repositories) ClaimRecordingToUser(ctx context.Context, id uuid.UUID, ownershipToken string, userID uuid.UUID) error {
+	updates := map[string]interface{}{
+		"user_id":  userID,
+		"is_guest": false,
+	}
+	if wsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && wsID != uuid.Nil {
+		updates["workspace_id"] = wsID
+	}
 	res := r.db.WithContext(ctx).Model(&models.Recording{}).
 		Where("id = ? AND ownership_token = ? AND is_guest = TRUE", id, ownershipToken).
-		Updates(map[string]interface{}{
-			"user_id":  userID,
-			"is_guest": false,
-		})
+		Updates(updates)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -119,12 +124,16 @@ func (r *Repositories) ClaimRecordingsByTokens(ctx context.Context, tokens []str
 		for _, rec := range recs {
 			claimedIDs = append(claimedIDs, rec.ID)
 		}
+		updates := map[string]interface{}{
+			"user_id":  userID,
+			"is_guest": false,
+		}
+		if wsID, ok := ctxmeta.GetWorkspaceID(ctx); ok && wsID != uuid.Nil {
+			updates["workspace_id"] = wsID
+		}
 		return tx.Model(&models.Recording{}).
 			Where("id IN (?)", claimedIDs).
-			Updates(map[string]interface{}{
-				"user_id":  userID,
-				"is_guest": false,
-			}).Error
+			Updates(updates).Error
 	})
 	if err != nil {
 		return nil, err
@@ -172,7 +181,7 @@ func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
 		db = db.Where("selected_template = ?", f.Template)
 	}
 	if f.WorkspaceID != nil && *f.WorkspaceID != uuid.Nil {
-		db = db.Where("workspace_id = ?", *f.WorkspaceID)
+		db = db.Where("workspace_id = ? OR workspace_id IS NULL", *f.WorkspaceID)
 	}
 	if f.FolderID != nil && *f.FolderID != uuid.Nil {
 		db = db.Where("folder_id = ?", *f.FolderID)

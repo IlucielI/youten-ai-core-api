@@ -598,6 +598,9 @@ func sampleChronologicalChunks(chunks []dtos.TranscriptChunkData, maxCount int) 
 	if len(chunks) <= maxCount || maxCount <= 0 {
 		return chunks
 	}
+	if maxCount == 1 {
+		return []dtos.TranscriptChunkData{chunks[0]}
+	}
 	sampled := make([]dtos.TranscriptChunkData, 0, maxCount)
 	lastIdx := len(chunks) - 1
 	for i := 0; i < maxCount; i++ {
@@ -622,12 +625,31 @@ func mergeChronologicalAndVectorChunks(primary []dtos.TranscriptChunkData, secon
 }
 
 func isTimeRangeCovered(existing []dtos.TranscriptChunkData, start, end float64) bool {
-	for _, c := range existing {
-		if start >= c.StartTime && end <= c.EndTime {
+	if len(existing) == 0 {
+		return false
+	}
+	sorted := make([]dtos.TranscriptChunkData, len(existing))
+	copy(sorted, existing)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].StartTime < sorted[j].StartTime
+	})
+
+	coveredUntil := start
+	for _, c := range sorted {
+		if c.EndTime < coveredUntil {
+			continue
+		}
+		if c.StartTime > coveredUntil {
+			continue
+		}
+		if c.EndTime > coveredUntil {
+			coveredUntil = c.EndTime
+		}
+		if coveredUntil >= end {
 			return true
 		}
 	}
-	return false
+	return coveredUntil >= end
 }
 
 type speakerTermCount struct {
@@ -799,7 +821,7 @@ func matchesTokenSequence(window []string, target []string) bool {
 
 func tokenizeUnicodeWords(s string) []string {
 	return strings.FieldsFunc(s, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsMark(r)
 	})
 }
 

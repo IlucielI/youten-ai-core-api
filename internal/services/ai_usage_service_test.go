@@ -106,7 +106,22 @@ func TestService_RecordAIUsageSync_EnrichesFromRecording(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "workspace_id"}).AddRow(recID, userID, wsID))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "ai_usage_logs"`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "ai_usage_logs" ("user_id","workspace_id","recording_id","service_type","provider","model_name","prompt_tokens","completion_tokens","total_tokens","audio_seconds","latency_ms","metadata","created_at")`)).
+		WithArgs(
+			userID,
+			wsID,
+			recID,
+			constants.AIServiceTypeLLMSummary.String(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			100,
+			50,
+			150,
+			0.0,
+			0,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
 	mock.ExpectCommit()
 

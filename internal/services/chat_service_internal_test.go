@@ -100,3 +100,28 @@ func TestNormalizeChatRetrievalPlan(t *testing.T) {
 		t.Fatalf("expected full_transcript, got %+v", p3)
 	}
 }
+
+func TestSampleAndMergeChronologicalChunks(t *testing.T) {
+	chunks := []dtos.TranscriptChunkData{
+		{ChunkIndex: 0, StartTime: 0, EndTime: 10},
+		{ChunkIndex: 1, StartTime: 10, EndTime: 20},
+		{ChunkIndex: 2, StartTime: 20, EndTime: 30},
+	}
+
+	// maxCount == 1 must not divide by zero
+	s1 := sampleChronologicalChunks(chunks, 1)
+	if len(s1) != 1 || s1[0].ChunkIndex != 0 {
+		t.Fatalf("expected 1 sampled chunk at index 0, got %+v", s1)
+	}
+
+	// Union coverage across [0, 10] and [10, 20] must cover [2, 18]
+	if !isTimeRangeCovered(chunks[:2], 2, 18) {
+		t.Error("expected [2, 18] to be covered by union of [0, 10] and [10, 20]")
+	}
+
+	// Combining mark in NFD word must remain a single token
+	toks := tokenizeUnicodeWords("cafe\u0301 world")
+	if len(toks) != 2 || toks[0] != "cafe\u0301" {
+		t.Errorf("expected combining mark preserved in single token, got %v", toks)
+	}
+}

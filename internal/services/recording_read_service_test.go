@@ -319,11 +319,11 @@ func TestService_ListRecordings_WithWorkspaceFilter(t *testing.T) {
 	ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
 	wsIDStr := wsID.String()
 
-	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND \(workspace_id = \$2 OR workspace_id IS NULL\) AND "recordings"\."deleted_at" IS NULL`).
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "recordings" WHERE user_id = \$1 AND \(\(workspace_id = \$2 OR workspace_id IS NULL\)\) AND "recordings"\."deleted_at" IS NULL`).
 		WithArgs(userID, wsID).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 
-	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE user_id = \$1 AND \(workspace_id = \$2 OR workspace_id IS NULL\) AND "recordings"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$3`).
+	mock.ExpectQuery(`SELECT \* FROM "recordings" WHERE user_id = \$1 AND \(\(workspace_id = \$2 OR workspace_id IS NULL\)\) AND "recordings"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$3`).
 		WithArgs(userID, wsID, 10).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "user_id", "workspace_id", "title", "original_filename", "file_size_bytes", "duration_seconds",

@@ -1,13 +1,43 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"code-base-golang/internal/constants"
+	"code-base-golang/internal/models"
+	"code-base-golang/internal/pkg/ctxmeta"
 )
+
+func TestApplyRecordingOwnership(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("assigns user_id and workspace_id for authenticated user with workspace context", func(t *testing.T) {
+		userID := uuid.New()
+		wsID := uuid.New()
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{UserID: userID})
+		ctx = ctxmeta.WithWorkspaceID(ctx, wsID)
+
+		var rec models.Recording
+		applyRecordingOwnership(ctx, &rec, now)
+
+		if rec.IsGuest {
+			t.Fatal("expected IsGuest to be false")
+		}
+		if rec.UserID == nil || *rec.UserID != userID {
+			t.Fatalf("expected UserID %s, got %v", userID, rec.UserID)
+		}
+		if rec.WorkspaceID == nil || *rec.WorkspaceID != wsID {
+			t.Fatalf("expected WorkspaceID %s, got %v", wsID, rec.WorkspaceID)
+		}
+	})
+}
 
 func TestMaxBytesReader(t *testing.T) {
 	t.Run("reading under limit succeeds", func(t *testing.T) {

@@ -181,7 +181,7 @@ func (f RecordingFilter) scope(db *gorm.DB) *gorm.DB {
 		db = db.Where("selected_template = ?", f.Template)
 	}
 	if f.WorkspaceID != nil && *f.WorkspaceID != uuid.Nil {
-		db = db.Where("workspace_id = ? OR workspace_id IS NULL", *f.WorkspaceID)
+		db = db.Where("(workspace_id = ? OR workspace_id IS NULL)", *f.WorkspaceID)
 	}
 	if f.FolderID != nil && *f.FolderID != uuid.Nil {
 		db = db.Where("folder_id = ?", *f.FolderID)

@@ -263,7 +263,40 @@ func TestService_UploadRecording_AuthWithWorkspaceID(t *testing.T) {
 	recID := uuid.New()
 	now := time.Now()
 	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "recordings"`).
+	mock.ExpectQuery(`INSERT INTO "recordings" \("deleted_at","workspace_id","folder_id","user_id",.*`).
+		WithArgs(
+			nil,
+			wsID,
+			nil,
+			userID,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			false,
+			"workspace_recording",
+			"workspace_recording.m4a",
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			false,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(recID, now, now))
 	mock.ExpectCommit()
 

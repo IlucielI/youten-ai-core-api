@@ -84,6 +84,42 @@ func TestService_RecordAIUsageSync(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestService_RecordAIUsageSync_EnrichesFromRecording(t *testing.T) {
+	svc, mock, cleanup := setupTestAIUsageService(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	recID := uuid.New()
+	userID := uuid.New()
+	wsID := uuid.New()
+
+	input := dtos.AIUsageRecordInput{
+		RecordingID:      &recID,
+		ServiceType:      constants.AIServiceTypeLLMSummary.String(),
+		PromptTokens:     100,
+		CompletionTokens: 50,
+		TotalTokens:      150,
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "recordings" WHERE id = $1 AND "recordings"."deleted_at" IS NULL ORDER BY "recordings"."id" LIMIT $2`)).
+		WithArgs(recID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "workspace_id"}).AddRow(recID, userID, wsID))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "ai_usage_logs"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(uuid.New(), time.Now()))
+	mock.ExpectCommit()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "recordings" SET "total_tokens_used"=total_tokens_used \+ \$1`).
+		WithArgs(150, sqlmock.AnyArg(), recID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.RecordAIUsageSync(ctx, input)
+	assert.NoError(t, err)
+}
+
 func TestService_GetAdminAIUsageLogs(t *testing.T) {
 	svc, mock, cleanup := setupTestAIUsageService(t)
 	defer cleanup()

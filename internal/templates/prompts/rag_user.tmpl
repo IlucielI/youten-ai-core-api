@@ -23,6 +23,11 @@ Meeting Information:
 {{range .Metadata.ActionItems}}  * {{.}}
 {{end}}
 {{- end}}
+{{- if .Metadata.LexicalAnalysisReport}}
+
+Verified Full-Transcript Lexical & Frequency Analysis (100% Complete Recording Scan):
+{{.Metadata.LexicalAnalysisReport}}
+{{- end}}
 
 {{end -}}
 Transcript Context:

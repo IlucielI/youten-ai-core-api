@@ -64,6 +64,10 @@ func (s *Service) ListUserWorkspaces(ctx context.Context) ([]dtos.WorkspaceRespo
 		return nil, s.wrapError(ctx, fmt.Errorf("failed to find workspaces for user: %w", err))
 	}
 
+	if len(workspaces) == 0 {
+		workspaces = s.autoProvisionPersonalWorkspaceSlice(ctx, userID)
+	}
+
 	res := make([]dtos.WorkspaceResponse, 0, len(workspaces))
 	for _, ws := range workspaces {
 		member, err := s.repo.FindWorkspaceMember(ctx, ws.ID, userID)
@@ -346,4 +350,17 @@ func (s *Service) EnsureUserPersonalWorkspace(ctx context.Context, user *models.
 		return nil, s.wrapError(ctx, fmt.Errorf("failed to create workspace: %w", err))
 	}
 	return ws, nil
+}
+
+// autoProvisionPersonalWorkspaceSlice ensures a personal workspace exists when a user has no workspace memberships yet.
+func (s *Service) autoProvisionPersonalWorkspaceSlice(ctx context.Context, userID uuid.UUID) []models.Workspace {
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil || user == nil {
+		return nil
+	}
+	ws, err := s.EnsureUserPersonalWorkspace(ctx, user)
+	if err != nil || ws == nil {
+		return nil
+	}
+	return []models.Workspace{*ws}
 }

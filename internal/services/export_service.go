@@ -20,6 +20,7 @@ import (
 	"code-base-golang/internal/models"
 	"code-base-golang/internal/pkg/ctxmeta"
 	"code-base-golang/internal/pkg/docx"
+	"code-base-golang/internal/pkg/jsonutil"
 	"code-base-golang/internal/pkg/strutil"
 	"code-base-golang/internal/pkg/timeutil"
 )
@@ -186,8 +187,7 @@ func parseSummaryData(summary *models.Summary) (map[string]interface{}, string) 
 	rawMd := strings.TrimSpace(summary.MarkdownContent)
 	// If StructuredData is empty or contains only meta keys, but MarkdownContent is JSON, parse it
 	if (len(data) == 0 || (len(data) == 1 && (data["invalid_key"] != nil || data["$schema"] != nil))) && strings.HasPrefix(rawMd, "{") {
-		var parsed map[string]interface{}
-		if err := json.Unmarshal([]byte(rawMd), &parsed); err == nil {
+		if parsed, _, err := jsonutil.UnmarshalMapLenient(rawMd); err == nil {
 			for k, v := range parsed {
 				data[k] = v
 			}

@@ -94,15 +94,17 @@ func TestCleanMarkdownJSON(t *testing.T) {
 
 func TestRepairJSONAndUnmarshalMapLenient(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantTitle string
-		wantErr   bool
+		name            string
+		input           string
+		wantTitle       string
+		wantNextMeeting string
+		wantErr         bool
 	}{
 		{
-			name:      "repairs mismatched array bracket closing object",
-			input:     `{"meeting_title": "Titan QA", "meeting_dynamics": {"consensus_score": "85%", "speaker_talk_time": [{"speaker": "Ki"}], ], "next_meeting": "TBD"}`,
-			wantTitle: "Titan QA",
+			name:            "repairs mismatched array bracket closing object and preserves subsequent fields",
+			input:           `{"meeting_title": "Titan QA", "meeting_dynamics": {"consensus_score": "85%", "speaker_talk_time": [{"speaker": "Ki"}], ], "next_meeting": "TBD"}`,
+			wantTitle:       "Titan QA",
+			wantNextMeeting: "TBD",
 		},
 		{
 			name:      "repairs trailing commas in nested objects and arrays",
@@ -110,9 +112,10 @@ func TestRepairJSONAndUnmarshalMapLenient(t *testing.T) {
 			wantTitle: "Sprint Sync",
 		},
 		{
-			name:      "preserves brackets inside string literals",
-			input:     `{"meeting_title": "Topic [v1] {draft}", "meeting_dynamics": {"consensus_score": "90%"], "next_meeting": "Friday"}`,
-			wantTitle: "Topic [v1] {draft}",
+			name:            "preserves brackets inside string literals",
+			input:           `{"meeting_title": "Topic [v1] {draft}", "meeting_dynamics": {"consensus_score": "90%"], "next_meeting": "Friday"}`,
+			wantTitle:       "Topic [v1] {draft}",
+			wantNextMeeting: "Friday",
 		},
 		{
 			name:      "repairs unterminated string ending with trailing backslash",
@@ -135,6 +138,11 @@ func TestRepairJSONAndUnmarshalMapLenient(t *testing.T) {
 			if !tt.wantErr {
 				if got, _ := m["meeting_title"].(string); got != tt.wantTitle {
 					t.Errorf("meeting_title = %q, want %q", got, tt.wantTitle)
+				}
+				if tt.wantNextMeeting != "" {
+					if got, _ := m["next_meeting"].(string); got != tt.wantNextMeeting {
+						t.Errorf("next_meeting = %q, want %q", got, tt.wantNextMeeting)
+					}
 				}
 			}
 		})

@@ -150,7 +150,7 @@ func handleStructuralByte(ch byte, out, stack []byte) ([]byte, []byte) {
 		return append(out, ch), append(stack, ']')
 	case '}', ']':
 		if len(stack) == 0 {
-			return out, stack
+			return append(out, ch), stack
 		}
 		out = stripTrailingCommaBeforeClose(out)
 		expected := stack[len(stack)-1]

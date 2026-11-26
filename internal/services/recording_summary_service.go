@@ -3,7 +3,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -264,9 +263,8 @@ func (s *Service) RegenerateSummary(ctx context.Context, id uuid.UUID, ownership
 		TotalTokens:      structuredRes.Usage.TotalTokens,
 	})
 
-	cleanedJSON := jsonutil.CleanMarkdownJSON(structuredRes.RawJSON)
-	var structMap map[string]interface{}
-	if err := json.Unmarshal([]byte(cleanedJSON), &structMap); err != nil {
+	structMap, cleanedJSON, err := jsonutil.UnmarshalMapLenient(structuredRes.RawJSON)
+	if err != nil {
 		return nil, fmt.Errorf("invalid structured response JSON: %w", err)
 	}
 

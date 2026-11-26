@@ -604,9 +604,8 @@ func (s *Service) ProcessSummarization(ctx context.Context, p queue.RecordingPip
 		log.Printf("[PIPELINE WARN] recording %s: failed to deactivate previous summaries: %v", recording.ID.String(), err)
 	}
 
-	cleanedJSON := jsonutil.CleanMarkdownJSON(structuredRes.RawJSON)
-	var structMap map[string]interface{}
-	if err := json.Unmarshal([]byte(cleanedJSON), &structMap); err != nil {
+	structMap, cleanedJSON, err := jsonutil.UnmarshalMapLenient(structuredRes.RawJSON)
+	if err != nil {
 		log.Printf("[PIPELINE WARN] recording %s: failed to unmarshal structured summary JSON: %v", recording.ID.String(), err)
 	}
 

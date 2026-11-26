@@ -115,6 +115,9 @@ func repairJSONBracketsAndCommas(input string) string {
 	}
 
 	if inString {
+		if escaped {
+			out = append(out, '\\')
+		}
 		out = append(out, '"')
 	}
 	for len(stack) > 0 {

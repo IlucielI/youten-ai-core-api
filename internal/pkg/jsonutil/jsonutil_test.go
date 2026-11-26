@@ -115,6 +115,11 @@ func TestRepairJSONAndUnmarshalMapLenient(t *testing.T) {
 			wantTitle: "Topic [v1] {draft}",
 		},
 		{
+			name:      "repairs unterminated string ending with trailing backslash",
+			input:     `{"meeting_title": "Trailing backslash\`,
+			wantTitle: `Trailing backslash\`,
+		},
+		{
 			name:    "unrecoverable garbage returns error",
 			input:   `not json at all`,
 			wantErr: true,

@@ -280,7 +280,7 @@ while [ $# -gt 0 ]; do
 done
 if [ -n "$outDir" ]; then
   echo '{"id":"dQw4w9WgXcQ","title":"Test Audio","duration":100}' > "$outDir/audio.info.json"
-  echo -n "audio-sample-data-1234567890" > "$outDir/audio.m4a"
+  printf '%s' "audio-sample-data-1234567890" > "$outDir/audio.m4a"
 fi
 exit 0
 `

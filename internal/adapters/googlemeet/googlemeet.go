@@ -3,6 +3,7 @@ package googlemeet
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"code-base-golang/internal/constants"
 	"code-base-golang/internal/dtos"
 	"code-base-golang/internal/pkg/apperror"
+	"code-base-golang/internal/queue"
 	"code-base-golang/internal/services"
 )
 
@@ -117,14 +119,20 @@ func (a *Adapter) Dispatch(ctx context.Context, params dtos.BotDispatchParams) (
 	a.mu.Unlock()
 
 	if a.cfg.Publisher != nil {
-		eventPayload := map[string]interface{}{
-			"session_id":          params.SessionID,
-			"external_session_id": externalID,
-			"recording_id":        params.RecordingID,
-			"meeting_url":         params.MeetingURL,
-			"dispatched_at":       now,
+		eventPayload := queue.BotDispatchPayload{
+			SessionID:         params.SessionID,
+			RecordingID:       params.RecordingID,
+			Provider:          constants.BotProviderGoogleMeet,
+			MeetingURL:        params.MeetingURL,
+			ExternalSessionID: externalID,
+			DispatchedAt:      now,
+			ScheduledAt:       params.ScheduledAt,
 		}
-		_ = a.cfg.Publisher.Publish(ctx, "bot.google_meet.dispatch", eventPayload)
+		if err := a.cfg.Publisher.Publish(ctx, constants.TopicBotGoogleMeetDispatch, eventPayload); err != nil {
+			log.Printf("[GOOGLE_MEET] Error publishing bot dispatch event for %s: %v", externalID, err)
+			return "", fmt.Errorf("failed to publish bot dispatch event to queue: %w", err)
+		}
+		log.Printf("[GOOGLE_MEET] Successfully published bot dispatch event for %s to %s", externalID, constants.TopicBotGoogleMeetDispatch)
 	}
 
 	return externalID, nil
@@ -161,16 +169,22 @@ func (a *Adapter) GetStatus(ctx context.Context, externalSessionID string) (*dto
 // Stop orders the Google Meet bot to leave the meeting and end the session.
 func (a *Adapter) Stop(ctx context.Context, externalSessionID string) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	sess, exists := a.sessions[externalSessionID]
-	if !exists {
-		return nil
-	}
-
 	now := time.Now().UTC()
-	sess.Status = constants.BotSessionStatusCompleted
-	sess.EndedAt = &now
+	if exists {
+		sess.Status = constants.BotSessionStatusCompleted
+		sess.EndedAt = &now
+	}
+	a.mu.Unlock()
+
+	if a.cfg.Publisher != nil {
+		stopPayload := queue.BotStopPayload{
+			ExternalSessionID: externalSessionID,
+			Reason:            "user_requested_stop",
+			StoppedAt:         now,
+		}
+		_ = a.cfg.Publisher.Publish(ctx, constants.TopicBotGoogleMeetStop, stopPayload)
+	}
 
 	return nil
 }

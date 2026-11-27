@@ -66,6 +66,8 @@ func MapStatusToProgress(status string) (stage string, progress int) {
 		return "VALIDATING", 15
 	case models.RecordingStatusExtracting:
 		return "EXTRACTING", 30
+	case models.RecordingStatusRecording:
+		return "RECORDING", 30
 	case models.RecordingStatusTranscribing:
 		return "TRANSCRIBING", 55
 	case models.RecordingStatusSummarizing:

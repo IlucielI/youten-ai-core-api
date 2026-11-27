@@ -10,8 +10,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+#      minio:
+#        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     restart: unless-stopped
@@ -63,23 +63,23 @@ services:
       retries: 5
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:latest
-    container_name: code-base-golang-minio
-    command: server /data --console-address ":9001"
-    env_file:
-      - ../.env
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+#  minio:
+#    image: minio/minio:latest
+#    container_name: code-base-golang-minio
+#    command: server /data --console-address ":9001"
+#    env_file:
+#      - ../.env
+#    ports:
+#      - "9000:9000"
+#      - "9001:9001"
+#    volumes:
+#      - minio_data:/data
+#    healthcheck:
+#      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+#      interval: 5s
+#      timeout: 5s
+#      retries: 5
+#    restart: unless-stopped
 
   mailpit:
     image: axllent/mailpit:latest
@@ -89,8 +89,29 @@ services:
       - "8025:8025" # Web UI
     restart: unless-stopped
 
+  meet-runner:
+    build:
+      context: ./bot-runner
+      dockerfile: Dockerfile
+    container_name: code-base-golang-meet-runner
+    profiles:
+      - bot-runner
+      - all
+    env_file:
+      - ../.env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/
+      API_ENDPOINT: http://host.docker.internal:8080
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://100.82.31.118:59005}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-local-bucket}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./bot-runner/src:/app/src:ro
+      - ./bot-runner/session:/app/session
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
   rabbitmq_data:

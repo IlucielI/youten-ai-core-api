@@ -32,7 +32,7 @@ lint:
 	$(GOLANGCI_LINT) run ./...
 
 docker-up:
-	docker compose -f deployment/docker-compose.yaml up -d postgres redis rabbitmq minio mailpit
+	docker compose --env-file .env -f deployment/docker-compose.yaml up -d postgres redis rabbitmq mailpit meet-runner
 
 docker-down:
 	docker compose -f deployment/docker-compose.yaml down
